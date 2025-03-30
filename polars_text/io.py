@@ -43,7 +43,7 @@ def scan_corpus(corpus_files: list[PathType]) -> pl.LazyFrame:
         batch_size: int | None,
     ) -> Iterator[pl.DataFrame]:
         if batch_size is None:
-            batch_size = 100
+            batch_size = 10000
         # Initialize the reader.
         reader = iter(read_files(corpus_files))
         # Ensure we don't read more rows than requested from the engine
