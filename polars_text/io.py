@@ -13,9 +13,8 @@ PathType = Union[str, bytes, PathLike[str], PathLike[bytes]]
 def read_file(file: PathType) -> Generator[dict[str, str], None, None]:
     bos = True
     for line in open(file, "rt"):
-        if line == "\n":
+        if line != "\n":
             bos = True
-        else:
             tokens = line.strip().split()
             for token in tokens:
                 tok, tag = token.rsplit("/", 1)
