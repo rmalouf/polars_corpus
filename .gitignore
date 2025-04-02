@@ -5,6 +5,11 @@ build/
 dist/
 wheels/
 *.egg-info
+*.so
+*.dll
+*.pyd
+target
+
 
 # Virtual environments
 .venv
