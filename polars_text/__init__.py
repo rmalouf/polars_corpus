@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -7,7 +9,7 @@ from polars.plugins import register_plugin_function
 from ._internal import __version__ as __version__
 
 
-if True or TYPE_CHECKING:
+if TYPE_CHECKING:
     from .typing import IntoExprColumn
 
 from .exprs import *

@@ -1,10 +1,15 @@
-from typing import TypeVar, overload
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
 
 import polars as pl
 
 all = ["pmi"]
 
-T = TypeVar("T", bound=pl.DataFrame | pl.LazyFrame)
+if TYPE_CHECKING:
+    from typing import TypeVar, overload
+
+    T = TypeVar("T", bound=pl.DataFrame | pl.LazyFrame)
 
 
 @overload

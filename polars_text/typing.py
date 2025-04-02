@@ -1,6 +1,6 @@
 from typing import TYPE_CHECKING, Union
 
-if True or TYPE_CHECKING:
+if TYPE_CHECKING:
     import sys
     import polars as pl
 

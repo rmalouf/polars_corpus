@@ -27,6 +27,10 @@ python-preference = "only-managed"
 ignore_missing_imports = false
 strict = true
 
+[[tool.mypy.overrides]]
+module = "polars.utils.udfs"
+ignore_missing_imports = true
+
 [tool.maturin]
 module-name = "polars_text._internal"
 
