@@ -3,6 +3,8 @@ use polars::prelude::*;
 use pyo3_polars::derive::polars_expr;
 use std::fmt::Write;
 
+use whichlang::{detect_language};
+
 fn same_output_type(input_fields: &[Field]) -> PolarsResult<Field> {
     let field = &input_fields[0];
     Ok(field.clone())
@@ -14,3 +16,14 @@ fn noop(inputs: &[Series]) -> PolarsResult<Series> {
     Ok(s.clone())
 }
 
+#[polars_expr(output_type=String)]
+fn whichlang(inputs: &[Series]) -> PolarsResult<Series> {
+   let ca: &StringChunked = inputs[0].str()?;
+   let out: StringChunked = ca.apply_into_string_amortized(|value: &str, output: &mut String| {
+       let lang = detect_language(value);
+       let code = lang.three_letter_code();
+       //write!(output, "{}", code).unwrap()
+       output.push_str(&code);
+       });
+   Ok(out.into_series())
+}

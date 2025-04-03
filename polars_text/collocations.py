@@ -6,10 +6,10 @@ import polars as pl
 
 all = ["pmi"]
 
-if TYPE_CHECKING:
-    from typing import TypeVar, overload
 
-    T = TypeVar("T", bound=pl.DataFrame | pl.LazyFrame)
+from typing import TypeVar, overload
+
+T = TypeVar("T", bound=pl.DataFrame | pl.LazyFrame)
 
 
 @overload

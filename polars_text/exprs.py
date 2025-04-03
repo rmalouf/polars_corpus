@@ -1,8 +1,21 @@
 from __future__ import annotations
 
+from pathlib import Path
+from typing import TYPE_CHECKING
+
 import polars as pl
+from polars.plugins import register_plugin_function
 
 from .collocations import tabulate
+
+LIB = Path(__file__).parent
+
+
+if TYPE_CHECKING:
+    from polars.type_aliases import IntoExprColumn
+
+
+all = ["whichlang"]
 
 
 @pl.api.register_expr_namespace("text")
@@ -18,6 +31,9 @@ class TextExpr:
 
     def ngrams(self, n: int) -> pl.Expr:
         return pl.concat_list(self._expr.shift(-i) for i in range(0, n))
+
+    def whichlang(self) -> pl.Expr:
+        return whichlang(self._expr)
 
 
 @pl.api.register_dataframe_namespace("text")
@@ -36,3 +52,12 @@ class TextLazyFrame:
 
     def tabulate(self, x: str, y: str) -> pl.LazyFrame:
         return tabulate(self._lf, x, y)
+
+
+def whichlang(expr: IntoExprColumn) -> pl.Expr:
+    return register_plugin_function(
+        args=[expr],
+        plugin_path=LIB,
+        function_name="whichlang",
+        is_elementwise=True,
+    )

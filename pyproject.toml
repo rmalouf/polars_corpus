@@ -27,7 +27,7 @@ python-preference = "only-managed"
 ignore_missing_imports = false
 strict = true
 
-[tool.mypy.overrides]
+[[tool.mypy.overrides]]
 module = "polars.utils.udfs"
 ignore_missing_imports = true
 

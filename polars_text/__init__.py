@@ -8,7 +8,6 @@ from polars.plugins import register_plugin_function
 
 from ._internal import __version__ as __version__
 
-
 if TYPE_CHECKING:
     from .typing import IntoExprColumn
 
