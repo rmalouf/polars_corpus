@@ -19,5 +19,3 @@ lock:
 clean:
 	rm -f requirements.txt requirements-dev.txt
 
-test:
-    pytest

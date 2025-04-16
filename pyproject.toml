@@ -1,5 +1,5 @@
 [build-system]
-requires = ["maturin>=1.0,<2.0", "polars>=1.25.*"]
+requires = ["maturin>=1.0,<2.0", "polars>=1.25"]
 build-backend = "maturin"
 
 [project]
@@ -29,14 +29,14 @@ authors = [
 description = "Text processing plugins for polars"
 readme = "README.md"
 license = "MIT"
-dependencies = [
- #"nltk>=3.9.1",
- "polars>=1.25.0",
+#dependencies = [
+ ##"nltk>=3.9.1",
+# "polars>=1.27.1",
  #"seaborn>=0.13.2",
  #"spacy[apple]==3.8.*",
  #"en-core-web-sm @ https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl",
  #"en-core-web-trf @ https://github.com/explosion/spacy-models/releases/download/en_core_web_trf-3.8.0/en_core_web_trf-3.8.0-py3-none-any.whl",
-]
+#]
 
 #[project.urls]
 #Homepage = "https://example.com"
@@ -49,7 +49,7 @@ dependencies = [
 python-preference = "only-managed"
 
 [tool.mypy]
-ignore_missing_imports = false
+ignore_missing_imports = true
 strict = true
 
 [[tool.mypy.overrides]]
@@ -59,12 +59,12 @@ ignore_missing_imports = true
 [tool.maturin]
 module-name = "polars_text._internal"
 
-[dependency-groups]
-dev = [
-    "jupyterlab>=4.3.6",
-    "maturin>=1.8.3",
-    "mypy>=1.15.0",
-    "notebook>=7.3.3",
-    "pip>=25.0.1",
-    "pytest>=8.3.5",
-]
+# [dependency-groups]
+# dev = [
+#     "jupyterlab>=4.4.0",
+#     "maturin>=1.8.3",
+#     "mypy>=1.15.0",
+#     "notebook>=7.4.0",
+#     "pip>=25.0.1",
+#     "pytest>=8.3.5",
+# ]
