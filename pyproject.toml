@@ -5,7 +5,7 @@ build-backend = "maturin"
 [project]
 name = "polars-text"
 version = "0.1.0"
-requires-python = ">=3.11.*"
+requires-python = ">=3.11"
 classifiers = [
     "Development Status :: 1 - Planning",
     "Intended Audience :: Science/Research",

@@ -18,3 +18,6 @@ lock:
 ## Clean compiled files
 clean:
 	rm -f requirements.txt requirements-dev.txt
+
+test:
+    pytest
