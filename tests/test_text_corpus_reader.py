@@ -34,10 +34,7 @@ MalformedLine noSlashHere
 @pytest.fixture
 def multiple_files():
     files = []
-    contents = [
-        "First/DT file/NN\n",
-        "Second/DT one/CD\nThird/JJ one/NN too/RB\n"
-    ]
+    contents = ["First/DT file/NN\n", "Second/DT one/CD\nThird/JJ one/NN too/RB\n"]
     for content in contents:
         f = create_temp_file_with_content(content)
         files.append(f)

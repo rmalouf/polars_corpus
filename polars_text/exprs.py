@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import polars as pl
 from polars.plugins import register_plugin_function
@@ -44,14 +44,14 @@ class TextDataFrame:
     def crosstab(self, x: str, y: str) -> pl.DataFrame:
         return crosstab(self._df, x, y)
 
-    def pmi(self, x: str, y: str, **kwargs) -> pl.DataFrame:
+    def pmi(self, x: str, y: str, **kwargs: Any) -> pl.DataFrame:
         return assoc(self._df, x, y, "pmi", **kwargs)
 
-    def ms(self, x: str, y: str, **kwargs) -> pl.DataFrame:
+    def ms(self, x: str, y: str, **kwargs: Any) -> pl.DataFrame:
         return assoc(self._df, x, y, "ms", **kwargs)
 
-    def assoc(self, x: str, y: str, method: str) -> pl.DataFrame:
-        return assoc(self._df, x, y, method)
+    def assoc(self, x: str, y: str, method: str, **kwargs: Any) -> pl.DataFrame:
+        return assoc(self._df, x, y, method, **kwargs)
 
 
 @pl.api.register_lazyframe_namespace("text")
@@ -62,14 +62,14 @@ class TextLazyFrame:
     def crosstab(self, x: str, y: str) -> pl.LazyFrame:
         return crosstab(self._lf, x, y)
 
-    def pmi(self, x: str, y: str, **kwargs) -> pl.LazyFrame:
+    def pmi(self, x: str, y: str, **kwargs: Any) -> pl.LazyFrame:
         return assoc(self._lf, x, y, "pmi", **kwargs)
 
-    def ms(self, x: str, y: str, **kwargs) -> pl.LazyFrame:
+    def ms(self, x: str, y: str, **kwargs: Any) -> pl.LazyFrame:
         return assoc(self._lf, x, y, "ms", **kwargs)
 
-    def assoc(self, x: str, y: str, method: str) -> pl.LazyFrame:
-        return assoc(self._lf, x, y, method)
+    def assoc(self, x: str, y: str, method: str, **kwargs: Any) -> pl.LazyFrame:
+        return assoc(self._lf, x, y, method, **kwargs)
 
 
 def whichlang(expr: IntoExprColumn) -> pl.Expr:

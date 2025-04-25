@@ -12,21 +12,33 @@ all = ["crosstab", "compute_pmi", "compute_ms", "assoc"]
 def crosstab(df: TPolarsFrame, x: str, y: str) -> TPolarsFrame:
     """
     Creates a crosstabulation (contingency table) from a given dataframe with two variables.
+
     The crosstab includes frequencies of occurrence as well as marginal and total sums.
 
-    :param df: The input data as a Polars DataFrame or LazyFrame.
-    :param x: The column name of the first variable (independent variable).
-    :param y: The column name of the second variable (dependent variable).
-    :return: A Polars DataFrame containing the contingency table. The result includes:
-             - x: Levels of the first variable.
-             - y: Levels of the second variable.
-             - f12: Joint frequencies (count of occurrences for each combination of x and y).
-             - f1: Row marginal sums (frequency sums grouped by x).
-             - f2: Column marginal sums (frequency sums grouped by y).
-             - n: Grand total (the sum of all frequencies).
+    Args:
+        df: The input data as a Polars DataFrame or LazyFrame.
+        x: The column name of the first variable (independent variable).
+        y: The column name of the second variable (dependent variable).
+
+    Returns:
+        A Polars DataFrame containing the contingency table with columns:
+        - x: Levels of the first variable
+        - y: Levels of the second variable
+        - f12: Joint frequencies
+        - f1: Row marginal sums
+        - f2: Column marginal sums
+        - n: Grand total
+
+    Raises:
+        ValueError: If x or y columns don't exist in the dataframe
     """
+    # Input validation
+    if x not in df.columns or y not in df.columns:
+        raise ValueError(f"Columns {x} and/or {y} not found in dataframe")
+
     t = (
         df.select(x, y)
+        .drop_nulls([x, y])
         .group_by(x, y)
         .len("f12")
         .with_columns(
@@ -35,7 +47,8 @@ def crosstab(df: TPolarsFrame, x: str, y: str) -> TPolarsFrame:
             pl.col("f12").sum().alias("n"),
         )
     )
-    return t.select(x, y, "f12", "f1", "f2", "n")
+
+    return t
 
 
 def compute_pmi(table: TPolarsFrame) -> TPolarsFrame:
