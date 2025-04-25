@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING
 import polars as pl
 from polars.plugins import register_plugin_function
 
-from .collocations import tabulate
+from .assoc import crosstab, assoc
 
 LIB = Path(__file__).parent
 
@@ -41,8 +41,17 @@ class TextDataFrame:
     def __init__(self, df: pl.DataFrame) -> None:
         self._df = df
 
-    def tabulate(self, x: str, y: str) -> pl.DataFrame:
-        return tabulate(self._df, x, y)
+    def crosstab(self, x: str, y: str) -> pl.DataFrame:
+        return crosstab(self._df, x, y)
+
+    def pmi(self, x: str, y: str, **kwargs) -> pl.DataFrame:
+        return assoc(self._df, x, y, "pmi", **kwargs)
+
+    def ms(self, x: str, y: str, **kwargs) -> pl.DataFrame:
+        return assoc(self._df, x, y, "ms", **kwargs)
+
+    def assoc(self, x: str, y: str, method: str) -> pl.DataFrame:
+        return assoc(self._df, x, y, method)
 
 
 @pl.api.register_lazyframe_namespace("text")
@@ -50,8 +59,17 @@ class TextLazyFrame:
     def __init__(self, lf: pl.LazyFrame) -> None:
         self._lf = lf
 
-    def tabulate(self, x: str, y: str) -> pl.LazyFrame:
-        return tabulate(self._lf, x, y)
+    def crosstab(self, x: str, y: str) -> pl.LazyFrame:
+        return crosstab(self._lf, x, y)
+
+    def pmi(self, x: str, y: str, **kwargs) -> pl.LazyFrame:
+        return assoc(self._lf, x, y, "pmi", **kwargs)
+
+    def ms(self, x: str, y: str, **kwargs) -> pl.LazyFrame:
+        return assoc(self._lf, x, y, "ms", **kwargs)
+
+    def assoc(self, x: str, y: str, method: str) -> pl.LazyFrame:
+        return assoc(self._lf, x, y, method)
 
 
 def whichlang(expr: IntoExprColumn) -> pl.Expr:
