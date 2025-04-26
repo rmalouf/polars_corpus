@@ -2,11 +2,13 @@ from __future__ import annotations
 
 from typing import overload
 
+import numpy as np
+from numba import guvectorize, int64, float64
 import polars as pl
 
 from ._typing import TPolarsFrame
 
-all = ["crosstab", "compute_pmi", "compute_ms", "assoc"]
+__all__ = ["crosstab", "compute_mi", "compute_min_sens", "compute_loglik", "assoc"]
 
 
 def crosstab(df: TPolarsFrame, x: str, y: str) -> TPolarsFrame:
@@ -40,23 +42,31 @@ def crosstab(df: TPolarsFrame, x: str, y: str) -> TPolarsFrame:
         df.select(x, y)
         .drop_nulls([x, y])
         .group_by(x, y)
-        .len("f12")
+        .agg(pl.len().alias("f12"))
         .with_columns(
-            pl.col("f12").sum().over(x).alias("f1"),
-            pl.col("f12").sum().over(y).alias("f2"),
-            pl.col("f12").sum().alias("n"),
+            [
+                pl.col("f12").sum().over(x).alias("f1"),
+                pl.col("f12").sum().over(y).alias("f2"),
+                pl.col("f12").sum().alias("n"),
+            ]
         )
     )
 
     return t
 
 
-def compute_pmi(table: TPolarsFrame) -> TPolarsFrame:
+def _validated_crosstab(df: TPolarsFrame) -> TPolarsFrame:
+    required_cols = ["f12", "n", "f1", "f2"]
+    if not all(col in df.columns for col in required_cols):
+        raise ValueError(f"Missing required columns. Expected: {required_cols}")
+    return df.filter(
+        pl.col("f1") > 0, pl.col("f2") > 0, pl.col("f12") >= 0, pl.col("n") > 0
+    )
+
+
+def compute_mi(table: TPolarsFrame) -> TPolarsFrame:
     """
     Computes the Pointwise Mutual Information (PMI) for the given table using its columns.
-    The PMI is computed as the logarithm of the ratio of the joint probability to the product
-    of the marginals for two events. This is often used in statistical analysis and information
-    theory to measure the association between variables.
 
     :param table: Input table containing the necessary columns to compute PMI. The table should
         include at least four columns: `f12` (joint frequency of two events), `n` (total
@@ -67,12 +77,61 @@ def compute_pmi(table: TPolarsFrame) -> TPolarsFrame:
         PMI values for each row.
     :rtype: TPolarsFrame
     """
-    return table.with_columns(
+    return _validated_crosstab(table).with_columns(
         pmi=((pl.col("f12") * pl.col("n")) / (pl.col("f1") * pl.col("f2"))).log()
     )
 
 
-def compute_ms(table: TPolarsFrame) -> TPolarsFrame:
+def compute_loglik(table: TPolarsFrame) -> TPolarsFrame:
+    table = _validated_crosstab(table)
+    data = table.with_columns(
+        pl.struct(["f12", "f1", "f2", "n"])
+        .map_batches(
+            lambda r: _loglik(
+                r.struct.field("f12"),
+                r.struct.field("f1"),
+                r.struct.field("f2"),
+                r.struct.field("n"),
+            ),
+            is_elementwise=True,
+        )
+        .alias("loglik")
+    )
+    return data
+
+
+@guvectorize(
+    [(int64[:], int64[:], int64[:], int64[:], float64[:])],
+    "(n),(n),(n),(n)->(n)",
+    nopython=True,
+)
+def _loglik(f12, f1, f2, n, result):
+    for i in range(len(f12)):
+        o11 = f12[i]
+        o12 = f1[i] - f12[i]
+        o21 = f2[i] - f12[i]
+        o22 = n[i] - f1[i] - f2[i] + f12[i]
+        # r1 = f1[i]
+        # r2 = n[i] - r1
+        # c1 = f2[i]
+        # c2 = n[i] - c1
+        # e11 = r1 * c1 / n[i]
+        # e12 = r1 * c2 / n[i]
+        # e21 = r2 * c1 / n[i]
+        # e22 = r2 * c2 / n[i]
+        e11 = f1[i] * f2[i] / n[i]
+        e12 = f1[i] * (n[i] - f2[i]) / n[i]
+        e21 = (n[i] - f1[i]) * f2[i] / n[i]
+        e22 = (n[i] - f1[i]) * (n[i] - f2[i]) / n[i]
+        result[i] = 2 * (
+            o11 * np.log(o11 / e11)
+            + o12 * np.log(o12 / e12)
+            + o21 * np.log(o21 / e21)
+            + o22 * np.log(o22 / e22)
+        )
+
+
+def compute_min_sens(table: TPolarsFrame) -> TPolarsFrame:
     """
     Compute the mean square (ms) values for a given data table. The function
     calculates the minimum horizontal value between two derived columns,
@@ -86,7 +145,9 @@ def compute_ms(table: TPolarsFrame) -> TPolarsFrame:
         the computed mean square values.
     """
     return table.with_columns(
-        ms=pl.min_horizontal(pl.col("f12") / pl.col("f1"), pl.col("f12") / pl.col("f2"))
+        min_sens=pl.min_horizontal(
+            pl.col("f12") / pl.col("f1"), pl.col("f12") / pl.col("f2")
+        )
     )
 
 
@@ -98,7 +159,7 @@ def assoc(
 
     This function computes specific association metrics between two categorical
     variables ('x' and 'y') from a given dataframe. It supports the calculation
-    of either Pointwise Mutual Information (PMI) or Mutual Strength (MS) based
+    of either Pointwise Mutual Information (MI) or Mutual Strength (MS) based
     on the provided method. The function considers a minimum frequency threshold
     to filter the contingency table before computing the desired metric.
 
@@ -114,9 +175,11 @@ def assoc(
     """
     table: TPolarsFrame = crosstab(df, x, y).filter(pl.col("f12") >= min_freq)
     match method:
-        case "pmi":
-            return compute_pmi(table)
-        case "ms":
-            return compute_ms(table)
+        case "mi":
+            return compute_mi(table)
+        case "min_sens":
+            return compute_min_sens(table)
+        case "loglik":
+            return compute_loglik(table)
         case _:
             raise ValueError(f"Unknown method: {method}")

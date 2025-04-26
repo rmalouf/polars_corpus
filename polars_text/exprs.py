@@ -44,11 +44,11 @@ class TextDataFrame:
     def crosstab(self, x: str, y: str) -> pl.DataFrame:
         return crosstab(self._df, x, y)
 
-    def pmi(self, x: str, y: str, **kwargs: Any) -> pl.DataFrame:
-        return assoc(self._df, x, y, "pmi", **kwargs)
+    def mi(self, x: str, y: str, **kwargs: Any) -> pl.DataFrame:
+        return assoc(self._df, x, y, "mi", **kwargs)
 
-    def ms(self, x: str, y: str, **kwargs: Any) -> pl.DataFrame:
-        return assoc(self._df, x, y, "ms", **kwargs)
+    def min_sens(self, x: str, y: str, **kwargs: Any) -> pl.DataFrame:
+        return assoc(self._df, x, y, "min_sens", **kwargs)
 
     def assoc(self, x: str, y: str, method: str, **kwargs: Any) -> pl.DataFrame:
         return assoc(self._df, x, y, method, **kwargs)
@@ -62,11 +62,11 @@ class TextLazyFrame:
     def crosstab(self, x: str, y: str) -> pl.LazyFrame:
         return crosstab(self._lf, x, y)
 
-    def pmi(self, x: str, y: str, **kwargs: Any) -> pl.LazyFrame:
-        return assoc(self._lf, x, y, "pmi", **kwargs)
+    def mi(self, x: str, y: str, **kwargs: Any) -> pl.LazyFrame:
+        return assoc(self._lf, x, y, "mi", **kwargs)
 
-    def ms(self, x: str, y: str, **kwargs: Any) -> pl.LazyFrame:
-        return assoc(self._lf, x, y, "ms", **kwargs)
+    def min_sens(self, x: str, y: str, **kwargs: Any) -> pl.LazyFrame:
+        return assoc(self._lf, x, y, "min_sens", **kwargs)
 
     def assoc(self, x: str, y: str, method: str, **kwargs: Any) -> pl.LazyFrame:
         return assoc(self._lf, x, y, method, **kwargs)
