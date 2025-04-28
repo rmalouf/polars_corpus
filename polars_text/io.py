@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from os import PathLike
 from pathlib import Path
-from typing import Generator, Iterator, Union
+from typing import Generator, Iterator, Union, Optional
 
 import polars as pl
 from polars.io.plugins import register_io_source
@@ -32,10 +32,10 @@ class CorpusReader:
         schema = pl.Schema({"token": pl.String, "tag": pl.String, "sent": pl.String})
 
         def source_generator(
-            with_columns: list[str] | None,
-            predicate: pl.Expr | None,
-            n_rows: int | None,
-            batch_size: int | None,
+            with_columns: Optional[list[str]],
+            predicate: Optional[pl.Expr],
+            n_rows: Optional[int],
+            batch_size: Optional[int],
         ) -> Iterator[pl.DataFrame]:
             if batch_size is None:
                 batch_size = 10000
@@ -60,13 +60,9 @@ class CorpusReader:
                 if n_rows is not None:
                     n_rows -= df.height
 
-                # If we would make a performant reader, we would not read these
-                # columns at all.
                 if with_columns is not None:
                     df = df.select(with_columns)
 
-                # If the source supports predicate pushdown, the expression can be parsed
-                # to skip rows/groups.
                 if predicate is not None:
                     df = df.filter(predicate)
 
