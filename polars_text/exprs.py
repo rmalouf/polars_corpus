@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Optional
 
 import polars as pl
 from polars.plugins import register_plugin_function
 
 from .assoc import crosstab, assoc
+from .concordance import concordance
 
 LIB = Path(__file__).parent
 
@@ -53,6 +54,15 @@ class TextDataFrame:
     def assoc(self, x: str, y: str, method: str, **kwargs: Any) -> pl.DataFrame:
         return assoc(self._df, x, y, method, **kwargs)
 
+    def concordance(
+        self,
+        by: pl.Expr,
+        context: int,
+        left_context: Optional[int],
+        right_context: Optional[int],
+    ) -> pl.DataFrame:
+        return concordance(self._df, by, context, left_context, right_context)
+
 
 @pl.api.register_lazyframe_namespace("text")
 class TextLazyFrame:
@@ -70,6 +80,15 @@ class TextLazyFrame:
 
     def assoc(self, x: str, y: str, method: str, **kwargs: Any) -> pl.LazyFrame:
         return assoc(self._lf, x, y, method, **kwargs)
+
+    def concordance(
+        self,
+        by: pl.Expr,
+        context: int,
+        left_context: Optional[int],
+        right_context: Optional[int],
+    ) -> pl.LazyFrame:
+        return concordance(self._lf, by, context, left_context, right_context)
 
 
 def whichlang(expr: IntoExprColumn) -> pl.Expr:
