@@ -3,7 +3,6 @@ from __future__ import annotations
 from typing import Optional
 
 import polars as pl
-from polars._typing import IntoExprColumn
 
 from ._typing import TPolarsFrame
 

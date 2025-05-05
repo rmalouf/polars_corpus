@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING, Any, Optional
 import polars as pl
 from polars.plugins import register_plugin_function
 
-from .assoc import crosstab, assoc
+from .assoc import assoc, crosstab
 from .concordance import concordance
 
 LIB = Path(__file__).parent

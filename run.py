@@ -1,5 +1,5 @@
 import polars as pl
-import polars_text as mp
+import nlpolars as mp
 
 df = pl.DataFrame({
     'a': [1, 1, None],

@@ -1,7 +1,9 @@
 import polars as pl
 import pytest
-from polars.polars import ComputeError
-from polars_text.assoc import crosstab
+from polars.polars import ComputeError, ColumnNotFoundError
+from polars.testing import assert_frame_equal
+
+from nlpolars.assoc import crosstab
 
 
 def test_crosstab_basic() -> None:
@@ -18,16 +20,23 @@ def test_crosstab_basic() -> None:
 
 def test_crosstab_missing_columns() -> None:
     df = pl.DataFrame({"a": ["A", "B"], "b": [1, 2]})
-    with pytest.raises(ValueError, match="Columns x and/or y not found in dataframe"):
+    with pytest.raises(ColumnNotFoundError):
         crosstab(df, "x", "y")
+    with pytest.raises(ColumnNotFoundError):
+        crosstab(df.lazy(), "x", "y").collect()
+
+
 
 
 def test_crosstab_null_values() -> None:
     df = pl.DataFrame({"x": ["A", "A", "B", None, "C"], "y": [1, None, 1, 2, 1]})
-    result = crosstab(df, "x", "y")
 
+    result = crosstab(df, "x", "y")
     assert len(result.filter(pl.col("x").is_null() | pl.col("y").is_null())) == 0
     assert len(result) > 0
+
+    assert_frame_equal(result, crosstab(df.lazy(), "x", "y").collect(), check_row_order=False)
+
 
 
 def test_crosstab_correct_counts() -> None:
@@ -48,3 +57,5 @@ def test_crosstab_correct_counts() -> None:
 
     assert row_c.filter(pl.col("y") == 1)["f12"].to_list() == [2]
     assert row_c.filter(pl.col("y") == 2)["f12"].to_list() == [1]
+
+    assert_frame_equal(result, crosstab(df.lazy(), "x", "y").collect(), check_row_order=False)

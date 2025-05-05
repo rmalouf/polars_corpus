@@ -1,14 +1,86 @@
 from __future__ import annotations
 
-from typing import overload
+from typing import Optional
 
 import numpy as np
-from numba import guvectorize, int64, float64
 import polars as pl
+from numba import float64, guvectorize, int64
+from polars._typing import IntoExprColumn
 
 from ._typing import TPolarsFrame
 
-__all__ = ["crosstab", "compute_mi", "compute_min_sens", "compute_loglik", "assoc"]
+__all__ = [
+    "crosstab",
+    "get_contexts",
+    "compute_mi",
+    "compute_min_sens",
+    "compute_loglik",
+    "assoc",
+]
+
+
+def get_contexts(
+    df: TPolarsFrame,
+    by: IntoExprColumn,
+    width: Optional[int] = None,
+    left_width: Optional[int] = None,
+    right_width: Optional[int] = None,
+) -> TPolarsFrame:
+    """
+    Generate a DataFrame containing the context around a column of values by
+    shifting values left and right. The context size can be specified
+    symmetrically or asymmetrically based on given width parameters.
+
+    :param df:
+        The input DataFrame to process. Must be a TPolarsFrame.
+    :param by:
+        The column (or expression to select a column) used to generate
+        context values. Accepts a string column name or an instance of
+        IntoExprColumn.
+    :param width:
+        The symmetrical width of the context around the target column. If
+        specified, both `left_width` and `right_width` are inferred based
+        on this value (i.e., left_width = right_width = width). Cannot be
+        specified along with `left_width` or `right_width` individually.
+    :param left_width:
+        The width of the context to the left of the target column. Must be
+        non-negative. Should not be used together with `width`.
+    :param right_width:
+        The width of the context to the right of the target column. Must be
+        non-negative. Should not be used together with `width`.
+    :return:
+        A transformed DataFrame containing the context values for the target
+        column, including shifted columns prefixed with 'context-' (left)
+        and 'context+' (right), as well as the original column labeled
+        'node'.
+    :rtype:
+        TPolarsFrame
+    """
+    if width:
+        if left_width is not None or right_width is not None:
+            raise ValueError(
+                "left_width and right_width cannot be specified when width is specified"
+            )
+        else:
+            left_width = width
+            right_width = width
+
+    if left_width is None or right_width is None:
+        raise ValueError("left_width and right_width must be specified")
+
+    if left_width < 0 or right_width < 0:
+        raise ValueError("left_width and right_width must be non-negative")
+
+    if isinstance(by, str):
+        by = pl.col(by)
+
+    w = df.select(
+        [by.shift(i).alias(f"context-{i}") for i in range(left_width, 0, -1)]
+        + [by.alias("node")]
+        + [by.shift(-i).alias(f"context+{i}") for i in range(1, right_width + 1)]
+    )
+
+    return w
 
 
 def crosstab(df: TPolarsFrame, x: str, y: str) -> TPolarsFrame:
@@ -34,10 +106,6 @@ def crosstab(df: TPolarsFrame, x: str, y: str) -> TPolarsFrame:
     Raises:
         ValueError: If x or y columns don't exist in the dataframe
     """
-    # Input validation
-    if x not in df.columns or y not in df.columns:
-        raise ValueError(f"Columns {x} and/or {y} not found in dataframe")
-
     t = (
         df.select(x, y)
         .drop_nulls([x, y])
@@ -56,9 +124,9 @@ def crosstab(df: TPolarsFrame, x: str, y: str) -> TPolarsFrame:
 
 
 def _validated_crosstab(df: TPolarsFrame) -> TPolarsFrame:
-    required_cols = ["f12", "n", "f1", "f2"]
-    if not all(col in df.columns for col in required_cols):
-        raise ValueError(f"Missing required columns. Expected: {required_cols}")
+    # required_cols = ["f12", "n", "f1", "f2"]
+    # if not all(col in df.columns for col in required_cols):
+    #    raise ValueError(f"Missing required columns. Expected: {required_cols}")
     return df.filter(
         pl.col("f1") > 0, pl.col("f2") > 0, pl.col("f12") >= 0, pl.col("n") > 0
     )
@@ -111,24 +179,20 @@ def _loglik(f12, f1, f2, n, result):
         o12 = f1[i] - f12[i]
         o21 = f2[i] - f12[i]
         o22 = n[i] - f1[i] - f2[i] + f12[i]
-        # r1 = f1[i]
-        # r2 = n[i] - r1
-        # c1 = f2[i]
-        # c2 = n[i] - c1
-        # e11 = r1 * c1 / n[i]
-        # e12 = r1 * c2 / n[i]
-        # e21 = r2 * c1 / n[i]
-        # e22 = r2 * c2 / n[i]
-        e11 = f1[i] * f2[i] / n[i]
-        e12 = f1[i] * (n[i] - f2[i]) / n[i]
-        e21 = (n[i] - f1[i]) * f2[i] / n[i]
-        e22 = (n[i] - f1[i]) * (n[i] - f2[i]) / n[i]
-        result[i] = 2 * (
-            o11 * np.log(o11 / e11)
-            + o12 * np.log(o12 / e12)
-            + o21 * np.log(o21 / e21)
-            + o22 * np.log(o22 / e22)
-        )
+        result[i] = 0.0
+        if o11 != 0:
+            e11 = f1[i] * f2[i] / n[i]
+            result[i] += o11 * np.log(o11 / e11)
+        if o12 != 0:
+            e12 = f1[i] * (n[i] - f2[i]) / n[i]
+            result[i] += o12 * np.log(o12 / e12)
+        if o21 != 0:
+            e21 = (n[i] - f1[i]) * f2[i] / n[i]
+            result[i] += o21 * np.log(o21 / e21)
+        if o22 != 0:
+            e22 = (n[i] - f1[i]) * (n[i] - f2[i]) / n[i]
+            result[i] += o22 * np.log(o22 / e22)
+        result[i] = result[i] * 2.0
 
 
 def compute_min_sens(table: TPolarsFrame) -> TPolarsFrame:

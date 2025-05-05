@@ -1,8 +1,7 @@
 from __future__ import annotations
 
 from os import PathLike
-from pathlib import Path
-from typing import Generator, Iterator, Union, Optional
+from typing import Generator, Iterator, Optional, Union
 
 import polars as pl
 from polars.io.plugins import register_io_source

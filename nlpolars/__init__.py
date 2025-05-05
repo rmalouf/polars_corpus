@@ -1,13 +1,6 @@
 from __future__ import annotations
 
-from pathlib import Path
-from typing import TYPE_CHECKING
-
-import polars as pl
-from polars.plugins import register_plugin_function
-
 from ._internal import __version__ as __version__
-
 from .assoc import *
 from .exprs import *
 from .io import *
