@@ -12,19 +12,10 @@ __all__ = ["concordance"]
 def concordance(
     df: TPolarsFrame,
     expr: pl.Expr,
-    context: int = 5,
-    left_context: Optional[int] = None,
-    right_context: Optional[int] = None,
+    context: int = 5
 ) -> TPolarsFrame:
-    if left_context is not None or right_context is not None:
-        if left_context is None:
-            left_context = 0
-        if right_context is None:
-            right_context = 0
-    else:
-        left_context = context
-        right_context = context
-
+    left_context = context
+    right_context = context
     if left_context < 0 or right_context < 0:
         raise ValueError("left_width and right_width must be non-negative")
 

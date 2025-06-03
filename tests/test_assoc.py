@@ -26,8 +26,6 @@ def test_crosstab_missing_columns() -> None:
         crosstab(df.lazy(), "x", "y").collect()
 
 
-
-
 def test_crosstab_null_values() -> None:
     df = pl.DataFrame({"x": ["A", "A", "B", None, "C"], "y": [1, None, 1, 2, 1]})
 
@@ -35,8 +33,9 @@ def test_crosstab_null_values() -> None:
     assert len(result.filter(pl.col("x").is_null() | pl.col("y").is_null())) == 0
     assert len(result) > 0
 
-    assert_frame_equal(result, crosstab(df.lazy(), "x", "y").collect(), check_row_order=False)
-
+    assert_frame_equal(
+        result, crosstab(df.lazy(), "x", "y").collect(), check_row_order=False
+    )
 
 
 def test_crosstab_correct_counts() -> None:
@@ -58,4 +57,6 @@ def test_crosstab_correct_counts() -> None:
     assert row_c.filter(pl.col("y") == 1)["f12"].to_list() == [2]
     assert row_c.filter(pl.col("y") == 2)["f12"].to_list() == [1]
 
-    assert_frame_equal(result, crosstab(df.lazy(), "x", "y").collect(), check_row_order=False)
+    assert_frame_equal(
+        result, crosstab(df.lazy(), "x", "y").collect(), check_row_order=False
+    )

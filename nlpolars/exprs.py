@@ -56,12 +56,10 @@ class TextDataFrame:
 
     def concordance(
         self,
-        by: pl.Expr,
-        context: int,
-        left_context: Optional[int],
-        right_context: Optional[int],
+        expr: pl.Expr,
+        context: int
     ) -> pl.DataFrame:
-        return concordance(self._df, by, context, left_context, right_context)
+        return concordance(self._df, expr, context)
 
 
 @pl.api.register_lazyframe_namespace("text")
@@ -83,12 +81,10 @@ class TextLazyFrame:
 
     def concordance(
         self,
-        by: pl.Expr,
+        expr: pl.Expr,
         context: int,
-        left_context: Optional[int],
-        right_context: Optional[int],
     ) -> pl.LazyFrame:
-        return concordance(self._lf, by, context, left_context, right_context)
+        return concordance(self._lf, expr, context)
 
 
 def whichlang(expr: IntoExprColumn) -> pl.Expr:
