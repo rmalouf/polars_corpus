@@ -1,0 +1,1 @@
+specialist --targets nlpolars/cqp.py --output report try_cqp.py

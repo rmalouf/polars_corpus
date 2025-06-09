@@ -8,3 +8,7 @@ numpy==2.2.6
     # via numba
 polars==1.30.0
     # via -r requirements.in
+pyparsing==3.2.3
+    # via -r requirements.in
+tqdm==4.67.1
+    # via -r requirements.in

@@ -1,5 +1,7 @@
 polars
 numba
+pyparsing
+tqdm
 #nltk>=3.9.1
 #seaborn>=0.13.2
 #spacy[apple]==3.8.*
