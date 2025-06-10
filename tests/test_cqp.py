@@ -5,6 +5,7 @@ import numpy as np
 from nlpolars.cqp import (
     Token,
     Skip,
+    MToN,
     ZeroOrMore,
     OneOrMore,
     OneOrZero,
@@ -843,7 +844,7 @@ class TestCQPParser:
 
         for expr in invalid_expressions:
             with pytest.raises(pp.ParseException):
-                cqp.parse_string(expr)
+                cqp.parse_string(expr, parse_all=True)
 
     def test_parser_end_to_end_functionality(self):
         """Test complete parsing and pattern execution"""
@@ -1127,6 +1128,135 @@ class TestRegexMatching:
         np.testing.assert_array_equal(matches, expected)
 
 
+class TestMToNPatterns:
+    """Test the new MToN repetition patterns with {m,n} syntax"""
+
+    @pytest.fixture
+    def repetition_corpus(self):
+        """Corpus designed for testing repetition patterns"""
+        return pl.DataFrame(
+            {
+                "word": ["the", "very", "very", "quick", "brown", "fox", "runs"],
+                "pos": ["DET", "ADV", "ADV", "ADJ", "ADJ", "NOUN", "VERB"],
+            }
+        )
+
+    def test_mton_range_pattern(self, repetition_corpus):
+        """Test MToN with range {m,n}"""
+        # Between 1 and 3 adverbs
+        adv_pattern = Token(pl.col("pos") == "ADV")
+        pattern = MToN(adv_pattern, m=1, n=3)
+        pattern.set_subject(repetition_corpus)
+
+        ctxt = ScanContext()
+        matches = list(pattern._op(ctxt, 1))  # Start at "very very"
+        assert 2 in matches  # After 1 ADV
+        assert 3 in matches  # After 2 ADVs
+        assert 4 not in matches  # Would need 3 ADVs but next is ADJ
+
+    def test_mton_minimum_only(self, repetition_corpus):
+        """Test MToN with minimum only {m,}"""
+        adj_pattern = Token(pl.col("pos") == "ADJ")
+        pattern = MToN(adj_pattern, m=2, n=None)
+        pattern.set_subject(repetition_corpus)
+
+        ctxt = ScanContext()
+        matches = list(pattern._op(ctxt, 3))  # Start at "quick brown"
+        assert 5 in matches  # After exactly 2 ADJs
+        assert 6 not in matches  # No 3rd ADJ available
+
+    def test_mton_valid_starts_behavior(self, repetition_corpus):
+        """Test that MToN correctly computes valid_starts"""
+        adj_pattern = Token(pl.col("pos") == "ADJ")
+
+        # {1,3} should inherit valid_starts from subpattern
+        pattern_with_min = MToN(adj_pattern, m=1, n=3)
+        pattern_with_min.set_subject(repetition_corpus)
+        expected = np.array([False, False, False, True, True, False, False])
+        np.testing.assert_array_equal(pattern_with_min.valid_starts, expected)
+
+        # {0,3} should have valid_starts=None
+        pattern_with_zero = MToN(adj_pattern, m=0, n=3)
+        pattern_with_zero.set_subject(repetition_corpus)
+        assert pattern_with_zero.valid_starts is None
+
+
+class TestCQPMToNParsing:
+    """Test parsing of {m,n} syntax in CQP expressions"""
+
+    def test_all_mton_syntax_variants(self):
+        """Test all four {m,n} syntax variants"""
+        # Exact count
+        result = cqp.parse_string('[pos="ADJ"]{3}')
+        assert isinstance(result[0], MToN)
+        assert result[0].min == 3 and result[0].max == 3
+
+        # Range
+        result = cqp.parse_string('[pos="ADJ"]{2,5}')
+        assert isinstance(result[0], MToN)
+        assert result[0].min == 2 and result[0].max == 5
+
+        # Minimum only
+        result = cqp.parse_string('[pos="ADJ"]{2,}')
+        assert isinstance(result[0], MToN)
+        assert result[0].min == 2 and result[0].max is None
+
+        # Maximum only
+        result = cqp.parse_string('[pos="ADJ"]{,3}')
+        assert isinstance(result[0], MToN)
+        assert result[0].min == 0 and result[0].max == 3
+
+    def test_mton_in_sequences(self):
+        """Test {m,n} patterns in sequences"""
+        result = cqp.parse_string('[pos="DET"] [pos="ADJ"]{1,3} [pos="NOUN"]')
+        assert isinstance(result[0], Concat)
+
+        # Navigate the right-associative structure: Concat(DET, Concat(MToN(ADJ), NOUN))
+        outer = result[0]
+        assert isinstance(outer.subpatterns[0], Token)  # DET
+        inner = outer.subpatterns[1]
+        assert isinstance(inner, Concat)
+        assert isinstance(inner.subpatterns[0], MToN)  # ADJ{1,3}
+
+
+class TestMToNIntegration:
+    """Integration tests for MToN patterns"""
+
+    @pytest.fixture
+    def linguistic_corpus(self):
+        return pl.DataFrame(
+            {
+                "word": ["the", "quick", "brown", "fox", "runs", "fast"],
+                "pos": ["DET", "ADJ", "ADJ", "NOUN", "VERB", "ADV"],
+            }
+        )
+
+    def test_noun_phrase_with_variable_adjectives(self, linguistic_corpus):
+        """Test realistic NP pattern: DET ADJ{1,3} NOUN"""
+        pattern = cqp.parse_string('[pos="DET"] [pos="ADJ"]{1,3} [pos="NOUN"]')
+        matches = list(pattern[0].matchall(linguistic_corpus))
+
+        assert len(matches) == 1
+        assert matches[0]["word"].to_list() == ["the", "quick", "brown", "fox"]
+
+    def test_mton_equivalences(self):
+        """Test that MToN is equivalent to existing patterns where applicable"""
+        corpus = pl.DataFrame({"pos": ["ADJ", "ADJ", "NOUN"]})
+        adj_token = Token(pl.col("pos") == "ADJ")
+
+        # {0,1} should equal ?
+        mton_optional = MToN(adj_token, m=0, n=1)
+        question_pattern = OneOrZero(adj_token)
+
+        mton_optional.set_subject(corpus)
+        question_pattern.set_subject(corpus)
+
+        ctxt = ScanContext()
+        mton_matches = set(mton_optional._op(ctxt, 0))
+        question_matches = set(question_pattern._op(ctxt, 0))
+        assert mton_matches == question_matches
+
+
 class TestUnimplementedFeatures:
     """Tests for CQP features not yet implemented - these will fail until implemented"""
 
@@ -1198,24 +1328,6 @@ class TestUnimplementedFeatures:
         # Should match everything except NOUN positions (3, 8)
         expected = np.array([True, True, True, False, True, True, True, True, False])
         np.testing.assert_array_equal(matches, expected)
-
-    @pytest.mark.skip(reason="Numeric repetition not implemented")
-    def test_numeric_repetition(self, historical_corpus):
-        """Test numeric repetition patterns {n}, {n,m}"""
-        # Exactly 2 adjectives
-        pattern_exact = cqp.parse_string('[pos="ADJ"]{2}')
-        # Between 1 and 3 adjectives
-        pattern_range = cqp.parse_string('[pos="ADJ"]{1,3}')
-        # At least 2 adjectives
-        pattern_min = cqp.parse_string('[pos="ADJ"]{2,}')
-
-        assert isinstance(pattern_exact[0], NumericRepetition)
-        assert pattern_exact[0].min_count == 2
-        assert pattern_exact[0].max_count == 2
-
-        assert isinstance(pattern_range[0], NumericRepetition)
-        assert pattern_range[0].min_count == 1
-        assert pattern_range[0].max_count == 3
 
     @pytest.mark.skip(reason="Variable binding not implemented")
     def test_variable_binding(self, historical_corpus):

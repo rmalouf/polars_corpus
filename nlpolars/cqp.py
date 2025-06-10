@@ -14,6 +14,7 @@ from tqdm import tqdm
 ##  3. != and ! in token expressions
 ##  4. improved valid_starts when the first thing can match the empty string
 
+
 class ScanContext:
     __slots__ = "max", "vars", "bindings", "trace"
 
@@ -140,37 +141,41 @@ class Skip(Pattern):
         yield cursor + 1
 
 
-class ZeroOrMore(Pattern):
-    def __init__(self, pattern: Pattern) -> None:
+class MToN(Pattern):
+    def __init__(self, pattern: Pattern, m: int = 0, n: Optional[int] = None) -> None:
         super().__init__()
         self.subpatterns = [pattern]
+        self.min = m
+        self.max = n
 
     def set_subject(self, subject: pl.DataFrame) -> None:
         super().set_subject(subject)
-        self.valid_starts = None
+        if self.min < 1:
+            self.valid_starts = None
 
     def _op(self, ctxt: ScanContext, cursor: int) -> Iterator[int]:
-        yield cursor
-        stack = [self.subpatterns[0]._op(ctxt, cursor)]
+        if self.min == 0:
+            yield cursor
+        stack = [(1, self.subpatterns[0]._op(ctxt, cursor))]
         while stack:
             try:
-                cursor = next(stack[-1])
-                yield cursor
-                stack.append(self.subpatterns[0]._op(ctxt, cursor))
+                i, cursor = stack[-1][0], next(stack[-1][1])
+                if i >= self.min:
+                    yield cursor
+                if self.max is None or i < self.max:
+                    stack.append((i + 1, self.subpatterns[0]._op(ctxt, cursor)))
             except StopIteration:
                 stack.pop()
 
 
-class OneOrMore(Pattern):
+class ZeroOrMore(MToN):
     def __init__(self, pattern: Pattern) -> None:
-        super().__init__()
-        self.subpatterns = [pattern]
+        super().__init__(pattern, m=0)
 
-    def _op(self, ctxt: ScanContext, cursor: int) -> Iterator[int]:
-        for i in self.subpatterns[0]._op(ctxt, cursor):
-            yield i
-            for j in ZeroOrMore(self.subpatterns[0])._op(ctxt, i):
-                yield j
+
+class OneOrMore(MToN):
+    def __init__(self, pattern: Pattern) -> None:
+        super().__init__(pattern, m=1)
 
 
 class OneOrZero(Pattern):
@@ -225,7 +230,8 @@ def pairwise_compose(fn: Callable[..., Pattern], items: list[Pattern]) -> Patter
         return fn(items[0], pairwise_compose(fn, items[1:]))
 
 
-feature = pp.Word(pp.alphas)
+feature = pp.Word(pp.alphas + pp.nums)
+number = pp.Word(pp.nums)
 value = pp.QuotedString('"')
 
 constraint_formula = pp.Forward()
@@ -263,6 +269,23 @@ repetition = (
     (primary + pp.Suppress("*")).set_parse_action(lambda e: ZeroOrMore(e[0]))
     | (primary + pp.Suppress("+")).set_parse_action(lambda e: OneOrMore(e[0]))
     | (primary + pp.Suppress("?")).set_parse_action(lambda e: OneOrZero(e[0]))
+    | (
+        primary
+        + pp.Suppress("{")
+        + number
+        + pp.Suppress(",")
+        + number
+        + pp.Suppress("}")
+    ).set_parse_action(lambda e: MToN(e[0], m=int(e[1]), n=int(e[2])))
+    | (
+        primary + pp.Suppress("{") + number + pp.Suppress(",") + pp.Suppress("}")
+    ).set_parse_action(lambda e: MToN(e[0], m=int(e[1])))
+    | (
+        primary + pp.Suppress("{") + pp.Suppress(",") + number + pp.Suppress("}")
+    ).set_parse_action(lambda e: MToN(e[0], n=int(e[1])))
+    | (primary + pp.Suppress("{") + number + pp.Suppress("}")).set_parse_action(
+        lambda e: MToN(e[0], m=int(e[1]), n=int(e[1]))
+    )
     | primary
 )
 
