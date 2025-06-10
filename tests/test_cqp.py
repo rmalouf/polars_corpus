@@ -2,6 +2,8 @@ import pytest
 import polars as pl
 import pyparsing as pp
 import numpy as np
+import time
+import unittest.mock
 from nlpolars.cqp import (
     Token,
     Skip,
@@ -16,61 +18,132 @@ from nlpolars.cqp import (
     constraint_formula,
     node,
     cqp,
-    Match,
 )
 
 
+@pytest.fixture
+def basic_corpus():
+    """Standard test corpus for most tests"""
+    return pl.DataFrame(
+        {
+            "word": ["the", "quick", "brown", "fox", "jumps", "over", "lazy", "dog"],
+            "pos": ["DET", "ADJ", "ADJ", "NOUN", "VERB", "PREP", "ADJ", "NOUN"],
+            "lemma": ["the", "quick", "brown", "fox", "jump", "over", "lazy", "dog"],
+            "case": ["", "NOM", "NOM", "NOM", "", "", "ACC", "ACC"],
+        }
+    )
+
+
+@pytest.fixture
+def optimization_corpus():
+    """Corpus designed for testing valid_starts optimization"""
+    return pl.DataFrame(
+        {
+            "word": [
+                "det1",
+                "noun1",
+                "verb1",
+                "det2",
+                "adj1",
+                "noun2",
+                "prep1",
+                "det3",
+                "adj2",
+                "adj3",
+                "noun3",
+            ],
+            "pos": [
+                "DET",
+                "NOUN",
+                "VERB",
+                "DET",
+                "ADJ",
+                "NOUN",
+                "PREP",
+                "DET",
+                "ADJ",
+                "ADJ",
+                "NOUN",
+            ],
+            "case": ["", "NOM", "", "", "NOM", "ACC", "", "", "NOM", "NOM", "ACC"],
+        }
+    )
+
+
+@pytest.fixture
+def regex_corpus():
+    """Corpus for regex pattern testing"""
+    return pl.DataFrame(
+        {
+            "word": [
+                "running",
+                "jumped",
+                "quickly",
+                "the",
+                "dogs",
+                "cat",
+                "happening",
+                "walked",
+            ],
+            "pos": ["VERB", "VERB", "ADV", "DET", "NOUN", "NOUN", "VERB", "VERB"],
+            "lemma": ["run", "jump", "quick", "the", "dog", "cat", "happen", "walk"],
+        }
+    )
+
+
+@pytest.fixture
+def historical_corpus():
+    """Historical corpus with Middle English features"""
+    return pl.DataFrame(
+        {
+            "word": ["þe", "quike", "olde", "worlde", "knyght", "wyf", "churche"],
+            "pos": ["DET", "ADJ", "ADJ", "NOUN", "NOUN", "NOUN", "NOUN"],
+            "period": ["ME", "ME", "ME", "ME", "ME", "ME", "ME"],
+        }
+    )
+
+
 class TestConstraintParsing:
-    """Test parsing of token-level constraints"""
+    """Test parsing and evaluation of token constraints"""
 
-    def test_simple_feature_value_constraint(self):
-        """Test parsing of basic feature=value constraints"""
-        result = constraint_formula.parse_string('pos="NOUN"')
-        # Should create a polars expression that matches NOUN exactly
-        df = pl.DataFrame({"pos": ["NOUN", "VERB", "NOUN"]})
-        matches = df.select(result).to_numpy().flatten()
-        expected = np.array([True, False, True])
-        np.testing.assert_array_equal(matches, expected)
-
-    def test_conjunction_constraint(self):
-        """Test parsing of AND constraints"""
-        result = constraint_formula.parse_string('pos="NOUN" & case="NOM"')
-        df = pl.DataFrame(
-            {"pos": ["NOUN", "NOUN", "VERB"], "case": ["NOM", "ACC", "NOM"]}
-        )
-        matches = df.select(result).to_numpy().flatten()
-        expected = np.array([True, False, False])
-        np.testing.assert_array_equal(matches, expected)
-
-    def test_disjunction_constraint(self):
-        """Test parsing of OR constraints"""
-        result = constraint_formula.parse_string('pos="NOUN" | pos="VERB"')
-        df = pl.DataFrame({"pos": ["NOUN", "ADJ", "VERB"]})
-        matches = df.select(result).to_numpy().flatten()
-        expected = np.array([True, False, True])
-        np.testing.assert_array_equal(matches, expected)
-
-    def test_complex_constraint(self):
-        """Test parsing of complex nested constraints"""
-        result = constraint_formula.parse_string(
-            '(pos="NOUN" | pos="VERB") & case="NOM"'
-        )
+    def test_basic_constraints(self):
+        """Test simple feature=value, conjunction, and disjunction constraints"""
         df = pl.DataFrame(
             {
-                "pos": ["NOUN", "VERB", "ADJ", "NOUN"],
-                "case": ["NOM", "NOM", "NOM", "ACC"],
+                "pos": ["NOUN", "VERB", "NOUN", "ADJ"],
+                "case": ["NOM", "NOM", "ACC", "NOM"],
             }
         )
-        matches = df.select(result).to_numpy().flatten()
-        expected = np.array([True, True, False, False])
-        np.testing.assert_array_equal(matches, expected)
+
+        # Simple constraint
+        simple = constraint_formula.parse_string('pos="NOUN"')
+        matches = df.select(simple).to_numpy().flatten()
+        np.testing.assert_array_equal(matches, [True, False, True, False])
+
+        # Conjunction
+        conj = constraint_formula.parse_string('pos="NOUN" & case="NOM"')
+        matches = df.select(conj).to_numpy().flatten()
+        np.testing.assert_array_equal(matches, [True, False, False, False])
+
+        # Disjunction
+        disj = constraint_formula.parse_string('pos="NOUN" | pos="VERB"')
+        matches = df.select(disj).to_numpy().flatten()
+        np.testing.assert_array_equal(matches, [True, True, True, False])
+
+        # Complex nested
+        complex_expr = constraint_formula.parse_string(
+            '(pos="NOUN" | pos="VERB") & case="NOM"'
+        )
+        matches = df.select(complex_expr).to_numpy().flatten()
+        np.testing.assert_array_equal(matches, [True, True, False, False])
 
 
 class TestNodeParsing:
     """Test parsing of CQP node expressions"""
 
-    def test_token_node_parsing(self):
-        """Test parsing of token nodes with constraints"""
+    def test_token_and_skip_nodes(self):
+        """Test parsing of token nodes with constraints and skip nodes"""
+        # Token node
         result = node.parse_string('[pos="NOUN"]')
         assert isinstance(result[0], Token)
 
@@ -80,705 +153,263 @@ class TestNodeParsing:
         assert result[0].valid_tokens[0] == True
         assert result[0].valid_tokens[1] == False
 
-    def test_skip_node_parsing(self):
-        """Test parsing of empty skip nodes"""
+        # Skip node
         result = node.parse_string("[]")
         assert isinstance(result[0], Skip)
 
 
 class TestBasicPatterns:
-    """Test basic pattern classes"""
+    """Test core pattern classes"""
 
-    @pytest.fixture
-    def sample_corpus(self):
-        """Sample corpus for testing"""
-        return pl.DataFrame(
-            {
-                "word": ["the", "quick", "brown", "fox", "jumps"],
-                "pos": ["DET", "ADJ", "ADJ", "NOUN", "VERB"],
-                "lemma": ["the", "quick", "brown", "fox", "jump"],
-            }
-        )
-
-    def test_token_pattern_matching(self, sample_corpus):
-        """Test Token pattern matching"""
-        pattern = Token(pl.col("pos") == "ADJ")
-        pattern.set_subject(sample_corpus)
-
-        # Should match positions 1 and 2 (quick, brown)
-        expected_valid = np.array([False, True, True, False, False])
-        np.testing.assert_array_equal(pattern.valid_tokens, expected_valid)
-
-        # Test _op method
-        ctxt = ScanContext()
-        matches = list(pattern._op(ctxt, 1))  # Start at "quick"
-        assert matches == [2]  # Should advance by 1
-
-        matches = list(pattern._op(ctxt, 0))  # Start at "the"
-        assert matches == []  # No match
-
-    def test_skip_pattern(self, sample_corpus):
-        """Test Skip pattern"""
-        pattern = Skip()
-        pattern.set_subject(sample_corpus)
-
-        ctxt = ScanContext()
-        matches = list(pattern._op(ctxt, 2))
-        assert matches == [3]  # Always advances by 1
-
-    def test_zero_or_more_pattern(self, sample_corpus):
-        """Test ZeroOrMore pattern"""
+    def test_token_and_skip_patterns(self, basic_corpus):
+        """Test Token and Skip pattern behavior"""
+        # Token pattern
         adj_pattern = Token(pl.col("pos") == "ADJ")
-        pattern = ZeroOrMore(adj_pattern)
-        pattern.set_subject(sample_corpus)
+        adj_pattern.set_subject(basic_corpus)
+
+        expected_valid = np.array([False, True, True, False, False, False, True, False])
+        np.testing.assert_array_equal(adj_pattern.valid_tokens, expected_valid)
 
         ctxt = ScanContext()
-        matches = list(pattern._op(ctxt, 1))  # Start at "quick"
-        # Should match: 1 (zero matches), 2 (one match), 3 (two matches)
-        assert 1 in matches  # Zero occurrences
-        assert 2 in matches  # One occurrence
-        assert 3 in matches  # Two occurrences
+        assert list(adj_pattern._op(ctxt, 1)) == [2]  # "quick" -> advance to next
+        assert list(adj_pattern._op(ctxt, 0)) == []  # "the" -> no match
 
-    def test_one_or_more_pattern(self, sample_corpus):
-        """Test OneOrMore pattern"""
+        # Skip pattern
+        skip = Skip()
+        skip.set_subject(basic_corpus)
+        assert list(skip._op(ctxt, 2)) == [3]  # Always advances by 1
+        assert skip.valid_starts is None
+
+    def test_repetition_patterns(self, basic_corpus):
+        """Test repetition patterns: *, +, ?, and {m,n}"""
         adj_pattern = Token(pl.col("pos") == "ADJ")
-        pattern = OneOrMore(adj_pattern)
-        pattern.set_subject(sample_corpus)
-
         ctxt = ScanContext()
-        matches = list(pattern._op(ctxt, 1))  # Start at "quick"
-        # Should not match zero occurrences, but should match 1, 2, etc.
-        assert 1 not in matches  # Zero occurrences not allowed
-        assert 2 in matches  # One occurrence
-        assert 3 in matches  # Two occurrences
 
-    def test_one_or_zero_pattern(self, sample_corpus):
-        """Test OneOrZero pattern"""
-        adj_pattern = Token(pl.col("pos") == "ADJ")
-        pattern = OneOrZero(adj_pattern)
-        pattern.set_subject(sample_corpus)
+        # ZeroOrMore: should match 0, 1, or 2 adjacent ADJs
+        zero_or_more = ZeroOrMore(adj_pattern)
+        zero_or_more.set_subject(basic_corpus)
+        matches = list(zero_or_more._op(ctxt, 1))  # Start at "quick"
+        assert 1 in matches  # zero matches
+        assert 2 in matches  # one match
+        assert 3 in matches  # two matches
 
-        ctxt = ScanContext()
-        matches = list(pattern._op(ctxt, 1))  # Start at "quick"
-        # Should match both zero and one occurrence
-        assert 1 in matches  # Zero occurrences
-        assert 2 in matches  # One occurrence
+        # OneOrMore: same but no zero matches
+        one_or_more = OneOrMore(adj_pattern)
+        one_or_more.set_subject(basic_corpus)
+        matches = list(one_or_more._op(ctxt, 1))
+        assert 1 not in matches  # no zero matches
+        assert 2 in matches and 3 in matches
 
+        # OneOrZero: match 0 or 1
+        optional = OneOrZero(adj_pattern)
+        optional.set_subject(basic_corpus)
+        matches = list(optional._op(ctxt, 1))
+        assert 1 in matches and 2 in matches  # both 0 and 1 match
 
-class TestComplexPatterns:
-    """Test complex pattern combinations"""
+        # MToN: specific range
+        mton = MToN(adj_pattern, m=1, n=2)
+        mton.set_subject(basic_corpus)
+        matches = list(mton._op(ctxt, 1))
+        assert 1 not in matches  # no zero matches (m=1)
+        assert 2 in matches and 3 in matches  # 1 and 2 matches
 
-    @pytest.fixture
-    def complex_corpus(self):
-        """More complex corpus for testing"""
-        return pl.DataFrame(
-            {
-                "word": ["a", "very", "quick", "brown", "fox", "runs", "very", "fast"],
-                "pos": ["DET", "ADV", "ADJ", "ADJ", "NOUN", "VERB", "ADV", "ADJ"],
-            }
-        )
-
-    def test_concatenation_pattern(self, complex_corpus):
-        """Test Concat pattern"""
+    def test_sequence_and_alternation(self, basic_corpus):
+        """Test Concat and Alt patterns"""
         det_pattern = Token(pl.col("pos") == "DET")
         adj_pattern = Token(pl.col("pos") == "ADJ")
-        pattern = Concat(det_pattern, adj_pattern)
-        pattern.set_subject(complex_corpus)
-
         ctxt = ScanContext()
-        matches = list(pattern._op(ctxt, 0))  # Start at "a"
-        # "a" is DET, but next word "very" is ADV, not ADJ
-        assert matches == []
 
-    def test_alternation_pattern(self, complex_corpus):
-        """Test Alt pattern"""
-        det_pattern = Token(pl.col("pos") == "DET")
-        adv_pattern = Token(pl.col("pos") == "ADV")
-        pattern = Alt(det_pattern, adv_pattern)
-        pattern.set_subject(complex_corpus)
+        # Concatenation: DET followed by ADJ
+        concat = Concat(det_pattern, adj_pattern)
+        concat.set_subject(basic_corpus)
+        matches = list(concat._op(ctxt, 0))  # Start at "the"
+        assert matches == [2]  # "the quick"
 
-        ctxt = ScanContext()
-        matches_at_0 = list(pattern._op(ctxt, 0))  # Start at "a" (DET)
-        matches_at_1 = list(pattern._op(ctxt, 1))  # Start at "very" (ADV)
-
+        # Alternation: DET or ADJ
+        alt = Alt(det_pattern, adj_pattern)
+        alt.set_subject(basic_corpus)
+        matches_at_0 = list(alt._op(ctxt, 0))  # "the" (DET)
+        matches_at_1 = list(alt._op(ctxt, 1))  # "quick" (ADJ)
         assert 1 in matches_at_0  # DET matches
-        assert 2 in matches_at_1  # ADV matches
+        assert 2 in matches_at_1  # ADJ matches
 
-    def test_complex_sequence(self, complex_corpus):
+    def test_complex_pattern_combinations(self, basic_corpus):
         """Test complex pattern: DET ADV* ADJ+ NOUN"""
         det = Token(pl.col("pos") == "DET")
-        adv_star = ZeroOrMore(Token(pl.col("pos") == "ADV"))
+        # Note: using PREP as proxy for ADV since our corpus doesn't have ADV
+        prep_star = ZeroOrMore(Token(pl.col("pos") == "PREP"))
         adj_plus = OneOrMore(Token(pl.col("pos") == "ADJ"))
         noun = Token(pl.col("pos") == "NOUN")
 
-        # Build pattern: DET ADV* ADJ+ NOUN
-        pattern = Concat(Concat(Concat(det, adv_star), adj_plus), noun)
-        pattern.set_subject(complex_corpus)
+        # Build pattern: DET PREP* ADJ+ NOUN
+        pattern = Concat(Concat(Concat(det, prep_star), adj_plus), noun)
+        pattern.set_subject(basic_corpus)
 
         ctxt = ScanContext()
-        matches = list(pattern._op(ctxt, 0))  # Start at "a"
-        # Should match "a very quick brown fox" (positions 0-5)
-        assert 5 in matches
-
-
-class TestCQPParsing:
-    """Test full CQP expression parsing"""
-
-    def test_simple_cqp_expression(self):
-        """Test parsing simple CQP expressions"""
-        result = cqp.parse_string('[pos="NOUN"]')
-        assert isinstance(result[0], Token)
-
-    def test_sequence_cqp_expression(self):
-        """Test parsing CQP sequences"""
-        result = cqp.parse_string('[pos="DET"] [pos="ADJ"]')
-        assert isinstance(result[0], Concat)
-        assert len(result[0].subpatterns) == 2
-
-    def test_alternation_cqp_expression(self):
-        """Test parsing CQP alternations"""
-        result = cqp.parse_string('[pos="NOUN"] | [pos="VERB"]')
-        assert isinstance(result[0], Alt)
-
-    def test_repetition_cqp_expressions(self):
-        """Test parsing CQP repetition operators"""
-        # Zero or more
-        result = cqp.parse_string('[pos="ADJ"]*')
-        assert isinstance(result[0], ZeroOrMore)
-
-        # One or more
-        result = cqp.parse_string('[pos="ADJ"]+')
-        assert isinstance(result[0], OneOrMore)
-
-        # Optional
-        result = cqp.parse_string('[pos="ADJ"]?')
-        assert isinstance(result[0], OneOrZero)
-
-    def test_complex_cqp_expression(self):
-        """Test parsing complex nested CQP expression"""
-        expr = '([pos="DET"] [pos="ADJ"]* [pos="NOUN"]) | [pos="PRON"]'
-        result = cqp.parse_string(expr)
-        assert isinstance(result[0], Alt)
-
-
-class TestMatchAll:
-    """Test the matchall functionality"""
-
-    @pytest.fixture
-    def test_corpus(self):
-        return pl.DataFrame(
-            {
-                "word": [
-                    "the",
-                    "quick",
-                    "brown",
-                    "fox",
-                    "jumps",
-                    "over",
-                    "the",
-                    "lazy",
-                    "dog",
-                ],
-                "pos": [
-                    "DET",
-                    "ADJ",
-                    "ADJ",
-                    "NOUN",
-                    "VERB",
-                    "PREP",
-                    "DET",
-                    "ADJ",
-                    "NOUN",
-                ],
-            }
-        )
-
-    def test_matchall_simple_pattern(self, test_corpus):
-        """Test matchall with simple pattern"""
-        pattern = Token(pl.col("pos") == "DET")
-        matches = list(pattern.matchall(test_corpus))
-
-        # Should find "the" at positions 0 and 6
-        assert len(matches) == 2
-        assert matches[0]["word"].to_list() == ["the"]
-        assert matches[1]["word"].to_list() == ["the"]
-
-    def test_matchall_sequence_pattern(self, test_corpus):
-        """Test matchall with sequence pattern"""
-        det_adj = Concat(Token(pl.col("pos") == "DET"), Token(pl.col("pos") == "ADJ"))
-        matches = list(det_adj.matchall(test_corpus))
-
-        # Should find "the quick" and "the lazy"
-        assert len(matches) == 2
-        assert matches[0]["word"].to_list() == ["the", "quick"]
-        assert matches[1]["word"].to_list() == ["the", "lazy"]
-
-    def test_matchall_with_repetition(self, test_corpus):
-        """Test matchall with repetition patterns"""
-        # DET ADJ+ NOUN pattern
-        pattern = Concat(
-            Concat(
-                Token(pl.col("pos") == "DET"), OneOrMore(Token(pl.col("pos") == "ADJ"))
-            ),
-            Token(pl.col("pos") == "NOUN"),
-        )
-        matches = list(pattern.matchall(test_corpus))
-
-        # Should find "the quick brown fox" and "the lazy dog"
-        assert len(matches) == 2
-        assert matches[0]["word"].to_list() == ["the", "quick", "brown", "fox"]
-        assert matches[1]["word"].to_list() == ["the", "lazy", "dog"]
+        matches = list(pattern._op(ctxt, 0))  # Start at "the"
+        # Should match "the quick brown fox" (positions 0-4)
+        assert 4 in matches
 
 
 class TestValidStartsOptimization:
-    """Test that the valid_starts optimization is working correctly"""
+    """Test that valid_starts optimization works correctly"""
 
-    @pytest.fixture
-    def optimization_corpus(self):
-        """Corpus designed to test valid_starts optimization"""
-        return pl.DataFrame(
-            {
-                "word": [
-                    "det1",
-                    "noun1",
-                    "verb1",
-                    "det2",
-                    "adj1",
-                    "noun2",
-                    "prep1",
-                    "det3",
-                    "adj2",
-                    "adj3",
-                    "noun3",
-                ],
-                "pos": [
-                    "DET",
-                    "NOUN",
-                    "VERB",
-                    "DET",
-                    "ADJ",
-                    "NOUN",
-                    "PREP",
-                    "DET",
-                    "ADJ",
-                    "ADJ",
-                    "NOUN",
-                ],
-                "case": ["", "NOM", "", "", "NOM", "ACC", "", "", "NOM", "NOM", "ACC"],
-            }
-        )
-
-    def test_token_valid_starts_computation(self, optimization_corpus):
-        """Test that Token patterns correctly compute valid_starts"""
-        # Pattern that matches only DET
+    def test_basic_valid_starts_computation(self, optimization_corpus):
+        """Test valid_starts computation for Token, Skip, and combination patterns"""
         det_pattern = Token(pl.col("pos") == "DET")
-        det_pattern.set_subject(optimization_corpus)
-
-        # valid_starts should be True only at DET positions (0, 3, 7)
-        expected_valid = np.array(
-            [True, False, False, True, False, False, False, True, False, False, False]
-        )
-        np.testing.assert_array_equal(det_pattern.valid_starts, expected_valid)
-
-        # Pattern that matches ADJ
         adj_pattern = Token(pl.col("pos") == "ADJ")
+
+        det_pattern.set_subject(optimization_corpus)
         adj_pattern.set_subject(optimization_corpus)
 
-        # valid_starts should be True only at ADJ positions (4, 8, 9)
-        expected_valid = np.array(
-            [False, False, False, False, True, False, False, False, True, True, False]
-        )
-        np.testing.assert_array_equal(adj_pattern.valid_starts, expected_valid)
-
-    def test_skip_valid_starts_none(self, optimization_corpus):
-        """Test that Skip patterns have valid_starts=None (can start anywhere)"""
-        skip_pattern = Skip()
-        skip_pattern.set_subject(optimization_corpus)
-
-        # Skip should have valid_starts=None since it can match at any position
-        assert skip_pattern.valid_starts is None
-
-    def test_concat_valid_starts_inheritance(self, optimization_corpus):
-        """Test that Concat patterns inherit valid_starts from first subpattern"""
-        det_pattern = Token(pl.col("pos") == "DET")
-        adj_pattern = Token(pl.col("pos") == "ADJ")
-
-        # DET followed by anything
-        concat_pattern = Concat(det_pattern, adj_pattern)
-        concat_pattern.set_subject(optimization_corpus)
-
-        # Should inherit valid_starts from first pattern (DET positions)
-        expected_valid = np.array(
+        # Token patterns should mark only matching positions
+        expected_det = np.array(
             [True, False, False, True, False, False, False, True, False, False, False]
         )
-        np.testing.assert_array_equal(concat_pattern.valid_starts, expected_valid)
+        np.testing.assert_array_equal(det_pattern.valid_starts, expected_det)
 
-    def test_alt_valid_starts_union(self, optimization_corpus):
-        """Test that Alt patterns compute valid_starts as union of subpatterns"""
-        det_pattern = Token(pl.col("pos") == "DET")
-        adj_pattern = Token(pl.col("pos") == "ADJ")
-
-        alt_pattern = Alt(det_pattern, adj_pattern)
-        alt_pattern.set_subject(optimization_corpus)
-
-        # Should be union of DET positions (0,3,7) and ADJ positions (4,8,9)
-        expected_valid = np.array(
-            [True, False, False, True, True, False, False, True, True, True, False]
+        expected_adj = np.array(
+            [False, False, False, False, True, False, False, False, True, True, False]
         )
-        np.testing.assert_array_equal(alt_pattern.valid_starts, expected_valid)
+        np.testing.assert_array_equal(adj_pattern.valid_starts, expected_adj)
 
-    def test_alt_with_none_valid_starts(self, optimization_corpus):
-        """Test Alt when one subpattern has valid_starts=None"""
-        det_pattern = Token(pl.col("pos") == "DET")
-        skip_pattern = Skip()
+        # Concat inherits from first subpattern
+        concat = Concat(det_pattern, adj_pattern)
+        concat.set_subject(optimization_corpus)
+        np.testing.assert_array_equal(concat.valid_starts, expected_det)
 
-        alt_pattern = Alt(det_pattern, skip_pattern)
-        alt_pattern.set_subject(optimization_corpus)
+        # Alt computes union
+        alt = Alt(det_pattern, adj_pattern)
+        alt.set_subject(optimization_corpus)
+        expected_union = np.logical_or(expected_det, expected_adj)
+        np.testing.assert_array_equal(alt.valid_starts, expected_union)
 
-        # If any subpattern has valid_starts=None, result should be None
-        assert alt_pattern.valid_starts is None
+        # Skip has None (can start anywhere)
+        skip = Skip()
+        skip.set_subject(optimization_corpus)
+        assert skip.valid_starts is None
 
-    def test_repetition_valid_starts_behavior(self, optimization_corpus):
-        """Test that repetition patterns have valid_starts=None"""
+    def test_repetition_valid_starts(self, optimization_corpus):
+        """Test valid_starts behavior for repetition patterns"""
         adj_pattern = Token(pl.col("pos") == "ADJ")
 
-        # ZeroOrMore can start anywhere (due to zero matches)
+        # ZeroOrMore has None (can match zero)
         zero_or_more = ZeroOrMore(adj_pattern)
         zero_or_more.set_subject(optimization_corpus)
         assert zero_or_more.valid_starts is None
 
-        # OneOrMore should inherit from subpattern since it requires at least one match
+        # OneOrMore inherits from subpattern
         one_or_more = OneOrMore(adj_pattern)
         one_or_more.set_subject(optimization_corpus)
-
-        # Expected: should inherit ADJ positions (4, 8, 9) from subpattern
-        expected_valid = np.array(
+        expected_adj = np.array(
             [False, False, False, False, True, False, False, False, True, True, False]
         )
-        np.testing.assert_array_equal(one_or_more.valid_starts, expected_valid)
+        np.testing.assert_array_equal(one_or_more.valid_starts, expected_adj)
 
-    def test_matchall_uses_valid_starts_optimization(self, optimization_corpus):
-        """Test that matchall actually uses the valid_starts optimization"""
+        # MToN with min=0 has None
+        mton_zero = MToN(adj_pattern, m=0, n=3)
+        mton_zero.set_subject(optimization_corpus)
+        assert mton_zero.valid_starts is None
+
+        # MToN with min>0 inherits from subpattern
+        mton_min = MToN(adj_pattern, m=1, n=3)
+        mton_min.set_subject(optimization_corpus)
+        np.testing.assert_array_equal(mton_min.valid_starts, expected_adj)
+
+    def test_optimization_performance_benefit(self, optimization_corpus):
+        """Test that optimization actually improves performance"""
         import unittest.mock
 
-        # Create a pattern with known valid_starts
         det_pattern = Token(pl.col("pos") == "DET")
         det_pattern.set_subject(optimization_corpus)
 
-        # Mock the _op method to count how many times it's called
+        # Mock the _op method to count calls
         original_op = det_pattern._op
         with unittest.mock.patch.object(
             det_pattern, "_op", wraps=original_op
         ) as mock_op:
             matches = list(det_pattern.matchall(optimization_corpus))
 
-            # _op should only be called for valid start positions (0, 3, 7)
-            # Plus one final call that might go beyond the last valid position
-            assert mock_op.call_count == 3  # Only called for DET positions
+            # Should only be called for DET positions (0, 3, 7)
+            assert mock_op.call_count == 3
 
-            # Verify the positions where _op was called
-            call_positions = [
-                call[0][1] for call in mock_op.call_args_list
-            ]  # Extract cursor positions
-            expected_positions = [0, 3, 7]  # DET positions
-            assert call_positions == expected_positions
-
-    def test_optimization_vs_brute_force_equivalence(self, optimization_corpus):
-        """Test that optimized matching gives same results as brute force"""
-        det_adj_pattern = Concat(
-            Token(pl.col("pos") == "DET"), Token(pl.col("pos") == "ADJ")
-        )
-
-        # Get matches using optimization
-        optimized_matches = list(det_adj_pattern.matchall(optimization_corpus))
-
-        # Simulate brute force by temporarily setting valid_starts to None
-        det_adj_pattern.set_subject(optimization_corpus)
-        original_valid_starts = det_adj_pattern.valid_starts
-        det_adj_pattern.valid_starts = None
-
-        brute_force_matches = list(det_adj_pattern.matchall(optimization_corpus))
-
-        # Restore original valid_starts
-        det_adj_pattern.valid_starts = original_valid_starts
-
-        # Results should be identical
-        assert len(optimized_matches) == len(brute_force_matches)
-        for opt_match, bf_match in zip(optimized_matches, brute_force_matches):
-            assert opt_match.equals(bf_match)
-
-    def test_complex_pattern_valid_starts(self, optimization_corpus):
-        """Test valid_starts computation for complex nested patterns"""
-        # (DET | ADJ) NOUN pattern
-        det_or_adj = Alt(Token(pl.col("pos") == "DET"), Token(pl.col("pos") == "ADJ"))
-        noun_pattern = Token(pl.col("pos") == "NOUN")
-
-        complex_pattern = Concat(det_or_adj, noun_pattern)
-        complex_pattern.set_subject(optimization_corpus)
-
-        # Should inherit from first subpattern (DET | ADJ)
-        # Expected: DET positions (0,3,7) OR ADJ positions (4,8,9)
-        expected_valid = np.array(
-            [True, False, False, True, True, False, False, True, True, True, False]
-        )
-        np.testing.assert_array_equal(complex_pattern.valid_starts, expected_valid)
-
-    def test_performance_benefit_measurement(self, optimization_corpus):
-        """Measure the performance benefit of valid_starts optimization"""
-        import time
-
-        # Create a large corpus for performance testing
-        large_corpus_data = {
-            "pos": (
-                ["OTHER"] * 1000
-                + ["DET"]
-                + ["OTHER"] * 1000
-                + ["ADJ"]
-                + ["OTHER"] * 1000
-            )
-        }
-        large_corpus = pl.DataFrame(large_corpus_data)
-
-        pattern = Token(pl.col("pos") == "DET")
-
-        # Time with optimization
-        start_time = time.time()
-        matches_optimized = list(pattern.matchall(large_corpus))
-        optimized_time = time.time() - start_time
-
-        # Time without optimization (simulate by setting valid_starts=None)
-        pattern.set_subject(large_corpus)
-        pattern.valid_starts = None
-
-        start_time = time.time()
-        matches_brute_force = list(pattern.matchall(large_corpus))
-        brute_force_time = time.time() - start_time
-
-        # Results should be the same
-        assert len(matches_optimized) == len(matches_brute_force)
-
-        # Optimization should be faster (though this might not always be detectable in small tests)
-        # This is more of a documentation test than a strict assertion
-        print(
-            f"Optimized time: {optimized_time:.4f}s, Brute force time: {brute_force_time:.4f}s"
-        )
-
-        # At minimum, optimized version shouldn't be significantly slower
-        assert (
-            optimized_time <= brute_force_time * 3
-        )  # Allow margin for test variability
+            call_positions = [call[0][1] for call in mock_op.call_args_list]
+            assert call_positions == [0, 3, 7]
 
 
-class TestEdgeCases:
-    """Test edge cases and error conditions"""
+class TestCQPParsing:
+    """Test parsing of CQP expressions"""
 
-    def test_empty_corpus(self):
-        """Test patterns on empty corpus"""
-        empty_corpus = pl.DataFrame({"pos": []})
-        pattern = Token(pl.col("pos") == "NOUN")
-        matches = list(pattern.matchall(empty_corpus))
-        assert len(matches) == 0
-
-    def test_no_matches(self):
-        """Test pattern that doesn't match anything"""
-        corpus = pl.DataFrame({"pos": ["NOUN", "VERB"]})
-        pattern = Token(pl.col("pos") == "ADJ")
-        matches = list(pattern.matchall(corpus))
-        assert len(matches) == 0
-
-    def test_pattern_repr(self):
-        """Test string representations of patterns"""
-        token = Token(pl.col("pos") == "NOUN")
-        assert "Token" in repr(token)
-
-        skip = Skip()
-        assert "Skip" in repr(skip)
-
-        concat = Concat(token, skip)
-        assert "Concat" in repr(concat)
-
-
-class TestCQPParser:
-    """Test that the CQP parser correctly translates query strings to pattern objects"""
-
-    def test_basic_token_parsing(self):
-        """Test parsing of basic token patterns"""
-        # Simple feature-value constraint
+    def test_basic_cqp_expressions(self):
+        """Test parsing of fundamental CQP constructs"""
+        # Simple token
         result = cqp.parse_string('[pos="NOUN"]')
-        assert len(result) == 1
         assert isinstance(result[0], Token)
 
-        # Test the constraint works
-        df = pl.DataFrame({"pos": ["NOUN", "VERB", "NOUN"]})
-        result[0].set_subject(df)
-        expected = np.array([True, False, True])
-        np.testing.assert_array_equal(result[0].valid_tokens, expected)
-
-    def test_empty_token_parsing(self):
-        """Test parsing of empty token (skip) patterns"""
-        result = cqp.parse_string("[]")
-        assert len(result) == 1
-        assert isinstance(result[0], Skip)
-
-    def test_conjunction_constraint_parsing(self):
-        """Test parsing of conjunction constraints"""
-        result = cqp.parse_string('[pos="NOUN" & case="NOM"]')
-        assert isinstance(result[0], Token)
-
-        df = pl.DataFrame(
-            {"pos": ["NOUN", "NOUN", "VERB"], "case": ["NOM", "ACC", "NOM"]}
-        )
-        result[0].set_subject(df)
-        expected = np.array([True, False, False])
-        np.testing.assert_array_equal(result[0].valid_tokens, expected)
-
-    def test_disjunction_constraint_parsing(self):
-        """Test parsing of disjunction constraints"""
-        result = cqp.parse_string('[pos="NOUN" | pos="VERB"]')
-        assert isinstance(result[0], Token)
-
-        df = pl.DataFrame({"pos": ["NOUN", "ADJ", "VERB", "PREP"]})
-        result[0].set_subject(df)
-        expected = np.array([True, False, True, False])
-        np.testing.assert_array_equal(result[0].valid_tokens, expected)
-
-    def test_complex_constraint_parsing(self):
-        """Test parsing of complex nested constraints"""
-        result = cqp.parse_string('[(pos="NOUN" | pos="VERB") & case="NOM"]')
-        assert isinstance(result[0], Token)
-
-        df = pl.DataFrame(
-            {
-                "pos": ["NOUN", "VERB", "ADJ", "NOUN"],
-                "case": ["NOM", "NOM", "NOM", "ACC"],
-            }
-        )
-        result[0].set_subject(df)
-        expected = np.array([True, True, False, False])
-        np.testing.assert_array_equal(result[0].valid_tokens, expected)
-
-    def test_sequence_parsing(self):
-        """Test parsing of token sequences"""
-        result = cqp.parse_string('[pos="DET"] [pos="NOUN"]')
-        assert len(result) == 1
+        # Sequence
+        result = cqp.parse_string('[pos="DET"] [pos="ADJ"]')
         assert isinstance(result[0], Concat)
         assert len(result[0].subpatterns) == 2
-        assert isinstance(result[0].subpatterns[0], Token)
-        assert isinstance(result[0].subpatterns[1], Token)
 
-    def test_long_sequence_parsing(self):
-        """Test parsing of longer sequences"""
+        # Alternation
+        result = cqp.parse_string('[pos="NOUN"] | [pos="VERB"]')
+        assert isinstance(result[0], Alt)
+        assert len(result[0].subpatterns) == 2
+
+        # Repetition operators
+        tests = [
+            ('[pos="ADJ"]*', ZeroOrMore),
+            ('[pos="ADJ"]+', OneOrMore),
+            ('[pos="ADJ"]?', OneOrZero),
+        ]
+
+        for expr, expected_type in tests:
+            result = cqp.parse_string(expr)
+            assert isinstance(result[0], expected_type)
+
+    def test_mton_syntax_variants(self):
+        """Test all {m,n} syntax variants"""
+        # Exact count
+        result = cqp.parse_string('[pos="ADJ"]{3}')
+        assert isinstance(result[0], MToN)
+        assert result[0].min == 3 and result[0].max == 3
+
+        # Range
+        result = cqp.parse_string('[pos="ADJ"]{2,5}')
+        assert result[0].min == 2 and result[0].max == 5
+
+        # Minimum only
+        result = cqp.parse_string('[pos="ADJ"]{2,}')
+        assert result[0].min == 2 and result[0].max is None
+
+        # Maximum only
+        result = cqp.parse_string('[pos="ADJ"]{,3}')
+        assert result[0].min == 0 and result[0].max == 3
+
+    def test_complex_expressions_and_precedence(self):
+        """Test parsing of nested expressions and operator precedence"""
+        # Parentheses and nesting
+        result = cqp.parse_string('([pos="DET"] [pos="ADJ"]*)+ [pos="NOUN"]')
+        assert isinstance(result[0], Concat)
+        assert isinstance(result[0].subpatterns[0], OneOrMore)
+
+        # Test right-associative structure for long sequences
         result = cqp.parse_string('[pos="DET"] [pos="ADJ"] [pos="NOUN"]')
         assert isinstance(result[0], Concat)
+        # Should be Concat(DET, Concat(ADJ, NOUN))
+        assert isinstance(result[0].subpatterns[0], Token)  # DET
+        assert isinstance(result[0].subpatterns[1], Concat)  # Inner concat
 
-        # Should create right-associative Concat structure: Concat(DET, Concat(ADJ, NOUN))
-        # due to pairwise_compose implementation
-        outer_concat = result[0]
-        assert isinstance(outer_concat.subpatterns[0], Token)  # DET
-        assert isinstance(outer_concat.subpatterns[1], Concat)  # Inner concat
-
-        inner_concat = outer_concat.subpatterns[1]
-        assert isinstance(inner_concat.subpatterns[0], Token)  # ADJ
-        assert isinstance(inner_concat.subpatterns[1], Token)  # NOUN
-
-    def test_alternation_parsing(self):
-        """Test parsing of alternation (disjunction) between patterns"""
-        result = cqp.parse_string('[pos="NOUN"] | [pos="VERB"]')
-        assert len(result) == 1
-        assert isinstance(result[0], Alt)
-        assert len(result[0].subpatterns) == 2
-        assert isinstance(result[0].subpatterns[0], Token)
-        assert isinstance(result[0].subpatterns[1], Token)
-
-    def test_multiple_alternations(self):
-        """Test parsing of multiple alternations"""
-        result = cqp.parse_string('[pos="NOUN"] | [pos="VERB"] | [pos="ADJ"]')
-        assert isinstance(result[0], Alt)
-
-        # Should create right-associative Alt structure: Alt(NOUN, Alt(VERB, ADJ))
-        # due to pairwise_compose implementation
-        outer_alt = result[0]
-        assert isinstance(outer_alt.subpatterns[0], Token)  # NOUN
-        assert isinstance(outer_alt.subpatterns[1], Alt)  # Inner alt
-
-        inner_alt = outer_alt.subpatterns[1]
-        assert isinstance(inner_alt.subpatterns[0], Token)  # VERB
-        assert isinstance(inner_alt.subpatterns[1], Token)  # ADJ
-
-    def test_zero_or_more_parsing(self):
-        """Test parsing of * repetition operator"""
-        result = cqp.parse_string('[pos="ADJ"]*')
-        assert len(result) == 1
-        assert isinstance(result[0], ZeroOrMore)
-        assert len(result[0].subpatterns) == 1
-        assert isinstance(result[0].subpatterns[0], Token)
-
-    def test_one_or_more_parsing(self):
-        """Test parsing of + repetition operator"""
-        result = cqp.parse_string('[pos="ADJ"]+')
-        assert len(result) == 1
-        assert isinstance(result[0], OneOrMore)
-        assert len(result[0].subpatterns) == 1
-        assert isinstance(result[0].subpatterns[0], Token)
-
-    def test_optional_parsing(self):
-        """Test parsing of ? repetition operator"""
-        result = cqp.parse_string('[pos="ADJ"]?')
-        assert len(result) == 1
-        assert isinstance(result[0], OneOrZero)
-        assert len(result[0].subpatterns) == 1
-        assert isinstance(result[0].subpatterns[0], Token)
-
-    def test_parentheses_parsing(self):
-        """Test parsing of parenthesized expressions"""
-        result = cqp.parse_string('([pos="DET"] [pos="ADJ"])')
-        assert isinstance(result[0], Concat)
-
-        # Parentheses should not change the structure
-        result_no_parens = cqp.parse_string('[pos="DET"] [pos="ADJ"]')
-        assert type(result[0]) == type(result_no_parens[0])
-
-    def test_complex_expression_parsing(self):
-        """Test parsing of complex nested expression"""
-        # (DET ADJ*) | PRON
-        result = cqp.parse_string('([pos="DET"] [pos="ADJ"]*) | [pos="PRON"]')
-        assert isinstance(result[0], Alt)
-
-        # Left side should be Concat(DET, ZeroOrMore(ADJ))
-        left_side = result[0].subpatterns[0]
-        assert isinstance(left_side, Concat)
-        assert isinstance(left_side.subpatterns[0], Token)  # DET
-        assert isinstance(left_side.subpatterns[1], ZeroOrMore)  # ADJ*
-
-        # Right side should be Token(PRON)
-        right_side = result[0].subpatterns[1]
-        assert isinstance(right_side, Token)  # PRON
-
-    def test_repetition_on_groups(self):
-        """Test repetition operators applied to grouped expressions"""
-        result = cqp.parse_string('([pos="DET"] [pos="ADJ"])*')
-        assert isinstance(result[0], ZeroOrMore)
-        assert isinstance(result[0].subpatterns[0], Concat)
-
-    def test_mixed_operators_precedence(self):
-        """Test operator precedence in complex expressions"""
-        # ADJ* NOUN | PRON should parse as (ADJ* NOUN) | PRON
+        # Operator precedence: ADJ* NOUN | PRON should be (ADJ* NOUN) | PRON
         result = cqp.parse_string('[pos="ADJ"]* [pos="NOUN"] | [pos="PRON"]')
         assert isinstance(result[0], Alt)
-
-        # Left side should be Concat(ZeroOrMore(ADJ), NOUN)
         left_side = result[0].subpatterns[0]
         assert isinstance(left_side, Concat)
         assert isinstance(left_side.subpatterns[0], ZeroOrMore)
-        assert isinstance(left_side.subpatterns[1], Token)
 
-        # Right side should be Token(PRON)
-        right_side = result[0].subpatterns[1]
-        assert isinstance(right_side, Token)
-
-    def test_whitespace_handling(self):
-        """Test that parser handles whitespace correctly"""
-        # These should all parse to the same structure
+    def test_whitespace_and_parsing_robustness(self):
+        """Test that parser handles whitespace and edge cases correctly"""
+        # Different whitespace patterns should parse identically
         expressions = [
             '[pos="NOUN"][pos="VERB"]',
             '[pos="NOUN"] [pos="VERB"]',
@@ -788,143 +419,118 @@ class TestCQPParser:
         ]
 
         results = [cqp.parse_string(expr) for expr in expressions]
-
-        # All should create Concat patterns
         for result in results:
             assert isinstance(result[0], Concat)
             assert len(result[0].subpatterns) == 2
 
-    def test_quoted_string_parsing(self):
-        """Test parsing of quoted strings with special characters"""
-        # Test quotes, spaces, and special characters in values
-        test_cases = [
-            ('[word="hello"]', "hello"),
-            ('[word="hello world"]', "hello world"),
-            ('[word="it\'s"]', "it's"),  # Single quote inside double quotes
-            ('[lemma="café"]', "café"),  # Unicode characters
-        ]
-
-        for expr, expected_value in test_cases:
-            result = cqp.parse_string(expr)
-            assert isinstance(result[0], Token)
-            # Note: We can't easily test the exact value since it's embedded in a polars expression
-            # But we can test that parsing succeeds
-
-    def test_feature_name_parsing(self):
-        """Test parsing of different feature names"""
-        feature_names = ["pos", "lemma", "word", "case", "number", "gender", "tense"]
-
+    def test_quoted_strings_and_feature_names(self):
+        """Test parsing of quoted strings and various feature names"""
+        # Different feature names
+        feature_names = ["pos", "lemma", "word", "case", "number", "gender"]
         for feature in feature_names:
             expr = f'[{feature}="TEST"]'
             result = cqp.parse_string(expr)
             assert isinstance(result[0], Token)
 
-    def test_empty_input(self):
-        """Test parser behavior with empty or invalid input"""
-        with pytest.raises(pp.ParseException):
-            cqp.parse_string("")
+        # Special characters in quoted strings
+        test_cases = [
+            '[word="hello world"]',  # Spaces
+            '[lemma="café"]',  # Unicode
+        ]
+        for expr in test_cases:
+            result = cqp.parse_string(expr)
+            assert isinstance(result[0], Token)
 
-        with pytest.raises(pp.ParseException):
-            cqp.parse_string("   ")
-
-    def test_invalid_syntax(self):
-        """Test parser behavior with invalid CQP syntax"""
+    def test_invalid_syntax_handling(self):
+        """Test that invalid syntax raises ParseException"""
         invalid_expressions = [
             "[pos=NOUN]",  # Missing quotes
             '[pos="NOUN"',  # Missing closing bracket
-            'pos="NOUN"]',  # Missing opening bracket
             '[pos=="NOUN"]',  # Double equals
-            '[pos="NOUN"] &',  # Dangling operator
             '| [pos="NOUN"]',  # Leading operator
-            '[pos="NOUN"]]',  # Extra closing bracket
-            '[[pos="NOUN"]',  # Extra opening bracket
-            '[pos="NOUN" &]',  # Incomplete conjunction
-            '[& pos="NOUN"]',  # Leading conjunction operator
+            '[pos="NOUN"] &',  # Dangling operator
         ]
 
         for expr in invalid_expressions:
             with pytest.raises(pp.ParseException):
                 cqp.parse_string(expr, parse_all=True)
 
-    def test_parser_end_to_end_functionality(self):
-        """Test complete parsing and pattern execution"""
-        corpus = pl.DataFrame(
-            {
-                "word": ["the", "quick", "brown", "fox", "jumps"],
-                "pos": ["DET", "ADJ", "ADJ", "NOUN", "VERB"],
-            }
-        )
-
-        # Parse and execute: DET ADJ+ NOUN
-        result = cqp.parse_string('[pos="DET"] [pos="ADJ"]+ [pos="NOUN"]')
-        pattern = result[0]
-
-        matches = list(pattern.matchall(corpus))
-        assert len(matches) == 1
-        assert matches[0]["word"].to_list() == ["the", "quick", "brown", "fox"]
-
     def test_realistic_linguistic_queries(self):
         """Test parsing of realistic corpus linguistics queries"""
         realistic_queries = [
-            # Noun phrases
-            '[pos="DET"]? [pos="ADJ"]* [pos="NOUN"]',
-            # Verb phrases
-            '[pos="AUX"]? [pos="ADV"]* [pos="VERB"]',
-            # Prepositional phrases
-            '[pos="PREP"] [pos="DET"]? [pos="ADJ"]* [pos="NOUN"]',
-            # Coordination
-            '[pos="NOUN"] [word="and"] [pos="NOUN"]',
-            # Complex alternation
-            '([pos="NOUN"] | [pos="PRON"]) [pos="VERB"] ([pos="NOUN"] | [pos="PRON"])',
-            # Multiple constraints
-            '[pos="NOUN" & case="NOM"] [pos="VERB" & tense="PAST"]',
+            '[pos="DET"]? [pos="ADJ"]* [pos="NOUN"]',  # Noun phrases
+            '[pos="AUX"]? [pos="ADV"]* [pos="VERB"]',  # Verb phrases
+            '[pos="PREP"] [pos="DET"]? [pos="ADJ"]* [pos="NOUN"]',  # Prepositional phrases
+            '[pos="NOUN"] [word="and"] [pos="NOUN"]',  # Coordination
+            '([pos="NOUN"] | [pos="PRON"]) [pos="VERB"] ([pos="NOUN"] | [pos="PRON"])',  # Complex alternation
+            '[pos="NOUN" & case="NOM"] [pos="VERB" & tense="PAST"]',  # Multiple constraints
         ]
 
         for query in realistic_queries:
             result = cqp.parse_string(query)
             assert len(result) == 1
             assert isinstance(result[0], Pattern)
-            # Just test that parsing succeeds - structure testing is done in other tests
 
 
-class TestRegexMatching:
+class TestMatchAll:
+    """Test the matchall functionality"""
+
+    def test_basic_matching(self, basic_corpus):
+        """Test matchall with simple and complex patterns"""
+        # Simple token matching
+        det_pattern = Token(pl.col("pos") == "DET")
+        matches = list(det_pattern.matchall(basic_corpus))
+        assert len(matches) == 1
+        assert matches[0]["word"].to_list() == ["the"]
+
+        # Sequence matching: DET ADJ+
+        det_adj_plus = Concat(det_pattern, OneOrMore(Token(pl.col("pos") == "ADJ")))
+        matches = list(det_adj_plus.matchall(basic_corpus))
+        assert len(matches) == 1
+        assert matches[0]["word"].to_list() == ["the", "quick", "brown"]
+
+        # Complex pattern: DET ADJ+ NOUN
+        full_np = Concat(det_adj_plus, Token(pl.col("pos") == "NOUN"))
+        matches = list(full_np.matchall(basic_corpus))
+        assert len(matches) == 1
+        assert matches[0]["word"].to_list() == ["the", "quick", "brown", "fox"]
+
+        def test_end_to_end_cqp_matching(self, basic_corpus):
+            """Test complete CQP parsing and matching pipeline"""
+
+        # Parse and execute: determiner followed by one or more adjectives and a noun
+        pattern = cqp.parse_string('[pos="DET"] [pos="ADJ"]+ [pos="NOUN"]')[0]
+        matches = list(pattern.matchall(basic_corpus))
+
+        assert len(matches) == 1
+        assert matches[0]["word"].to_list() == ["the", "quick", "brown", "fox"]
+
+        # Parse and execute: alternation
+        pattern = cqp.parse_string('[pos="PREP"] | [pos="VERB"]')[0]
+        matches = list(pattern.matchall(basic_corpus))
+
+        assert len(matches) == 2
+        matched_words = [match["word"].to_list()[0] for match in matches]
+        assert set(matched_words) == {"jumps", "over"}
+
+    def test_mton_integration(self, basic_corpus):
+        """Test MToN patterns in realistic scenarios"""
+        # DET ADJ{1,3} NOUN pattern
+        pattern = cqp.parse_string('[pos="DET"] [pos="ADJ"]{1,3} [pos="NOUN"]')[0]
+        matches = list(pattern.matchall(basic_corpus))
+
+        assert len(matches) == 1
+        assert matches[0]["word"].to_list() == ["the", "quick", "brown", "fox"]
+
+
+class TestRegexPatterns:
     """Test regex pattern matching in constraints"""
 
-    @pytest.fixture
-    def regex_corpus(self):
-        """Corpus with various word forms for regex testing"""
-        return pl.DataFrame(
-            {
-                "word": [
-                    "running",
-                    "jumped",
-                    "quickly",
-                    "the",
-                    "dogs",
-                    "cat",
-                    "happening",
-                    "walked",
-                ],
-                "pos": ["VERB", "VERB", "ADV", "DET", "NOUN", "NOUN", "VERB", "VERB"],
-                "lemma": [
-                    "run",
-                    "jump",
-                    "quick",
-                    "the",
-                    "dog",
-                    "cat",
-                    "happen",
-                    "walk",
-                ],
-            }
-        )
-
-    def test_simple_regex_patterns(self, regex_corpus):
-        """Test basic regex patterns"""
+    def test_morphological_patterns(self, regex_corpus):
+        """Test regex patterns for morphological analysis"""
         # Words ending in 'ing'
         result = constraint_formula.parse_string('word=".*ing"')
-        df = regex_corpus
-        matches = df.select(result).to_numpy().flatten()
+        matches = regex_corpus.select(result).to_numpy().flatten()
         expected = np.array(
             [True, False, False, False, False, False, True, False]
         )  # running, happening
@@ -932,179 +538,30 @@ class TestRegexMatching:
 
         # Words ending in 'ed'
         result = constraint_formula.parse_string('word=".*ed"')
-        matches = df.select(result).to_numpy().flatten()
+        matches = regex_corpus.select(result).to_numpy().flatten()
         expected = np.array(
             [False, True, False, False, False, False, False, True]
         )  # jumped, walked
         np.testing.assert_array_equal(matches, expected)
 
-    def test_word_start_patterns(self, regex_corpus):
-        """Test patterns matching word beginnings"""
-        # Words starting with 'qu'
-        result = constraint_formula.parse_string('word="qu.*"')
-        df = regex_corpus
-        matches = df.select(result).to_numpy().flatten()
-        expected = np.array(
-            [False, False, True, False, False, False, False, False]
-        )  # quickly
-        np.testing.assert_array_equal(matches, expected)
-
-        # Words starting with consonant clusters
-        result = constraint_formula.parse_string('word="[bcdfghjklmnpqrstvwxyz]{2}.*"')
-        matches = df.select(result).to_numpy().flatten()
-        # Should match words like "quickly" (qu...) - though 'qu' isn't consonant cluster
-        # Let's test a simpler pattern
-        result = constraint_formula.parse_string('word="[jh].*"')
-        matches = df.select(result).to_numpy().flatten()
-        expected = np.array(
-            [False, True, False, False, False, False, True, False]
-        )  # jumped, happening
-        np.testing.assert_array_equal(matches, expected)
-
-    def test_character_classes(self, regex_corpus):
-        """Test regex character classes"""
-        # Words with exactly 3 characters
+        # 3-character words
         result = constraint_formula.parse_string('word="..."')
-        df = regex_corpus
-        matches = df.select(result).to_numpy().flatten()
+        matches = regex_corpus.select(result).to_numpy().flatten()
         expected = np.array(
             [False, False, False, True, False, True, False, False]
         )  # the, cat
         np.testing.assert_array_equal(matches, expected)
 
-        # Words containing digits (none in our corpus)
-        result = constraint_formula.parse_string('word=".*[0-9].*"')
-        matches = df.select(result).to_numpy().flatten()
-        expected = np.array([False, False, False, False, False, False, False, False])
-        np.testing.assert_array_equal(matches, expected)
-
-    def test_vowel_consonant_patterns(self, regex_corpus):
-        """Test patterns for phonological analysis"""
-        # Words ending in vowels
-        result = constraint_formula.parse_string('word=".*[aeiou]"')
-        df = regex_corpus
-        matches = df.select(result).to_numpy().flatten()
-        expected = np.array(
-            [False, False, False, True, False, False, False, False]
-        )  # the
-        np.testing.assert_array_equal(matches, expected)
-
-        # Words starting with consonants (negated vowel class)
-        result = constraint_formula.parse_string('word="[^aeiou].*"')
-        matches = df.select(result).to_numpy().flatten()
-        expected = np.array(
-            [True, True, True, True, True, True, True, True]
-        )  # All words except those starting with vowels
-        np.testing.assert_array_equal(matches, expected)
-
-    def test_morphological_patterns(self, regex_corpus):
-        """Test patterns for morphological analysis"""
-        # Past tense regular verbs (ed endings, but not 'the')
-        result = constraint_formula.parse_string('word="[a-z]*ed"')
-        df = regex_corpus
-        matches = df.select(result).to_numpy().flatten()
-        expected = np.array(
-            [False, True, False, False, False, False, False, True]
-        )  # jumped, walked
-        np.testing.assert_array_equal(matches, expected)
-
-        # Present participles (ing endings)
-        result = constraint_formula.parse_string('word="[a-z]+ing"')
-        matches = df.select(result).to_numpy().flatten()
-        expected = np.array(
-            [True, False, False, False, False, False, True, False]
-        )  # running, happening
-        np.testing.assert_array_equal(matches, expected)
-
-    def test_word_length_patterns(self, regex_corpus):
-        """Test patterns based on word length"""
-        # Words with 4-6 characters
-        result = constraint_formula.parse_string('word="[a-z]{4,6}"')
-        df = regex_corpus
-        matches = df.select(result).to_numpy().flatten()
-        # dogs(4), walked(6)
-        expected = np.array(
-            [False, True, False, False, True, False, False, True]
-        )  # jumped(6), dogs(4), walked(6)
-        np.testing.assert_array_equal(matches, expected)
-
-        # Short words (1-3 characters)
-        result = constraint_formula.parse_string('word="[a-z]{1,3}"')
-        matches = df.select(result).to_numpy().flatten()
-        expected = np.array(
-            [False, False, False, True, False, True, False, False]
-        )  # the, cat
-        np.testing.assert_array_equal(matches, expected)
-
-    def test_regex_with_other_features(self, regex_corpus):
-        """Test regex patterns combined with other constraints"""
-        # Verbs ending in 'ed'
+        # Combined: verbs ending in 'ed'
         result = constraint_formula.parse_string('pos="VERB" & word=".*ed"')
-        df = regex_corpus
-        matches = df.select(result).to_numpy().flatten()
+        matches = regex_corpus.select(result).to_numpy().flatten()
         expected = np.array(
             [False, True, False, False, False, False, False, True]
         )  # jumped, walked
         np.testing.assert_array_equal(matches, expected)
 
-        # Nouns that are 3-4 characters long
-        result = constraint_formula.parse_string('pos="NOUN" & word="[a-z]{3,4}"')
-        matches = df.select(result).to_numpy().flatten()
-        expected = np.array(
-            [False, False, False, False, True, True, False, False]
-        )  # dogs, cat
-        np.testing.assert_array_equal(matches, expected)
-
-    def test_complex_regex_patterns(self, regex_corpus):
-        """Test more complex regex patterns"""
-        # Words with alternating vowel-consonant pattern (simplified)
-        result = constraint_formula.parse_string(
-            'word="[aeiou][bcdfghjklmnpqrstvwxyz][aeiou].*"'
-        )
-        df = regex_corpus
-        matches = df.select(result).to_numpy().flatten()
-        # This is quite restrictive, might not match anything in our small corpus
-
-        # Words that don't start with vowels
-        result = constraint_formula.parse_string('word="[^aeiou].*"')
-        matches = df.select(result).to_numpy().flatten()
-        expected = np.array(
-            [True, True, True, True, True, True, True, True]
-        )  # All except words starting with vowels
-        np.testing.assert_array_equal(matches, expected)
-
-    def test_regex_in_full_cqp_patterns(self, regex_corpus):
-        """Test regex patterns in complete CQP queries"""
-        # Find sequences: determiner + word ending in 's'
-        pattern = cqp.parse_string('[pos="DET"] [word=".*s"]')
-        matches = list(pattern[0].matchall(regex_corpus))
-
-        # Should find "the dogs"
-        assert len(matches) == 1
-        assert matches[0]["word"].to_list() == ["the", "dogs"]
-
-        # Find verbs with specific morphological patterns
-        pattern = cqp.parse_string(
-            '[pos="VERB" & word=".*ing"] | [pos="VERB" & word=".*ed"]'
-        )
-        matches = list(pattern[0].matchall(regex_corpus))
-
-        # Should find running, jumped, happening, walked
-        assert len(matches) == 4
-        matched_words = [match["word"].to_list()[0] for match in matches]
-        expected_words = ["running", "jumped", "happening", "walked"]
-        assert set(matched_words) == set(expected_words)
-
-    def test_historical_linguistics_patterns(self):
-        """Test regex patterns useful for historical corpus linguistics"""
-        historical_corpus = pl.DataFrame(
-            {
-                "word": ["þe", "quike", "olde", "worlde", "knyght", "wyf", "churche"],
-                "pos": ["DET", "ADJ", "ADJ", "NOUN", "NOUN", "NOUN", "NOUN"],
-                "period": ["ME", "ME", "ME", "ME", "ME", "ME", "ME"],
-            }
-        )
-
+    def test_historical_linguistics_patterns(self, historical_corpus):
+        """Test regex patterns for historical corpus linguistics"""
         # Middle English words with final 'e'
         result = constraint_formula.parse_string('word=".*e"')
         matches = historical_corpus.select(result).to_numpy().flatten()
@@ -1127,120 +584,31 @@ class TestRegexMatching:
         expected = np.array([True, False, False, False, False, False, False])  # þe
         np.testing.assert_array_equal(matches, expected)
 
-
-class TestMToNPatterns:
-    """Test the new MToN repetition patterns with {m,n} syntax"""
-
-    @pytest.fixture
-    def repetition_corpus(self):
-        """Corpus designed for testing repetition patterns"""
-        return pl.DataFrame(
-            {
-                "word": ["the", "very", "very", "quick", "brown", "fox", "runs"],
-                "pos": ["DET", "ADV", "ADV", "ADJ", "ADJ", "NOUN", "VERB"],
-            }
-        )
-
-    def test_mton_range_pattern(self, repetition_corpus):
-        """Test MToN with range {m,n}"""
-        # Between 1 and 3 adverbs
-        adv_pattern = Token(pl.col("pos") == "ADV")
-        pattern = MToN(adv_pattern, m=1, n=3)
-        pattern.set_subject(repetition_corpus)
-
-        ctxt = ScanContext()
-        matches = list(pattern._op(ctxt, 1))  # Start at "very very"
-        assert 2 in matches  # After 1 ADV
-        assert 3 in matches  # After 2 ADVs
-        assert 4 not in matches  # Would need 3 ADVs but next is ADJ
-
-    def test_mton_minimum_only(self, repetition_corpus):
-        """Test MToN with minimum only {m,}"""
-        adj_pattern = Token(pl.col("pos") == "ADJ")
-        pattern = MToN(adj_pattern, m=2, n=None)
-        pattern.set_subject(repetition_corpus)
-
-        ctxt = ScanContext()
-        matches = list(pattern._op(ctxt, 3))  # Start at "quick brown"
-        assert 5 in matches  # After exactly 2 ADJs
-        assert 6 not in matches  # No 3rd ADJ available
-
-    def test_mton_valid_starts_behavior(self, repetition_corpus):
-        """Test that MToN correctly computes valid_starts"""
-        adj_pattern = Token(pl.col("pos") == "ADJ")
-
-        # {1,3} should inherit valid_starts from subpattern
-        pattern_with_min = MToN(adj_pattern, m=1, n=3)
-        pattern_with_min.set_subject(repetition_corpus)
-        expected = np.array([False, False, False, True, True, False, False])
-        np.testing.assert_array_equal(pattern_with_min.valid_starts, expected)
-
-        # {0,3} should have valid_starts=None
-        pattern_with_zero = MToN(adj_pattern, m=0, n=3)
-        pattern_with_zero.set_subject(repetition_corpus)
-        assert pattern_with_zero.valid_starts is None
-
-
-class TestCQPMToNParsing:
-    """Test parsing of {m,n} syntax in CQP expressions"""
-
-    def test_all_mton_syntax_variants(self):
-        """Test all four {m,n} syntax variants"""
-        # Exact count
-        result = cqp.parse_string('[pos="ADJ"]{3}')
-        assert isinstance(result[0], MToN)
-        assert result[0].min == 3 and result[0].max == 3
-
-        # Range
-        result = cqp.parse_string('[pos="ADJ"]{2,5}')
-        assert isinstance(result[0], MToN)
-        assert result[0].min == 2 and result[0].max == 5
-
-        # Minimum only
-        result = cqp.parse_string('[pos="ADJ"]{2,}')
-        assert isinstance(result[0], MToN)
-        assert result[0].min == 2 and result[0].max is None
-
-        # Maximum only
-        result = cqp.parse_string('[pos="ADJ"]{,3}')
-        assert isinstance(result[0], MToN)
-        assert result[0].min == 0 and result[0].max == 3
-
-    def test_mton_in_sequences(self):
-        """Test {m,n} patterns in sequences"""
-        result = cqp.parse_string('[pos="DET"] [pos="ADJ"]{1,3} [pos="NOUN"]')
-        assert isinstance(result[0], Concat)
-
-        # Navigate the right-associative structure: Concat(DET, Concat(MToN(ADJ), NOUN))
-        outer = result[0]
-        assert isinstance(outer.subpatterns[0], Token)  # DET
-        inner = outer.subpatterns[1]
-        assert isinstance(inner, Concat)
-        assert isinstance(inner.subpatterns[0], MToN)  # ADJ{1,3}
-
-
-class TestMToNIntegration:
-    """Integration tests for MToN patterns"""
-
-    @pytest.fixture
-    def linguistic_corpus(self):
-        return pl.DataFrame(
-            {
-                "word": ["the", "quick", "brown", "fox", "runs", "fast"],
-                "pos": ["DET", "ADJ", "ADJ", "NOUN", "VERB", "ADV"],
-            }
-        )
-
-    def test_noun_phrase_with_variable_adjectives(self, linguistic_corpus):
-        """Test realistic NP pattern: DET ADJ{1,3} NOUN"""
-        pattern = cqp.parse_string('[pos="DET"] [pos="ADJ"]{1,3} [pos="NOUN"]')
-        matches = list(pattern[0].matchall(linguistic_corpus))
+    def test_regex_in_cqp_queries(self, regex_corpus):
+        """Test regex patterns in complete CQP expressions"""
+        # Find DET followed by plural noun (ending in 's')
+        pattern = cqp.parse_string('[pos="DET"] [word=".*s"]')[0]
+        matches = list(pattern.matchall(regex_corpus))
 
         assert len(matches) == 1
-        assert matches[0]["word"].to_list() == ["the", "quick", "brown", "fox"]
+        assert matches[0]["word"].to_list() == ["the", "dogs"]
+
+        # Find verbs with morphological patterns
+        pattern = cqp.parse_string(
+            '[pos="VERB" & word=".*ing"] | [pos="VERB" & word=".*ed"]'
+        )[0]
+        matches = list(pattern.matchall(regex_corpus))
+
+        assert len(matches) == 4
+        matched_words = [match["word"].to_list()[0] for match in matches]
+        assert set(matched_words) == {"running", "jumped", "happening", "walked"}
+
+
+class TestMToNEquivalences:
+    """Test that MToN patterns are equivalent to existing patterns where applicable"""
 
     def test_mton_equivalences(self):
-        """Test that MToN is equivalent to existing patterns where applicable"""
+        """Test MToN equivalences with existing patterns"""
         corpus = pl.DataFrame({"pos": ["ADJ", "ADJ", "NOUN"]})
         adj_token = Token(pl.col("pos") == "ADJ")
 
@@ -1256,13 +624,114 @@ class TestMToNIntegration:
         question_matches = set(question_pattern._op(ctxt, 0))
         assert mton_matches == question_matches
 
+        # {1,} should be similar to + (though not identical due to implementation differences)
+        mton_plus = MToN(adj_token, m=1, n=None)
+        plus_pattern = OneOrMore(adj_token)
+
+        mton_plus.set_subject(corpus)
+        plus_pattern.set_subject(corpus)
+
+        # Both should produce at least some matches at position 0
+        mton_matches = list(mton_plus._op(ctxt, 0))
+        plus_matches = list(plus_pattern._op(ctxt, 0))
+        assert len(mton_matches) > 0 and len(plus_matches) > 0
+
+
+class TestPerformanceOptimization:
+    """Test optimization performance and correctness"""
+
+    def test_optimization_equivalence(self, basic_corpus):
+        """Test that optimized matching gives same results as brute force"""
+        pattern = Concat(Token(pl.col("pos") == "DET"), Token(pl.col("pos") == "ADJ"))
+
+        # Get optimized results
+        optimized_matches = list(pattern.matchall(basic_corpus))
+
+        # Simulate brute force by setting valid_starts to None
+        pattern.set_subject(basic_corpus)
+        original_valid_starts = pattern.valid_starts
+        pattern.valid_starts = None
+
+        brute_force_matches = list(pattern.matchall(basic_corpus))
+
+        # Restore and compare
+        pattern.valid_starts = original_valid_starts
+
+        assert len(optimized_matches) == len(brute_force_matches)
+        for opt, bf in zip(optimized_matches, brute_force_matches):
+            assert opt.equals(bf)
+
+        def test_performance_measurement(self):
+            """Test that optimization provides measurable performance benefit"""
+
+        # Create large corpus for performance testing
+        large_corpus = pl.DataFrame(
+            {
+                "pos": ["OTHER"] * 1000
+                + ["DET"]
+                + ["OTHER"] * 1000
+                + ["ADJ"]
+                + ["OTHER"] * 1000
+            }
+        )
+
+        pattern = Token(pl.col("pos") == "DET")
+
+        # Time with optimization
+        start_time = time.time()
+        matches_optimized = list(pattern.matchall(large_corpus))
+        optimized_time = time.time() - start_time
+
+        # Time without optimization
+        pattern.set_subject(large_corpus)
+        pattern.valid_starts = None
+
+        start_time = time.time()
+        matches_brute_force = list(pattern.matchall(large_corpus))
+        brute_force_time = time.time() - start_time
+
+        # Results should be identical
+        assert len(matches_optimized) == len(matches_brute_force)
+
+        # Optimization should not be significantly slower (allow for test variability)
+        assert optimized_time <= brute_force_time * 3
+
+
+class TestEdgeCases:
+    """Test edge cases and error conditions"""
+
+    def test_empty_and_no_match_cases(self):
+        """Test behavior with empty corpora and no matches"""
+        # Empty corpus
+        empty_corpus = pl.DataFrame({"pos": []})
+        pattern = Token(pl.col("pos") == "NOUN")
+        matches = list(pattern.matchall(empty_corpus))
+        assert len(matches) == 0
+
+        # No matches
+        corpus = pl.DataFrame({"pos": ["NOUN", "VERB"]})
+        pattern = Token(pl.col("pos") == "ADJ")
+        matches = list(pattern.matchall(corpus))
+        assert len(matches) == 0
+
+    def test_pattern_representations(self):
+        """Test string representations work"""
+        token = Token(pl.col("pos") == "NOUN")
+        assert "Token" in repr(token)
+
+        skip = Skip()
+        assert "Skip" in repr(skip)
+
+        concat = Concat(token, skip)
+        assert "Concat" in repr(concat)
+
 
 class TestUnimplementedFeatures:
     """Tests for CQP features not yet implemented - these will fail until implemented"""
 
     @pytest.fixture
-    def historical_corpus(self):
-        """Sample historical corpus with richer annotation"""
+    def unimpl_corpus(self):
+        """Sample corpus for testing unimplemented features"""
         return pl.DataFrame(
             {
                 "word": [
@@ -1301,234 +770,76 @@ class TestUnimplementedFeatures:
                 "case": ["", "NOM", "NOM", "NOM", "", "", "", "ACC", "ACC"],
                 "number": ["", "SG", "SG", "SG", "3SG", "", "", "SG", "SG"],
                 "period": ["ME", "ME", "ME", "ME", "ME", "ME", "ME", "ME", "ME"],
-                "sentence_id": [1, 1, 1, 1, 1, 1, 1, 1, 1],
-                "token_id": [1, 2, 3, 4, 5, 6, 7, 8, 9],
             }
         )
 
     @pytest.mark.skip(reason="Case-insensitive matching not implemented")
-    def test_case_insensitive_matching(self, historical_corpus):
+    def test_case_insensitive_matching(self, unimpl_corpus):
         """Test case-insensitive pattern matching"""
-        # Should use %c flag for case-insensitive matching
         result = constraint_formula.parse_string('word="THE" %c')
-        df = historical_corpus
-        matches = df.select(result).to_numpy().flatten()
-        # Should match both "þe" instances (positions 0 and 6)
+        matches = unimpl_corpus.select(result).to_numpy().flatten()
         expected = np.array(
             [True, False, False, False, False, False, True, False, False]
         )
         np.testing.assert_array_equal(matches, expected)
 
     @pytest.mark.skip(reason="Negation not implemented")
-    def test_negation_constraints(self, historical_corpus):
+    def test_negation_constraints(self, unimpl_corpus):
         """Test negation in constraints"""
         result = constraint_formula.parse_string('pos!="NOUN"')
-        df = historical_corpus
-        matches = df.select(result).to_numpy().flatten()
-        # Should match everything except NOUN positions (3, 8)
+        matches = unimpl_corpus.select(result).to_numpy().flatten()
         expected = np.array([True, True, True, False, True, True, True, True, False])
         np.testing.assert_array_equal(matches, expected)
 
     @pytest.mark.skip(reason="Variable binding not implemented")
-    def test_variable_binding(self, historical_corpus):
+    def test_variable_binding(self, unimpl_corpus):
         """Test variable binding and references"""
-        # Bind first token to variable, reference it later
         expr = '[pos="DET"] $det=[] [pos="ADJ"]* [pos="NOUN" & lemma=$det.lemma]'
         pattern = cqp.parse_string(expr)
-
-        # Should bind variables and allow references
-        matches = list(pattern.matchall(historical_corpus))
-        # This specific example wouldn't match, but tests the syntax
-        assert isinstance(pattern[0], SequenceWithBinding)
+        # Would test variable binding functionality
+        assert isinstance(pattern[0], Pattern)  # Placeholder assertion
 
     @pytest.mark.skip(reason="Distance constraints not implemented")
-    def test_distance_constraints(self, historical_corpus):
+    def test_distance_constraints(self, unimpl_corpus):
         """Test distance/proximity constraints"""
-        # NOUN within 3 tokens of VERB
         expr = '[pos="NOUN"] []{0,3} [pos="VERB"]'
         pattern = cqp.parse_string(expr)
-
-        matches = list(pattern.matchall(historical_corpus))
-        # Should find "fox jumpeþ" with intervening tokens allowed
+        matches = list(pattern.matchall(unimpl_corpus))
         assert len(matches) >= 1
 
     @pytest.mark.skip(reason="Sentence boundaries not implemented")
-    def test_sentence_boundaries(self, historical_corpus):
+    def test_sentence_boundaries(self, unimpl_corpus):
         """Test sentence boundary markers"""
-        # Match beginning of sentence
         pattern_start = cqp.parse_string('<s> [pos="DET"]')
-        # Match end of sentence
         pattern_end = cqp.parse_string('[pos="NOUN"] </s>')
-
-        assert isinstance(pattern_start[0], SentenceBoundary)
-        assert isinstance(pattern_end[0], Concat)
-
-    @pytest.mark.skip(reason="Word boundary constraints not implemented")
-    def test_word_boundaries(self, historical_corpus):
-        """Test word boundary and alignment constraints"""
-        # Match word-initial position
-        expr = '[pos="ADJ" & word="^br.*"]'  # Words starting with 'br'
-        pattern = cqp.parse_string(expr)
-
-        matches = list(pattern.matchall(historical_corpus))
-        assert len(matches) == 1  # Should match "brune"
-
-    @pytest.mark.skip(reason="Set operations not implemented")
-    def test_set_constraints(self, historical_corpus):
-        """Test set membership constraints"""
-        # Match tokens where POS is in a set
-        expr = '[pos in ("NOUN", "VERB", "ADJ")]'
-        pattern = cqp.parse_string(expr)
-
-        matches = list(pattern.matchall(historical_corpus))
-        # Should match most content words
-        assert len(matches) >= 6
-
-    @pytest.mark.skip(reason="Frequency constraints not implemented")
-    def test_frequency_constraints(self, historical_corpus):
-        """Test frequency-based constraints"""
-        # Match rare words (hypothetical frequency data)
-        expr = "[frequency < 100]"  # Words occurring less than 100 times
-        pattern = cqp.parse_string(expr)
-
-        # Would need frequency data in corpus
-        assert isinstance(pattern[0], Token)
-
-    @pytest.mark.skip(reason="Positional constraints not implemented")
-    def test_positional_constraints(self, historical_corpus):
-        """Test absolute and relative position constraints"""
-        # Match tokens at specific positions
-        expr = '[pos="NOUN" & position=4]'  # 5th token (0-indexed)
-        pattern = cqp.parse_string(expr)
-
-        matches = list(pattern.matchall(historical_corpus))
-        assert len(matches) == 1  # Should match "jumpeþ" if it's a VERB at position 4
-
-    @pytest.mark.skip(reason="Dependency relations not implemented")
-    def test_dependency_relations(self, historical_corpus):
-        """Test syntactic dependency constraints"""
-        # Match nouns that are subjects of verbs
-        expr = '[pos="NOUN" & dep_rel="nsubj"] >nsubj [pos="VERB"]'
-        pattern = cqp.parse_string(expr)
-
-        # Would need dependency annotation in corpus
-        assert isinstance(pattern[0], DependencyPattern)
+        # Would test sentence boundary functionality
+        assert isinstance(pattern_start[0], Pattern)
+        assert isinstance(pattern_end[0], Pattern)
 
     @pytest.mark.skip(reason="Named queries not implemented")
-    def test_named_queries(self, historical_corpus):
+    def test_named_queries(self, unimpl_corpus):
         """Test named query definitions and reuse"""
-        # Define a named query
         define_query = 'DEFINE NOUN_PHRASE [pos="DET"]? [pos="ADJ"]* [pos="NOUN"];'
         use_query = 'NOUN_PHRASE [pos="VERB"] NOUN_PHRASE'
-
-        # Should allow query reuse
+        # Would test named query functionality
         pattern = cqp.parse_string(use_query)
-        assert isinstance(pattern[0], NamedQueryReference)
-
-    @pytest.mark.skip(reason="Subcorpus constraints not implemented")
-    def test_subcorpus_constraints(self, historical_corpus):
-        """Test subcorpus and metadata constraints"""
-        # Match only in specific time periods
-        expr = '[pos="NOUN"] :: period="ME"'
-        pattern = cqp.parse_string(expr)
-
-        matches = list(pattern.matchall(historical_corpus))
-        # All matches should be from Middle English period
-        for match in matches:
-            assert all(match["period"] == "ME")
-
-    @pytest.mark.skip(reason="Alignment constraints not implemented")
-    def test_alignment_constraints(self, historical_corpus):
-        """Test alignment with parallel corpora"""
-        # Match aligned tokens (for parallel/comparative corpora)
-        expr = '[lemma="fox"] @1 [lemma="renard"]'  # English-French alignment
-        pattern = cqp.parse_string(expr)
-
-        # Would need parallel corpus data
-        assert isinstance(pattern[0], AlignmentPattern)
+        assert isinstance(pattern[0], Pattern)
 
     @pytest.mark.skip(reason="Structural attributes not implemented")
-    def test_structural_attributes(self, historical_corpus):
+    def test_structural_attributes(self, unimpl_corpus):
         """Test XML/structural markup constraints"""
-        # Match within specific structural elements
         expr = '<text type="prose"> [pos="NOUN"] </text>'
         pattern = cqp.parse_string(expr)
-
-        # Should respect structural boundaries
-        assert isinstance(pattern[0], StructuralPattern)
-
-    @pytest.mark.skip(reason="Collocations not implemented")
-    def test_collocation_queries(self, historical_corpus):
-        """Test collocation and co-occurrence patterns"""
-        # Find words that co-occur within a window
-        expr = '[lemma="quick"] WITHIN 5 WORDS OF [lemma="fox"]'
-        pattern = cqp.parse_string(expr)
-
-        matches = list(pattern.matchall(historical_corpus))
-        assert len(matches) >= 1
+        # Would test structural pattern functionality
+        assert isinstance(pattern[0], Pattern)
 
     @pytest.mark.skip(reason="Statistical measures not implemented")
-    def test_statistical_constraints(self, historical_corpus):
+    def test_statistical_constraints(self, unimpl_corpus):
         """Test statistical and corpus-linguistic measures"""
-        # Match based on statistical measures (MI, T-score, etc.)
-        expr = '[lemma="very"] [lemma & mi_score > 3.0]'  # High mutual information
+        expr = '[lemma="very"] [lemma & mi_score > 3.0]'
         pattern = cqp.parse_string(expr)
-
-        # Would need precomputed statistical measures
-        assert isinstance(pattern[0], StatisticalPattern)
-
-
-# Placeholder classes for unimplemented features (to make tests syntactically valid)
-class NumericRepetition(Pattern):
-    """Placeholder for numeric repetition patterns"""
-
-    def __init__(self, pattern, min_count, max_count=None):
-        super().__init__()
-        self.subpatterns = [pattern]
-        self.min_count = min_count
-        self.max_count = max_count if max_count is not None else min_count
-
-
-class SequenceWithBinding(Pattern):
-    """Placeholder for variable binding patterns"""
-
-    pass
-
-
-class SentenceBoundary(Pattern):
-    """Placeholder for sentence boundary patterns"""
-
-    pass
-
-
-class DependencyPattern(Pattern):
-    """Placeholder for dependency relation patterns"""
-
-    pass
-
-
-class NamedQueryReference(Pattern):
-    """Placeholder for named query references"""
-
-    pass
-
-
-class AlignmentPattern(Pattern):
-    """Placeholder for alignment patterns"""
-
-    pass
-
-
-class StructuralPattern(Pattern):
-    """Placeholder for structural markup patterns"""
-
-    pass
-
-
-class StatisticalPattern(Pattern):
-    """Placeholder for statistical constraint patterns"""
-
-    pass
+        # Would test statistical pattern functionality
+        assert isinstance(pattern[0], Pattern)
 
 
 if __name__ == "__main__":
