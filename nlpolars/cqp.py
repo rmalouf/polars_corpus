@@ -204,25 +204,25 @@ class Concat(Pattern):
                 yield j
 
 
+## switch to BFS search?
+
 class Alt(Pattern):
-    def __init__(self, pattern1: Pattern, pattern2: Pattern) -> None:
+    def __init__(self, *patterns: Pattern) -> None:
         super().__init__()
-        self.subpatterns = [pattern1, pattern2]
+        self.subpatterns = list(patterns)
 
     def set_subject(self, subject: pl.DataFrame) -> None:
         super().set_subject(subject)
-        if (self.subpatterns[0].valid_starts is not None) and (
-            self.subpatterns[1].valid_starts is not None
-        ):
-            self.valid_starts = np.logical_or(
-                self.subpatterns[0].valid_starts, self.subpatterns[1].valid_starts
+        if not any(p.valid_starts is None for p in self.subpatterns):
+            self.valid_starts = np.logical_or.reduce(
+                [p.valid_starts for p in self.subpatterns]
             )
         else:
             self.valid_starts = None
 
     def _op(self, ctxt: ScanContext, cursor: int) -> Iterator[int]:
-        yield from self.subpatterns[0]._op(ctxt, cursor)
-        yield from self.subpatterns[1]._op(ctxt, cursor)
+        for p in self.subpatterns:
+            yield from p._op(ctxt, cursor)
 
 
 ## compile token-level annotations into polars expressions
@@ -299,6 +299,9 @@ concatenation = (repetition + pp.ZeroOrMore(repetition)).set_parse_action(
 )
 
 disjunction = concatenation + pp.ZeroOrMore(pp.Suppress("|") + concatenation)
-disjunction = disjunction.set_parse_action(lambda toks: pairwise_compose(Alt, toks))
+disjunction = disjunction.set_parse_action(
+    lambda toks: Alt(*toks) if len(toks) > 1 else toks[0]
+)
+
 
 cqp <<= disjunction
