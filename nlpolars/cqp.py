@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections import namedtuple
+from collections import namedtuple, deque
 from typing import Callable, Iterator, Optional
 
 import numpy as np
@@ -161,16 +161,17 @@ class MToN(Pattern):
     def _op(self, ctxt: ScanContext, cursor: int) -> Iterator[int]:
         if self.min == 0:
             yield cursor
-        stack = [(1, self.subpatterns[0]._op(ctxt, cursor))]
-        while stack:
+        queue = deque([(1, self.subpatterns[0]._op(ctxt, cursor))])
+        while queue:
             try:
-                i, cursor = stack[-1][0], next(stack[-1][1])
+                i, gen = queue[0]
+                cursor = next(gen)
                 if i >= self.min:
                     yield cursor
                 if self.max is None or i < self.max:
-                    stack.append((i + 1, self.subpatterns[0]._op(ctxt, cursor)))
+                    queue.append((i + 1, self.subpatterns[0]._op(ctxt, cursor)))
             except StopIteration:
-                stack.pop()
+                queue.popleft()
 
 
 class ZeroOrMore(MToN):
