@@ -13,6 +13,11 @@ from tqdm import tqdm
 ##  2. case insensitive matching
 ##  3. != and ! in token expressions
 ##  4. improved valid_starts when the first thing can match the empty string
+##  5. lazy computation of valid_starts
+##  6. match sequence of tokens in one step
+##  7. error handling
+##  8. move parser into its own module
+##  9. documentation
 
 
 class ScanContext:
