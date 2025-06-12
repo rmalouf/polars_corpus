@@ -14,10 +14,11 @@ from tqdm import tqdm
 ##  3. != and ! in token expressions
 ##  4. improved valid_starts when the first thing can match the empty string
 ##  5. lazy computation of valid_starts
-##  6. match sequence of tokens in one step
+##  6. match sequence of tokens in one step (DONE)
 ##  7. error handling
 ##  8. move parser into its own module
 ##  9. documentation
+##  10. parallelize computation of valid_starts
 
 
 class ScanContext:
@@ -198,8 +199,20 @@ class Concat(Pattern):
     def __init__(self, *patterns: Pattern) -> None:
         super().__init__()
         self.subpatterns = list(patterns)
+        if False and all(isinstance(p, Token) for p in patterns):
+            self._op = self._fast_op
+        else:
+            self._op = self._slow_op
 
-    def _op(self, ctxt: ScanContext, cursor: int) -> Iterator[int]:
+    def _fast_op(self, ctxt: ScanContext, cursor: int) -> Iterator[int]:
+        try:
+            for p in self.subpatterns:
+                cursor = next(p._op(ctxt, cursor))
+            yield cursor
+        except StopIteration:
+            pass
+
+    def _slow_op(self, ctxt: ScanContext, cursor: int) -> Iterator[int]:
         def traverse(patterns: list[Pattern], cursor: int) -> Iterator[int]:
             if not patterns:
                 yield cursor
