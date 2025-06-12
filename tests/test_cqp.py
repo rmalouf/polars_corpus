@@ -393,12 +393,12 @@ class TestCQPParsing:
         assert isinstance(result[0], Concat)
         assert isinstance(result[0].subpatterns[0], OneOrMore)
 
-        # Test right-associative structure for long sequences
+        # Test long sequences
         result = cqp.parse_string('[pos="DET"] [pos="ADJ"] [pos="NOUN"]')
         assert isinstance(result[0], Concat)
         # Should be Concat(DET, Concat(ADJ, NOUN))
         assert isinstance(result[0].subpatterns[0], Token)  # DET
-        assert isinstance(result[0].subpatterns[1], Concat)  # Inner concat
+        assert isinstance(result[0].subpatterns[1], Token)
 
         # Operator precedence: ADJ* NOUN | PRON should be (ADJ* NOUN) | PRON
         result = cqp.parse_string('[pos="ADJ"]* [pos="NOUN"] | [pos="PRON"]')

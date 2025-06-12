@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections import namedtuple, deque
-from typing import Callable, Iterator, Optional
+from typing import Iterator, Optional
 
 import numpy as np
 import polars as pl
@@ -9,7 +9,7 @@ import pyparsing as pp
 from tqdm import tqdm
 
 ## TODO:
-##  1. implement {n,m}
+##  1. implement {n,m} (DONE)
 ##  2. case insensitive matching
 ##  3. != and ! in token expressions
 ##  4. improved valid_starts when the first thing can match the empty string
@@ -195,17 +195,21 @@ class OneOrZero(Pattern):
 
 
 class Concat(Pattern):
-    def __init__(self, pattern1: Pattern, pattern2: Pattern) -> None:
+    def __init__(self, *patterns: Pattern) -> None:
         super().__init__()
-        self.subpatterns = [pattern1, pattern2]
+        self.subpatterns = list(patterns)
 
     def _op(self, ctxt: ScanContext, cursor: int) -> Iterator[int]:
-        for i in self.subpatterns[0]._op(ctxt, cursor):
-            for j in self.subpatterns[1]._op(ctxt, i):
-                yield j
+        def traverse(patterns: list[Pattern], cursor: int) -> Iterator[int]:
+            if not patterns:
+                yield cursor
+            else:
+                p0, *patterns = patterns
+                for i in p0._op(ctxt, cursor):
+                    yield from traverse(patterns, i)
 
+        yield from traverse(self.subpatterns, cursor)
 
-## switch to BFS search?
 
 class Alt(Pattern):
     def __init__(self, *patterns: Pattern) -> None:
@@ -216,7 +220,7 @@ class Alt(Pattern):
         super().set_subject(subject)
         if not any(p.valid_starts is None for p in self.subpatterns):
             self.valid_starts = np.logical_or.reduce(
-                [p.valid_starts for p in self.subpatterns]
+                np.array([p.valid_starts for p in self.subpatterns])
             )
         else:
             self.valid_starts = None
@@ -227,13 +231,6 @@ class Alt(Pattern):
 
 
 ## compile token-level annotations into polars expressions
-
-
-def pairwise_compose(fn: Callable[..., Pattern], items: list[Pattern]) -> Pattern:
-    if len(items) == 1:
-        return items[0]
-    else:
-        return fn(items[0], pairwise_compose(fn, items[1:]))
 
 
 feature = pp.Word(pp.alphas + pp.nums)
@@ -296,13 +293,12 @@ repetition = (
 )
 
 concatenation = (repetition + pp.ZeroOrMore(repetition)).set_parse_action(
-    lambda toks: pairwise_compose(Concat, toks)
+    lambda toks: Concat(*toks) if len(toks) > 1 else toks[0]
 )
 
-disjunction = concatenation + pp.ZeroOrMore(pp.Suppress("|") + concatenation)
-disjunction = disjunction.set_parse_action(
-    lambda toks: Alt(*toks) if len(toks) > 1 else toks[0]
-)
+disjunction = (
+    concatenation + pp.ZeroOrMore(pp.Suppress("|") + concatenation)
+).set_parse_action(lambda toks: Alt(*toks) if len(toks) > 1 else toks[0])
 
 
 cqp <<= disjunction
