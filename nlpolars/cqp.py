@@ -128,7 +128,7 @@ class Token(Pattern):
         self.valid_starts = self.valid_tokens
 
     def _op(self, ctxt: ScanContext, cursor: int) -> Iterator[int]:
-        if self.valid_tokens[cursor]:
+        if cursor < self.n and self.valid_tokens[cursor]:
             yield cursor + 1
 
 
@@ -199,18 +199,18 @@ class Concat(Pattern):
     def __init__(self, *patterns: Pattern) -> None:
         super().__init__()
         self.subpatterns = list(patterns)
-        if False and all(isinstance(p, Token) for p in patterns):
+        if all(isinstance(p, Token) for p in patterns):
             self._op = self._fast_op
         else:
             self._op = self._slow_op
 
     def _fast_op(self, ctxt: ScanContext, cursor: int) -> Iterator[int]:
-        try:
-            for p in self.subpatterns:
-                cursor = next(p._op(ctxt, cursor))
-            yield cursor
-        except StopIteration:
-            pass
+        for p in self.subpatterns:
+            if cursor < self.n and p.valid_tokens[cursor]:
+                cursor += 1
+            else:
+                return
+        yield cursor
 
     def _slow_op(self, ctxt: ScanContext, cursor: int) -> Iterator[int]:
         def traverse(patterns: list[Pattern], cursor: int) -> Iterator[int]:
