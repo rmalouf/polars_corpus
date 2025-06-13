@@ -63,7 +63,7 @@ class Pattern:
         subject: pl.DataFrame,
         longest_match: bool = True,
         progress: bool = False,
-    ) -> Iterator[pl.DataFrame]:
+    ) -> Iterator[tuple[int, int]]:
         self.set_subject(subject)
         ctxt = ScanContext()
 
@@ -79,7 +79,7 @@ class Pattern:
                     if e > longest:
                         longest = e
                 if longest > s:
-                    yield subject[s:longest]
+                    yield (s, longest)  # subject[s:longest]
                     s = longest
                 else:
                     s = s + 1
@@ -102,7 +102,7 @@ class Pattern:
                     if not longest_match:
                         break
                 if longest > s:
-                    yield subject[s:longest]
+                    yield (s, longest)  # subject[s:longest]
                 i = i + 1
             if progress:
                 bar.update(self.n - longest)
