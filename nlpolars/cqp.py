@@ -18,7 +18,8 @@ from tqdm import tqdm
 ##  7. error handling
 ##  8. move parser into its own module
 ##  9. documentation
-##  10. parallelize computation of valid_starts
+##  10. parallelize computation of valid_starts (TRIED BUT DOESN'T HELP)
+##  11. rewrite hot spots in Rust
 
 
 class ScanContext:
@@ -41,6 +42,7 @@ class Pattern:
         self.n: int = 0
         self.valid_starts: Optional[np.typing.NDArray[np.bool_]] = None
         self.subpatterns: list[Pattern] = []
+        self.valid_tokens: np.typing.NDArray[np.bool_]
 
     def __repr__(self) -> str:
         return f"{type(self).__name__}({', '.join(str(p) for p in self.subpatterns)})"
@@ -87,9 +89,10 @@ class Pattern:
                     bar.update(s - s0)
         else:
             valid_indices = np.where(self.valid_starts)[0]
+            n_indices = len(valid_indices)
             i = 0
             s0 = 0
-            while i < len(valid_indices):
+            while i < n_indices:
                 s = valid_indices[i]
                 if progress:
                     # print(s-s0)
@@ -115,16 +118,13 @@ class Token(Pattern):
     def __init__(self, constraint: pl.Expr) -> None:
         super().__init__()
         self.constraint = constraint
-        # self.valid_tokens: Optional[np.typing.NDArray[np.bool_]] = None
 
     def __repr__(self) -> str:
         return f'Token({self.constraint}")'
 
     def set_subject(self, subject: pl.DataFrame) -> None:
         super().set_subject(subject)
-        self.valid_tokens: np.typing.NDArray[np.bool_] = (
-            subject.select(self.constraint).to_numpy().flatten()
-        )
+        self.valid_tokens = subject.select(v=self.constraint)["v"].to_numpy()
         self.valid_starts = self.valid_tokens
 
     def _op(self, ctxt: ScanContext, cursor: int) -> Iterator[int]:
@@ -205,6 +205,7 @@ class Concat(Pattern):
             self._op = self._slow_op
 
     def _fast_op(self, ctxt: ScanContext, cursor: int) -> Iterator[int]:
+        n = self.n
         for p in self.subpatterns:
             if cursor < self.n and p.valid_tokens[cursor]:
                 cursor += 1
@@ -270,7 +271,7 @@ constraint_formula <<= token_disj
 
 
 node = (pp.Suppress("[") + constraint_formula + pp.Suppress("]")).set_parse_action(
-    lambda x: Token(x)
+    lambda x: Token(x[0])
 ) | (pp.Suppress("[") + pp.Empty() + pp.Suppress("]")).set_parse_action(
     lambda x: Skip()
 )
