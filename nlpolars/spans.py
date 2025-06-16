@@ -1,0 +1,50 @@
+from __future__ import annotations
+
+from collections import namedtuple
+
+import polars as pl
+import numpy as np
+from ._typing import TPolarsFrame
+from itertools import chain
+
+__all__ = ["Span", "with_span_index", "with_spans"]
+
+
+Span: type[Span] = namedtuple("Span", ("start", "end"))
+
+
+def with_span_index(
+    df: TPolarsFrame, span_col: str, name: str = "span_idx", scheme: str = "BIO"
+) -> pl.TPolarsFrame:
+    if scheme != "BIO":
+        raise NotImplementedError("Only BIO is supported")
+    df = df.lazy()
+    span_idx = pl.Series(df[span_col] == "B").cum_sum()
+    span_idx = pl.when(df[span_col] == "O").then(pl.lit(None)).otherwise(span_idx)
+    return df.with_columns(span_idx.alias(name)).collect()
+
+
+def with_spans(df: TPolarsFrame, concordance, name: str = "spans") -> pl.TPolarsFrame:
+    spans = df.select(pl.repeat(pl.lit("O"), pl.count()).alias(name)).get_column(name)
+    #starts = (s.start for s in concordance)
+    starts =  [s.start for s in concordance]
+    spans = spans.scatter(starts, "B")
+    #ranges = chain.from_iterable(range(s.start + 1, s.end) for s in concordance)
+    ranges = [i for s in concordance for i in range(s.start + 1, s.end)]
+    spans = spans.scatter(ranges, "I")
+    return df.with_columns(spans)
+
+# LAZY VERSION
+# def with_spans(df: TPolarsFrame, concordance, name: str = "spans") -> pl.TPolarsFrame:
+#     df = df.lazy()
+#
+#     starts = [s.start for s in concordance]
+#     middles = list(chain.from_iterable(range(s.start + 1, s.end) for s in concordance))
+#
+#     return df.with_row_index().with_columns(
+#         pl.when(pl.col('index').is_in(starts))
+#         .then(pl.lit("B"))
+#         .when(pl.col('index').is_in(middles))
+#         .then(pl.lit("I"))
+#         .otherwise(pl.lit("O"))
+#         .alias(name)).drop("index").collect()

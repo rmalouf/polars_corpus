@@ -54,6 +54,9 @@ class TextDataFrame:
     def assoc(self, x: str, y: str, method: str, **kwargs: Any) -> pl.DataFrame:
         return assoc(self._df, x, y, method, **kwargs)
 
+    def with_span_index(self, span_col: str, **kwargs: Any) -> pl.DataFrame:
+        return with_span_index(self, span_col,**kwargs)
+
     def concordance(
         self,
         expr: pl.Expr,
@@ -78,6 +81,9 @@ class TextLazyFrame:
 
     def assoc(self, x: str, y: str, method: str, **kwargs: Any) -> pl.LazyFrame:
         return assoc(self._lf, x, y, method, **kwargs)
+
+    def with_span_index(self, span_col: str, **kwargs: Any) -> pl.LazyFrame:
+        return with_span_index(self, span_col, **kwargs)
 
     def concordance(
         self,

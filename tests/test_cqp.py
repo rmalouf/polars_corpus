@@ -102,6 +102,25 @@ def historical_corpus():
         }
     )
 
+@pytest.fixture
+def longest_match_corpus():
+    return pl.DataFrame(
+        {
+        "word": [
+            "running",
+            "jumped",
+            "quickly",
+            "the",
+            "dogs",
+            "cat",
+            "happening",
+            "walked",
+        ],
+        "pos": ["VERB", "VERB", "VERB", "VERB", "ADV", "DET", "NOUN", "NOUN"],
+        "lemma": ["run", "jump", "happen", "walk", "quick", "the", "dog", "cat"],
+    }
+)
+
 
 class TestConstraintParsing:
     """Test parsing and evaluation of token constraints"""
@@ -618,6 +637,22 @@ class TestRegexPatterns:
         # matched_words = [match["word"].to_list()[0] for match in matches]
         matched_words = [regex_corpus["word"][int(match[0])] for match in matches]
         assert set(matched_words) == {"running", "jumped", "happening", "walked"}
+
+    def test_longest_matching(self, longest_match_corpus):
+
+        pattern = cqp.parse_string('[pos="NOUN"]+')[0]
+        matches = list(pattern.matchall(longest_match_corpus, longest_match=True))
+        assert len(matches) == 1
+
+        matches = list(pattern.matchall(longest_match_corpus, longest_match=False))
+        assert len(matches) == 2
+
+        pattern = cqp.parse_string('[pos="VERB"]+')[0]
+        matches = list(pattern.matchall(longest_match_corpus, longest_match=True))
+        assert len(matches) == 1
+
+        matches = list(pattern.matchall(longest_match_corpus, longest_match=False))
+        assert len(matches) == 4
 
 
 class TestMToNEquivalences:

@@ -1,12 +1,14 @@
 from __future__ import annotations
 
-from collections import namedtuple, deque
+from collections import deque, namedtuple
 from typing import Iterator, Optional
 
 import numpy as np
 import polars as pl
 import pyparsing as pp
 from tqdm import tqdm
+
+from .spans import Span
 
 ## TODO:
 ##  1. implement {n,m} (DONE)
@@ -73,44 +75,42 @@ class Pattern:
             bar = tqdm(total=self.n)
 
         if self.valid_starts is None:
-            s = 0
-            while s < self.n:
-                s0 = s
-                longest = 0
-                for e in self._op(ctxt, s):
-                    if e > longest:
-                        longest = e
-                if longest > s:
-                    yield (int(s), int(longest))  # subject[s:longest]
-                    s = longest
-                else:
-                    s = s + 1
+            cursor = 0
+            while cursor < self.n:
                 if progress:
-                    bar.update(s - s0)
+                    bar.update(cursor - self.n)
+                longest = 0
+                for match_end in self._op(ctxt, cursor):
+                    if match_end > longest:
+                        longest = match_end
+                if longest > cursor:
+                    yield Span(int(cursor), int(longest))
+                    cursor = longest
+                else:
+                    cursor = cursor + 1
         else:
             valid_indices = np.where(self.valid_starts)[0]
             n_indices = len(valid_indices)
             i = 0
-            s0 = 0
             while i < n_indices:
-                s = valid_indices[i]
+                cursor = valid_indices[i]
                 if progress:
-                    # print(s-s0)
-                    bar.update(s - s0)
-                s0 = s
-                longest = s
-                for e in self._op(ctxt, s):
-                    if e > longest:
-                        longest = e
+                    bar.update(cursor - bar.n)
+                longest = cursor
+                for match_end in self._op(ctxt, cursor):
+                    if match_end > longest:
+                        longest = match_end
                     if not longest_match:
                         break
-                if longest > s:
-                    yield (int(s), int(longest))  # subject[s:longest]
-                i = i + 1
-            if progress:
-                bar.update(self.n - longest)
+                if longest > cursor:
+                    yield Span(int(cursor), int(longest))
+                    while i < n_indices and valid_indices[i] < longest:
+                        i = i + 1
+                else:
+                    i = i + 1
 
         if progress:
+            bar.update(self.n - bar.n)
             bar.close()
 
 
@@ -205,7 +205,6 @@ class Concat(Pattern):
             self._op = self._slow_op
 
     def _fast_op(self, ctxt: ScanContext, cursor: int) -> Iterator[int]:
-        n = self.n
         for p in self.subpatterns:
             if cursor < self.n and p.valid_tokens[cursor]:
                 cursor += 1

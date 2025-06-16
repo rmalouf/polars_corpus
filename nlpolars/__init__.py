@@ -5,5 +5,6 @@ from .assoc import *
 from .exprs import *
 from .io import *
 from .tokenizers import *
+from .spans import *
 
 __version__ = "0.1.0"
