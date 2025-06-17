@@ -1,7 +1,7 @@
-polars
-numba
-pyparsing
-tqdm
+polars==1.30.*
+numba==0.61.*
+pyparsing==3.2.*
+tqdm==4.67.*
 #nltk>=3.9.1
 #seaborn>=0.13.2
 #spacy[apple]==3.8.*

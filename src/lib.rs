@@ -4,9 +4,9 @@
 
 mod expressions;
 use pyo3::prelude::*;
-// use pyo3::types::{PyList, PyTuple};
 use polars::prelude::*;
 use pyo3_polars::{PolarsAllocator, PySeries};
+use pyo3::exceptions::PyValueError;
 
 #[pyfunction]
 fn _with_spans(n: usize,
@@ -14,13 +14,17 @@ fn _with_spans(n: usize,
 ) -> PyResult<PySeries> {
     let mut span_idx = vec!["O"; n];
     for (start, end) in spans {
-        span_idx[start] = "B";
-        for i in start+1..end {
-            span_idx[i] = "I";
+        if (start > n) | (end > n) {
+            return Err(PyValueError::new_err("index out of bounds"));
+        } else {
+            span_idx[start] = "B";
+            for i in start+1..end {
+                span_idx[i] = "I";
+            }
         }
     }
     let result = Series::new("spans".into(), &span_idx);
-    return Ok(PySeries(result));
+    Ok(PySeries(result))
 }
 
 #[pymodule]

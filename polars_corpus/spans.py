@@ -18,7 +18,10 @@ def with_span_index(
 
 
 def with_spans(df: pl.DataFrame, concordance, name: str = "spans") -> pl.TPolarsFrame:
-    return df.with_columns(_with_spans(len(df), concordance).alias(name))
+    try:
+        return df.with_columns(_with_spans(len(df), concordance).alias(name))
+    except OverflowError:
+        raise ValueError('negative index')
 
 
 #     spans = df.select(pl.repeat(pl.lit("O"), pl.count()).alias(name)).get_column(name)

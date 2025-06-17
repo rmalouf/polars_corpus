@@ -239,9 +239,7 @@ class TestWithSpans:
         concordance = [Span(0, 5)]  # Extends beyond dataframe
 
         # This should either truncate gracefully or raise an appropriate error
-        from polars.polars import PanicException
-
-        with pytest.raises((IndexError, ValueError, PanicException)):
+        with pytest.raises((IndexError, ValueError)):
             with_spans(df, concordance)
 
     def test_negative_span_positions(self):

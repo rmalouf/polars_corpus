@@ -1,8 +1,7 @@
-jupyterlab
-maturin
-mypy
-notebook
-pip
-pytest
-coverage
-
+jupyterlab==4.4.*
+maturin==1.8.*
+mypy==1.16.*
+notebook==7.4.*
+pip==25.1.*
+pytest==8.4.*
+coverage==7.9.*
