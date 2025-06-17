@@ -19,3 +19,6 @@ lock:
 clean:
 	rm -f requirements.txt requirements-dev.txt
 
+extension:
+	maturin build --release
+	pip install --force-reinstall target/wheels/*.whl

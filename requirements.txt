@@ -8,6 +8,8 @@ numpy==2.2.6
     # via numba
 polars==1.30.0
     # via -r requirements.in
+target/wheels/polars_corpus-0.1.0-cp39-abi3-macosx_11_0_arm64.whl
+    # via -r requirements.in
 pyparsing==3.2.3
     # via -r requirements.in
 tqdm==4.67.1
