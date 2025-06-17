@@ -24,8 +24,9 @@ fn _with_spans(n: usize,
 }
 
 #[pymodule]
-fn _internal(_py: Python, m: &Bound<PyModule>) -> PyResult<()> {
+fn _internal(py: Python, m: &Bound<PyModule>) -> PyResult<()> {
     m.add("__version__", env!("CARGO_PKG_VERSION"))?;
+    m.add("PanicException", <pyo3::panic::PanicException as pyo3::PyTypeInfo>::type_object(py))?;
     m.add_function(wrap_pyfunction!(_with_spans, m)?)?;
     Ok(())
 }

@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Optional
+from typing import TYPE_CHECKING, Any
 
 import polars as pl
 from polars.plugins import register_plugin_function
 
+from .spans import with_span_index
 from .assoc import assoc, crosstab
 from .concordance import concordance
 
@@ -55,13 +56,9 @@ class TextDataFrame:
         return assoc(self._df, x, y, method, **kwargs)
 
     def with_span_index(self, span_col: str, **kwargs: Any) -> pl.DataFrame:
-        return with_span_index(self, span_col,**kwargs)
+        return with_span_index(self, span_col, **kwargs)
 
-    def concordance(
-        self,
-        expr: pl.Expr,
-        context: int
-    ) -> pl.DataFrame:
+    def concordance(self, expr: pl.Expr, context: int) -> pl.DataFrame:
         return concordance(self._df, expr, context)
 
 

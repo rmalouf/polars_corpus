@@ -1,32 +1,25 @@
 from __future__ import annotations
 
-from collections import namedtuple
-
 import polars as pl
-import numpy as np
-from ._typing import TPolarsFrame
-from itertools import chain
+
 from ._internal import _with_spans
 
-__all__ = ["Span", "with_span_index", "with_spans"]
-
-
-Span: type[Span] = namedtuple("Span", ("start", "end"))
+__all__ = ["with_span_index", "with_spans"]
 
 
 def with_span_index(
-    df: TPolarsFrame, span_col: str, name: str = "span_idx", scheme: str = "BIO"
-) -> pl.TPolarsFrame:
+    df: pl.DataFrame, span_col: str, name: str = "span_idx", scheme: str = "BIO"
+) -> pl.DataFrame:
     if scheme != "BIO":
         raise NotImplementedError("Only BIO is supported")
-    df = df.lazy()
     span_idx = pl.Series(df[span_col] == "B").cum_sum()
     span_idx = pl.when(df[span_col] == "O").then(pl.lit(None)).otherwise(span_idx)
-    return df.with_columns(span_idx.alias(name)).collect()
+    return df.with_columns(span_idx.alias(name))
 
 
 def with_spans(df: pl.DataFrame, concordance, name: str = "spans") -> pl.TPolarsFrame:
     return df.with_columns(_with_spans(len(df), concordance).alias(name))
+
 
 #     spans = df.select(pl.repeat(pl.lit("O"), pl.count()).alias(name)).get_column(name)
 #     #starts = (s.start for s in concordance)
@@ -36,7 +29,6 @@ def with_spans(df: pl.DataFrame, concordance, name: str = "spans") -> pl.TPolars
 #     ranges = [i for s in concordance for i in range(s.start + 1, s.end)]
 #     spans = spans.scatter(ranges, "I")
 #     return df.with_columns(spans)
-
 
 
 # def with_spans(df: TPolarsFrame, concordance, name: str = "spans") -> pl.TPolarsFrame:

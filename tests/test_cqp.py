@@ -1,23 +1,25 @@
-import pytest
-import polars as pl
-import pyparsing as pp
-import numpy as np
 import time
 import unittest.mock
+
+import numpy as np
+import polars as pl
+import pyparsing as pp
+import pytest
+
 from polars_corpus.cqp import (
-    Token,
-    Skip,
+    Alt,
+    Concat,
     MToN,
-    ZeroOrMore,
     OneOrMore,
     OneOrZero,
-    Concat,
-    Alt,
     Pattern,
     ScanContext,
+    Skip,
+    Token,
+    ZeroOrMore,
     constraint_formula,
-    node,
     cqp,
+    node,
 )
 
 
@@ -102,24 +104,25 @@ def historical_corpus():
         }
     )
 
+
 @pytest.fixture
 def longest_match_corpus():
     return pl.DataFrame(
         {
-        "word": [
-            "running",
-            "jumped",
-            "quickly",
-            "the",
-            "dogs",
-            "cat",
-            "happening",
-            "walked",
-        ],
-        "pos": ["VERB", "VERB", "VERB", "VERB", "ADV", "DET", "NOUN", "NOUN"],
-        "lemma": ["run", "jump", "happen", "walk", "quick", "the", "dog", "cat"],
-    }
-)
+            "word": [
+                "running",
+                "jumped",
+                "quickly",
+                "the",
+                "dogs",
+                "cat",
+                "happening",
+                "walked",
+            ],
+            "pos": ["VERB", "VERB", "VERB", "VERB", "ADV", "DET", "NOUN", "NOUN"],
+            "lemma": ["run", "jump", "happen", "walk", "quick", "the", "dog", "cat"],
+        }
+    )
 
 
 class TestConstraintParsing:
@@ -639,7 +642,6 @@ class TestRegexPatterns:
         assert set(matched_words) == {"running", "jumped", "happening", "walked"}
 
     def test_longest_matching(self, longest_match_corpus):
-
         pattern = cqp.parse_string('[pos="NOUN"]+')[0]
         matches = list(pattern.matchall(longest_match_corpus, longest_match=True))
         assert len(matches) == 1

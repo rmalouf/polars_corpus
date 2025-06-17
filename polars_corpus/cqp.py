@@ -8,7 +8,7 @@ import polars as pl
 import pyparsing as pp
 from tqdm import tqdm
 
-from .spans import Span
+from ._typing import Span
 
 ## TODO:
 ##  1. implement {n,m} (DONE)

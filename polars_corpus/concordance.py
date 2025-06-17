@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from typing import Optional
-
 import polars as pl
 
 from ._typing import TPolarsFrame
@@ -9,11 +7,7 @@ from ._typing import TPolarsFrame
 __all__ = ["concordance"]
 
 
-def concordance(
-    df: TPolarsFrame,
-    expr: pl.Expr,
-    context: int = 5
-) -> TPolarsFrame:
+def concordance(df: TPolarsFrame, expr: pl.Expr, context: int = 5) -> TPolarsFrame:
     left_context = context
     right_context = context
     if left_context < 0 or right_context < 0:

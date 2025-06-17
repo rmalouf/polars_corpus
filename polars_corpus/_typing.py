@@ -1,8 +1,12 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, TypeAlias, TypeVar, Union
+from collections import namedtuple
+from typing import TYPE_CHECKING, TypeVar
 
 import polars as pl
+
+__all__ = ["Span"]
+
 
 if TYPE_CHECKING:
     import sys
@@ -10,12 +14,15 @@ if TYPE_CHECKING:
     # import polars as pl
 
     if sys.version_info >= (3, 10):
-        from typing import TypeAlias
+        pass
     else:
-        from typing_extensions import TypeAlias
+        pass
     # from polars.datatypes import DataType, DataTypeClass
 
     # IntoExprColumn: TypeAlias = Union[pl.Expr, str, pl.Series]
     # PolarsDataType: TypeAlias = Union[DataType, DataTypeClass]
 
 TPolarsFrame = TypeVar("TPolarsFrame", pl.DataFrame, pl.LazyFrame)
+
+
+Span: type[Span] = namedtuple("Span", ("start", "end"))
