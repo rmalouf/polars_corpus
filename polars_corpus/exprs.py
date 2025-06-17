@@ -8,7 +8,7 @@ from polars.plugins import register_plugin_function
 
 from .spans import with_span_index
 from .assoc import assoc, crosstab
-from .concordance import concordance
+#from .concordance import concordance
 
 LIB = Path(__file__).parent
 
@@ -58,8 +58,8 @@ class TextDataFrame:
     def with_span_index(self, span_col: str, **kwargs: Any) -> pl.DataFrame:
         return with_span_index(self, span_col, **kwargs)
 
-    def concordance(self, expr: pl.Expr, context: int) -> pl.DataFrame:
-        return concordance(self._df, expr, context)
+    #def concordance(self, expr: pl.Expr, context: int) -> pl.DataFrame:
+    #    return concordance(self._df, expr, context)
 
 
 @pl.api.register_lazyframe_namespace("text")
@@ -82,12 +82,12 @@ class TextLazyFrame:
     def with_span_index(self, span_col: str, **kwargs: Any) -> pl.LazyFrame:
         return with_span_index(self, span_col, **kwargs)
 
-    def concordance(
-        self,
-        expr: pl.Expr,
-        context: int,
-    ) -> pl.LazyFrame:
-        return concordance(self._lf, expr, context)
+    #def concordance(
+    #    self,
+    #    expr: pl.Expr,
+    #    context: int,
+    #) -> pl.LazyFrame:
+    #    return concordance(self._lf, expr, context)
 
 
 def whichlang(expr: IntoExprColumn) -> pl.Expr:

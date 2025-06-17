@@ -13,7 +13,7 @@ dev:
 ## Compile locked requirements
 lock:
 	uv pip compile requirements.in >requirements.txt
-	uv pip compile requirements-dev.in >requirements-dev.txt
+	uv pip compile requirements.in requirements-dev.in >requirements-dev.txt
 
 ## Clean compiled files
 clean:

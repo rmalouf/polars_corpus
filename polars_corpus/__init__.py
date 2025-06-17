@@ -1,10 +1,11 @@
 from __future__ import annotations
 
-from ._internal import __version__ as __version__
+#from ._internal import __version__ as __version__
 from .assoc import *  # noqa: F403
 from .exprs import *  # noqa: F403
 from .io import *  # noqa: F403
 from .spans import *  # noqa: F403
 from .tokenizers import *  # noqa: F403
+from .concordance import *  # noqa: F403
 
-# __version__ = "0.1.0"
+__version__ = "0.1.0"
