@@ -1,10 +1,10 @@
 [package]
-name = "polars-text"
+name = "polars-corpus"
 version = "0.1.0"
-edition = "2021"
+edition = "2024"
 
 [lib]
-name = "polars_text"
+name = "polars_corpus"
 crate-type= ["cdylib"]
 
 [dependencies]

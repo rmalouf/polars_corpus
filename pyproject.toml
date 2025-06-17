@@ -3,7 +3,7 @@ requires = ["maturin>=1.0,<2.0", "polars>=1.25"]
 build-backend = "maturin"
 
 [project]
-name = "polars-text"
+name = "polars-corpus"
 version = "0.1.0"
 requires-python = ">=3.11"
 classifiers = [
@@ -53,11 +53,11 @@ ignore_missing_imports = true
 strict = true
 
 [[tool.mypy.overrides]]
-module = "polars_text._internal"
+module = "polars_corpus._internal"
 ignore_missing_imports = true
 
 [tool.maturin]
-module-name = "polars_text._internal"
+module-name = "polars_corpus._internal"
 
 # [dependency-groups]
 # dev = [

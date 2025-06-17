@@ -6,6 +6,7 @@ import polars as pl
 import numpy as np
 from ._typing import TPolarsFrame
 from itertools import chain
+from ._internal import _with_spans
 
 __all__ = ["Span", "with_span_index", "with_spans"]
 
@@ -24,15 +25,29 @@ def with_span_index(
     return df.with_columns(span_idx.alias(name)).collect()
 
 
-def with_spans(df: TPolarsFrame, concordance, name: str = "spans") -> pl.TPolarsFrame:
-    spans = df.select(pl.repeat(pl.lit("O"), pl.count()).alias(name)).get_column(name)
-    #starts = (s.start for s in concordance)
-    starts =  [s.start for s in concordance]
-    spans = spans.scatter(starts, "B")
-    #ranges = chain.from_iterable(range(s.start + 1, s.end) for s in concordance)
-    ranges = [i for s in concordance for i in range(s.start + 1, s.end)]
-    spans = spans.scatter(ranges, "I")
-    return df.with_columns(spans)
+def with_spans(df: pl.DataFrame, concordance, name: str = "spans") -> pl.TPolarsFrame:
+    return df.with_columns(_with_spans(len(df), concordance).alias(name))
+
+#     spans = df.select(pl.repeat(pl.lit("O"), pl.count()).alias(name)).get_column(name)
+#     #starts = (s.start for s in concordance)
+#     starts =  [s.start for s in concordance]
+#     spans = spans.scatter(starts, "B")
+#     #ranges = chain.from_iterable(range(s.start + 1, s.end) for s in concordance)
+#     ranges = [i for s in concordance for i in range(s.start + 1, s.end)]
+#     spans = spans.scatter(ranges, "I")
+#     return df.with_columns(spans)
+
+
+
+# def with_spans(df: TPolarsFrame, concordance, name: str = "spans") -> pl.TPolarsFrame:
+#     spans = df.select(pl.repeat(pl.lit("O"), pl.count()).alias(name)).get_column(name)
+#     #starts = (s.start for s in concordance)
+#     starts =  [s.start for s in concordance]
+#     spans = spans.scatter(starts, "B")
+#     #ranges = chain.from_iterable(range(s.start + 1, s.end) for s in concordance)
+#     ranges = [i for s in concordance for i in range(s.start + 1, s.end)]
+#     spans = spans.scatter(ranges, "I")
+#     return df.with_columns(spans)
 
 # LAZY VERSION
 # def with_spans(df: TPolarsFrame, concordance, name: str = "spans") -> pl.TPolarsFrame:

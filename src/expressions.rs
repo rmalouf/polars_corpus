@@ -1,6 +1,12 @@
 #![allow(clippy::unused_unit)]
+#![warn(unused_variables)]
+#![warn(dead_code)]
+//use pyo3::prelude::*;
 use polars::prelude::*;
+//use pyo3::types::{PyAny, PyList};
+//use pyo3::{pyfunction, PyResult, PyObject};
 use pyo3_polars::derive::polars_expr;
+//use pyo3_polars::PySeries;
 use whichlang::detect_language;
 
 fn same_output_type(input_fields: &[Field]) -> PolarsResult<Field> {
@@ -25,3 +31,4 @@ fn whichlang(inputs: &[Series]) -> PolarsResult<Series> {
     });
     Ok(out.into_series())
 }
+

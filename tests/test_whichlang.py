@@ -2,7 +2,7 @@ import polars as pl
 import pytest
 from polars.polars import ComputeError
 
-from nlpolars import whichlang
+from polars_corpus import whichlang
 
 
 @pytest.fixture

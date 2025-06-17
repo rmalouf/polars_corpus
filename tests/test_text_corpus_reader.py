@@ -4,8 +4,8 @@ from pathlib import Path
 import polars as pl
 import pytest
 
-from nlpolars import read_text_corpus, scan_text_corpus
-from nlpolars.io import TextCorpusReader
+from polars_corpus import read_text_corpus, scan_text_corpus
+from polars_corpus.io import TextCorpusReader
 
 
 @pytest.fixture

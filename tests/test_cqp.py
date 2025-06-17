@@ -4,7 +4,7 @@ import pyparsing as pp
 import numpy as np
 import time
 import unittest.mock
-from nlpolars.cqp import (
+from polars_corpus.cqp import (
     Token,
     Skip,
     MToN,

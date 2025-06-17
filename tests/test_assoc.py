@@ -3,7 +3,7 @@ import pytest
 from polars.polars import ComputeError, ColumnNotFoundError
 from polars.testing import assert_frame_equal
 
-from nlpolars.assoc import crosstab
+from polars_corpus.assoc import crosstab
 
 
 def test_crosstab_basic() -> None:

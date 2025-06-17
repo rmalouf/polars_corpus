@@ -1,5 +1,5 @@
 import polars as pl
-import nlpolars as mp
+import polars_corpus as mp
 
 df = pl.DataFrame({
     'a': [1, 1, None],
