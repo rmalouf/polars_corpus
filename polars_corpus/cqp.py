@@ -8,8 +8,6 @@ import polars as pl
 import pyparsing as pp
 from tqdm import tqdm
 
-from ._typing import Span
-
 ## TODO:
 ##  1. implement {n,m} (DONE)
 ##  2. case insensitive matching
@@ -24,6 +22,9 @@ from ._typing import Span
 ##  11. rewrite hot spots in Rust
 
 
+Span: type[Span] = namedtuple("Span", ("start", "end"))
+
+
 class ScanContext:
     __slots__ = "max", "vars", "bindings", "trace"
 
@@ -33,9 +34,6 @@ class ScanContext:
         pass
         # self.vars: list[Var] = list()
         # self.bindings: dict[int, Any] = dict()
-
-
-Match = namedtuple("Match", ["start", "end"])
 
 
 class Pattern:

@@ -6,9 +6,10 @@ from typing import TYPE_CHECKING, Any
 import polars as pl
 from polars.plugins import register_plugin_function
 
-from .spans import with_span_index
 from .assoc import assoc, crosstab
-#from .concordance import concordance
+from .search import with_span_index
+
+# from .concordance import concordance
 
 LIB = Path(__file__).parent
 
@@ -58,7 +59,7 @@ class TextDataFrame:
     def with_span_index(self, span_col: str, **kwargs: Any) -> pl.DataFrame:
         return with_span_index(self, span_col, **kwargs)
 
-    #def concordance(self, expr: pl.Expr, context: int) -> pl.DataFrame:
+    # def concordance(self, expr: pl.Expr, context: int) -> pl.DataFrame:
     #    return concordance(self._df, expr, context)
 
 
@@ -79,14 +80,11 @@ class TextLazyFrame:
     def assoc(self, x: str, y: str, method: str, **kwargs: Any) -> pl.LazyFrame:
         return assoc(self._lf, x, y, method, **kwargs)
 
-    def with_span_index(self, span_col: str, **kwargs: Any) -> pl.LazyFrame:
-        return with_span_index(self, span_col, **kwargs)
-
-    #def concordance(
+    # def concordance(
     #    self,
     #    expr: pl.Expr,
     #    context: int,
-    #) -> pl.LazyFrame:
+    # ) -> pl.LazyFrame:
     #    return concordance(self._lf, expr, context)
 
 

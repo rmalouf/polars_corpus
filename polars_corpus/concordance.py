@@ -1,21 +1,29 @@
 from __future__ import annotations
 
 import polars as pl
+
 from .cqp import cqp
-from ._typing import TPolarsFrame
 
 __all__ = ["Concordance"]
 
-class Concordance:
 
-    def __init__(self, df: pl.DataFrame, query: str, longest_match: bool = True, progress: bool = False):
+class Concordance:
+    def __init__(
+        self,
+        df: pl.DataFrame,
+        query: str,
+        longest_match: bool = True,
+        progress: bool = False,
+    ):
         self.df = df
         self.query = query
-        self.spans = list(cqp.parse_string(query, parse_all=True)[0] \
-            .matchall(df, longest_match=longest_match, progress=progress))
+        self.spans = list(
+            cqp.parse_string(query, parse_all=True)[0].matchall(
+                df, longest_match=longest_match, progress=progress
+            )
+        )
 
-    #def show_kwic(self):
-
+    # def show_kwic(self):
 
 
 #
