@@ -1,0 +1,7 @@
+seaborn==0.13.*
+matplotlib==3.10.*
+joblib==1.5.*
+joblib-progress==1.0.*
+lxml==5.4.*
+pyarrow==20.0.*
+

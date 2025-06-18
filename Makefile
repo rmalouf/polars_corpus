@@ -8,17 +8,18 @@ install:
 
 ## Install dev dependencies
 dev:
-	uv pip sync requirements.txt requirements-dev.txt
+	uv pip sync requirements.txt requirements-examples.txt requirements-dev.txt
 
 ## Compile locked requirements
-lock:
+locks:
 	uv pip compile requirements.in >requirements.txt
-	uv pip compile requirements.in requirements-dev.in >requirements-dev.txt
+	uv pip compile requirements.in requirements-examples.in >requirements-examples.txt
+	uv pip compile requirements.in requirements-examples.in requirements-dev.in >requirements-dev.txt
 
 ## Clean compiled files
 clean:
 	rm -f requirements.txt requirements-dev.txt
 
-extension:
+compile:
 	maturin build --release
 	pip install --force-reinstall target/wheels/*.whl
