@@ -196,6 +196,7 @@ numpy==2.2.6
     #   matplotlib
     #   numba
     #   pandas
+    #   scipy
     #   seaborn
 overrides==7.7.0
     # via jupyter-server
@@ -298,6 +299,8 @@ rpds-py==0.25.1
     # via
     #   jsonschema
     #   referencing
+scipy==1.15.3
+    # via -r requirements-examples.in
 seaborn==0.13.2
     # via
     #   -r requirements-dev.in

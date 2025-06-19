@@ -34,6 +34,7 @@ numpy==2.2.6
     #   matplotlib
     #   numba
     #   pandas
+    #   scipy
     #   seaborn
 packaging==25.0
     # via matplotlib
@@ -61,6 +62,8 @@ pytz==2025.2
     # via pandas
 rich==14.0.0
     # via joblib-progress
+scipy==1.15.3
+    # via -r requirements-examples.in
 seaborn==0.13.2
     # via -r requirements-examples.in
 six==1.17.0

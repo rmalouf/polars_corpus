@@ -8,7 +8,7 @@ wheels/
 *.so
 *.dll
 *.pyd
-target
+target/
 
 
 # Virtual environments
@@ -19,3 +19,4 @@ target
 .idea/
 .ipynb_checkpoints/
 
+.coverage
