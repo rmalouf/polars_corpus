@@ -20,6 +20,10 @@ locks:
 clean:
 	rm -f requirements.txt requirements-dev.txt
 
+#compile:
+#	#maturin build --release
+#	pip install --force-reinstall target/wheels/*.whl
+
 compile:
 	maturin build --release
-	pip install --force-reinstall target/wheels/*.whl
+	cp target/release/libpolars_corpus.dylib polars_corpus/_internal.so
