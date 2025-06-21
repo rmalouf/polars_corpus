@@ -168,32 +168,32 @@ def compute_loglik(table: TPolarsFrame) -> TPolarsFrame:
     return data
 
 
-@guvectorize(
-    [(int64[:], int64[:], int64[:], int64[:], float64[:])],
-    "(n),(n),(n),(n)->(n)",
-    nopython=True,
-)
-def _loglik(f12, f1, f2, n, result):
-    for i in range(len(f12)):
-        o11 = f12[i]
-        o12 = f1[i] - f12[i]
-        o21 = f2[i] - f12[i]
-        o22 = n[i] - f1[i] - f2[i] + f12[i]
-        result[i] = 0.0
-        if o11 != 0:
-            e11 = f1[i] * f2[i] / n[i]
-            result[i] += o11 * np.log(o11 / e11)
-        if o12 != 0:
-            e12 = f1[i] * (n[i] - f2[i]) / n[i]
-            result[i] += o12 * np.log(o12 / e12)
-        if o21 != 0:
-            e21 = (n[i] - f1[i]) * f2[i] / n[i]
-            result[i] += o21 * np.log(o21 / e21)
-        if o22 != 0:
-            e22 = (n[i] - f1[i]) * (n[i] - f2[i]) / n[i]
-            result[i] += o22 * np.log(o22 / e22)
-        result[i] = result[i] * 2.0
-
+# @guvectorize(
+#     [(int64[:], int64[:], int64[:], int64[:], float64[:])],
+#     "(n),(n),(n),(n)->(n)",
+#     nopython=True,
+# )
+# def _loglik(f12, f1, f2, n, result):
+#     for i in range(len(f12)):
+#         o11 = f12[i]
+#         o12 = f1[i] - f12[i]
+#         o21 = f2[i] - f12[i]
+#         o22 = n[i] - f1[i] - f2[i] + f12[i]
+#         result[i] = 0.0
+#         if o11 != 0:
+#             e11 = f1[i] * f2[i] / n[i]
+#             result[i] += o11 * np.log(o11 / e11)
+#         if o12 != 0:
+#             e12 = f1[i] * (n[i] - f2[i]) / n[i]
+#             result[i] += o12 * np.log(o12 / e12)
+#         if o21 != 0:
+#             e21 = (n[i] - f1[i]) * f2[i] / n[i]
+#             result[i] += o21 * np.log(o21 / e21)
+#         if o22 != 0:
+#             e22 = (n[i] - f1[i]) * (n[i] - f2[i]) / n[i]
+#             result[i] += o22 * np.log(o22 / e22)
+#         result[i] = result[i] * 2.0
+#
 
 def compute_min_sens(table: TPolarsFrame) -> TPolarsFrame:
     """

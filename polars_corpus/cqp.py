@@ -8,22 +8,15 @@ import polars as pl
 import pyparsing as pp
 from tqdm import tqdm
 
-## TODO:
-##  1. implement {n,m} (DONE)
-##  2. case insensitive matching
-##  3. != and ! in token expressions
-##  4. improved valid_starts when the first thing can match the empty string
-##  5. lazy computation of valid_starts
-##  6. match sequence of tokens in one step (DONE)
-##  7. error handling
-##  8. move parser into its own module
-##  9. documentation
-##  10. parallelize computation of valid_starts (TRIED BUT DOESN'T HELP)
-##  11. rewrite hot spots in Rust
-
+Token: type[Token] = namedtuple("Token", ("expr"))
+Jump: type[Jump] = namedtuple("Jump", ("offset"))
+Split: type[Split] = namedtuple("Split", ("offset1", "offset2"))
+Match: type[Match] = namedtuple("Match", ())
 
 Span: type[Span] = namedtuple("Span", ("start", "end"))
 
+
+type Mask = np.typing.NDArray[np.bool_]
 
 class ScanContext:
     __slots__ = "bindings"
@@ -34,235 +27,102 @@ class ScanContext:
         self.bindings: dict[str, list[str]] = dict()
 
 
-class Pattern:
-    def __init__(self) -> None:
-        self.subject: Optional[pl.DataFrame] = None
-        self.n: int = 0
-        self.valid_starts: Optional[np.typing.NDArray[np.bool_]] = None
-        self.subpatterns: list[Pattern] = []
-        self.valid_tokens: np.typing.NDArray[np.bool_]
+def compute_masks(df: pl.DataFrame, opcodes: list[Any]) -> Mask:
+    print("1")
+    token_exprs = []
+    back_refs = defaultdict(list)
+    for i, opcode in enumerate(opcodes):
+        match opcode:
+            case Token(expr):
+                token_exprs.append(opcode.expr.alias(str(i)))
+            case Jump(offset):
+                back_refs[i + offset].append(i)
+            case Split(offset1, offset2):
+                back_refs[i + offset1].append(i)
+                back_refs[i + offset2].append(i)
+            case Match():
+                token_exprs.append(pl.lit(True).alias(str(i)))
+            case _:
+                pass
 
-    def __repr__(self) -> str:
-        return f"<{type(self).__name__} {', '.join(str(p) for p in self.subpatterns)})>"
+    print("2")
+    masks_df = df.select(token_exprs)
+    print("3")
 
-    def _op(self, ctxt: ScanContext, cursor: int) -> Iterator[int]:
-        raise NotImplementedError
+    masks = np.zeros((len(opcodes), len(df)), dtype=bool)
+    for col in masks_df.columns:
+        masks[int(col), :] = masks_df[col].to_numpy()
 
-    def set_subject(self, subject: pl.DataFrame) -> None:
-        self.subject = subject
-        self.n = len(subject)
-        for subpattern in self.subpatterns:
-            subpattern.set_subject(subject)
-        if len(self.subpatterns) > 0:
-            self.valid_starts = self.subpatterns[0].valid_starts
-        else:
-            self.valid_starts = None
+    print("4")
+    agenda = [int(i) for i in masks_df.columns]
+    seen = set()
+    while agenda:
+        pc = agenda.pop(0)
+        if pc not in seen:
+            match opcodes[pc]:
+                case Jump(offset):
+                    masks[pc] = masks[offset + pc]
+                case Split(offset1, offset2):
+                    masks[pc] = np.logical_or(masks[offset1 + pc], masks[offset2 + pc])
+                case _:
+                    pass
+            agenda.extend(back_refs[pc])
+            seen.add(pc)
 
-    def matchall(
-        self: Pattern,
-        subject: pl.DataFrame,
-        longest_match: bool = True,
-        progress: bool = False,
-    ) -> Iterator[Span, dict[str, list[str]]]:
-        self.set_subject(subject)
-        ctxt = ScanContext()
+    return masks
 
+
+def matchall(
+    df: pl.DataFrame, query: str, progress: bool = False
+) -> Iterator[tuple[Span, dict[str, Any]]]:
+    if progress:
+        bar = tqdm(total=len(df))
+
+    opcodes = list(cqp.parse_string(query, parse_all=True))
+    opcodes.append(Match())
+
+    masks = compute_masks(df, opcodes)
+
+    starts = np.where(masks[0, :])[0]
+    n = len(starts)
+    i = 0
+    while i < n:
+        cursor = starts[i]
         if progress:
-            bar = tqdm(total=self.n)
+            bar.update(cursor - bar.n)
+        if (match_end := match_opcodes(opcodes, masks, cursor)) is None:
+            i = i + 1
+        else:
+            yield Span(cursor, match_end), {}
+            while i < n and starts[i] < match_end:
+                i = i + 1
 
-        if self.valid_starts is None:
-            cursor = 0
-            while cursor < self.n:
-                if progress:
-                    bar.update(cursor - self.n)
-                longest = 0
-                for match_end in self._op(ctxt, cursor):
-                    if match_end > longest:
-                        longest = match_end
-                if longest > cursor:
-                    yield Span(int(cursor), int(longest)), ctxt.bindings.copy()
-                    cursor = longest
+    if progress:
+        bar.update(len(df) - bar.n)
+        bar.close()
+
+
+def match_opcodes(
+    opcodes: list[Any], masks: Mask, cursor: int, pc: int = 0
+) -> int:
+    while True:
+        if not masks[pc, cursor]:
+            break
+        match opcodes[pc]:
+            case Token(_):
+                cursor = cursor + 1
+                pc = pc + 1
+            case Split(offset1, offset2):
+                if (
+                    match_end := match_opcodes(opcodes, masks, cursor, pc + offset1)
+                ) is None:
+                    pc = pc + offset2
                 else:
-                    cursor = cursor + 1
-        else:
-            valid_indices = np.where(self.valid_starts)[0]
-            n_indices = len(valid_indices)
-            i = 0
-            while i < n_indices:
-                cursor = valid_indices[i]
-                if progress:
-                    bar.update(cursor - bar.n)
-                matched_span = Span(cursor, cursor)
-                for match_end in self._op(ctxt, cursor):
-                    if match_end > matched_span.end:
-                        matched_span = Span(int(cursor), int(match_end))
-                        bindings = {
-                            var: Span(int(x), int(y))
-                            for var, (x, y) in ctxt.bindings.items()
-                        }
-                    if not longest_match:
-                        break
-                if matched_span.end > matched_span.start:
-                    yield matched_span, bindings
-                    while i < n_indices and valid_indices[i] < matched_span.end:
-                        i = i + 1
-                else:
-                    i = i + 1
-
-        if progress:
-            bar.update(self.n - bar.n)
-            bar.close()
-
-
-class Token(Pattern):
-    def __init__(self, constraint: pl.Expr) -> None:
-        super().__init__()
-        self.constraint = constraint
-
-    def __repr__(self) -> str:
-        return f'<Token {self.constraint}">'
-
-    def set_subject(self, subject: pl.DataFrame) -> None:
-        super().set_subject(subject)
-        self.valid_tokens = subject.select(v=self.constraint)["v"].to_numpy()
-        self.valid_starts = self.valid_tokens
-
-    def _op(self, ctxt: ScanContext, cursor: int) -> Iterator[int]:
-        if cursor < self.n and self.valid_tokens[cursor]:
-            yield cursor + 1
-
-
-class Bind(Pattern):
-    def __init__(self, variable: str, pattern: Pattern) -> None:
-        super().__init__()
-        self.subpatterns = [pattern]
-        self.variable = variable
-
-    def __repr__(self) -> str:
-        return f"<Bind {self.variable}={self.subpatterns[0]})>"
-
-    def _op(self, ctxt: ScanContext, cursor: int) -> Iterator[int]:
-        saved_val = ctxt.bindings.get(self.variable, None)
-        for i in self.subpatterns[0]._op(ctxt, cursor):
-            ctxt.bindings[self.variable] = (cursor, i)
-            yield i
-        if saved_val is None and self.variable in ctxt.bindings:
-            del ctxt.bindings[self.variable]
-        else:
-            ctxt.bindings[self.variable] = saved_val
-
-
-class Skip(Pattern):
-    def __init__(self) -> None:
-        super().__init__()
-
-    def __repr__(self) -> str:
-        return "<Skip>"
-
-    def set_subject(self, subject: pl.DataFrame) -> None:
-        super().set_subject(subject)
-        self.valid_starts = None
-
-    def _op(self, ctxt: ScanContext, cursor: int) -> Iterator[int]:
-        yield cursor + 1
-
-
-class MToN(Pattern):
-    def __init__(self, pattern: Pattern, m: int = 0, n: Optional[int] = None) -> None:
-        super().__init__()
-        self.subpatterns = [pattern]
-        self.min = m
-        self.max = n
-
-    def set_subject(self, subject: pl.DataFrame) -> None:
-        super().set_subject(subject)
-        if self.min < 1:
-            self.valid_starts = None
-
-    def _op(self, ctxt: ScanContext, cursor: int) -> Iterator[int]:
-        if self.min == 0:
-            yield cursor
-        queue = deque([(1, self.subpatterns[0]._op(ctxt, cursor))])
-        while queue:
-            try:
-                i, gen = queue[0]
-                cursor = next(gen)
-                if i >= self.min:
-                    yield cursor
-                if self.max is None or i < self.max:
-                    queue.append((i + 1, self.subpatterns[0]._op(ctxt, cursor)))
-            except StopIteration:
-                queue.popleft()
-
-
-class ZeroOrMore(MToN):
-    def __init__(self, pattern: Pattern) -> None:
-        super().__init__(pattern, m=0)
-
-
-class OneOrMore(MToN):
-    def __init__(self, pattern: Pattern) -> None:
-        super().__init__(pattern, m=1)
-
-
-class OneOrZero(Pattern):
-    def __init__(self, pattern: Pattern) -> None:
-        super().__init__()
-        self.subpatterns = [pattern]
-
-    def _op(self, ctxt: ScanContext, cursor: int) -> Iterator[int]:
-        yield from self.subpatterns[0]._op(ctxt, cursor)
-        yield cursor
-
-
-class Concat(Pattern):
-    def __init__(self, *patterns: Pattern) -> None:
-        super().__init__()
-        self.subpatterns = list(patterns)
-        if all(isinstance(p, Token) for p in patterns):
-            self._op = self._fast_op
-        else:
-            self._op = self._slow_op
-
-    def _fast_op(self, ctxt: ScanContext, cursor: int) -> Iterator[int]:
-        for p in self.subpatterns:
-            if cursor < self.n and p.valid_tokens[cursor]:
-                cursor += 1
-            else:
-                return
-        yield cursor
-
-    def _slow_op(self, ctxt: ScanContext, cursor: int) -> Iterator[int]:
-        yield from self.traverse(self.subpatterns, ctxt, cursor)
-
-    def traverse(
-        self, patterns: list[Pattern], ctxt: ScanContext, cursor: int
-    ) -> Iterator[int]:
-        if not patterns:
-            yield cursor
-        else:
-            p0, *patterns = patterns
-            for i in p0._op(ctxt, cursor):
-                yield from self.traverse(patterns, ctxt, i)
-
-
-class Alt(Pattern):
-    def __init__(self, *patterns: Pattern) -> None:
-        super().__init__()
-        self.subpatterns = list(patterns)
-
-    def set_subject(self, subject: pl.DataFrame) -> None:
-        super().set_subject(subject)
-        if not any(p.valid_starts is None for p in self.subpatterns):
-            self.valid_starts = np.logical_or.reduce(
-                np.array([p.valid_starts for p in self.subpatterns])
-            )
-        else:
-            self.valid_starts = None
-
-    def _op(self, ctxt: ScanContext, cursor: int) -> Iterator[int]:
-        for p in self.subpatterns:
-            yield from p._op(ctxt, cursor)
+                    return match_end
+            case Jump(offset):
+                pc = pc + offset
+            case Match():
+                return cursor
 
 
 ## compile token-level annotations into polars expressions
@@ -303,43 +163,94 @@ cqp = pp.Forward()
 
 # TODO: bindings don't work right with multi-token matches
 
-simple_primary = node | pp.Suppress("(") + cqp + pp.Suppress(")")
-binding = (feature + pp.Suppress(":") + simple_primary).set_parse_action(
-    lambda toks: Bind(toks[0], toks[1])
-)
-primary = simple_primary | binding
+simple_primary = node | (pp.Suppress("(") + cqp + pp.Suppress(")"))
+# binding = (feature + pp.Suppress(":") + simple_primary).set_parse_action(
+#     lambda toks: Bind(toks[0], toks[1])
+# )
+# primary = simple_primary | binding
+primary = simple_primary
+
+
+def compile_star(args):
+    result = [Split(1, len(args) + 2)]
+    result.extend(args)
+    result.append(Jump(-(len(args) + 1)))
+    return result
+
+
+def compile_plus(args):
+    result = []
+    result.extend(args)
+    result.append(Split(-len(args), 1))
+    return result
+
+
+def compile_question(args):
+    result = [Split(1, len(args) + 1)]
+    result.extend(args)
+    return result
+
+
+#
+# def compile_m_to_n(args, m, n):
+#     result = [ ]
+#     if m == 0:
+#         result.extend(compile_question(compile_m_to_n(args, 1, n)))
+#     else:
+#         for _ in range(m):
+#             result.append(args)
+
 
 repetition = (
-    (primary + pp.Suppress("*")).set_parse_action(lambda e: ZeroOrMore(e[0]))
-    | (primary + pp.Suppress("+")).set_parse_action(lambda e: OneOrMore(e[0]))
-    | (primary + pp.Suppress("?")).set_parse_action(lambda e: OneOrZero(e[0]))
-    | (
-        primary
-        + pp.Suppress("{")
-        + number
-        + pp.Suppress(",")
-        + number
-        + pp.Suppress("}")
-    ).set_parse_action(lambda e: MToN(e[0], m=int(e[1]), n=int(e[2])))
-    | (
-        primary + pp.Suppress("{") + number + pp.Suppress(",") + pp.Suppress("}")
-    ).set_parse_action(lambda e: MToN(e[0], m=int(e[1])))
-    | (
-        primary + pp.Suppress("{") + pp.Suppress(",") + number + pp.Suppress("}")
-    ).set_parse_action(lambda e: MToN(e[0], n=int(e[1])))
-    | (primary + pp.Suppress("{") + number + pp.Suppress("}")).set_parse_action(
-        lambda e: MToN(e[0], m=int(e[1]), n=int(e[1]))
-    )
+    (primary + pp.Suppress("*")).set_parse_action(compile_star)
+    | (primary + pp.Suppress("+")).set_parse_action(compile_plus)
+    | (primary + pp.Suppress("?")).set_parse_action(compile_question)
     | primary
 )
 
-concatenation = (repetition + pp.ZeroOrMore(repetition)).set_parse_action(
-    lambda toks: Concat(*toks) if len(toks) > 1 else toks[0]
-)
+
+# repetition = (
+#     (primary + pp.Suppress("*")).set_parse_action(compile_star)
+#     | (primary + pp.Suppress("+")).set_parse_action(lambda e: OneOrMore(e[0]))
+#     | (primary + pp.Suppress("?")).set_parse_action(lambda e: OneOrZero(e[0]))
+#     | (
+#         primary
+#         + pp.Suppress("{")
+#         + number
+#         + pp.Suppress(",")
+#         + number
+#         + pp.Suppress("}")
+#     ).set_parse_action(lambda e: MToN(e[0], m=int(e[1]), n=int(e[2])))
+#     | (
+#         primary + pp.Suppress("{") + number + pp.Suppress(",") + pp.Suppress("}")
+#     ).set_parse_action(lambda e: MToN(e[0], m=int(e[1])))
+#     | (
+#         primary + pp.Suppress("{") + pp.Suppress(",") + number + pp.Suppress("}")
+#     ).set_parse_action(lambda e: MToN(e[0], n=int(e[1])))
+#     | (primary + pp.Suppress("{") + number + pp.Suppress("}")).set_parse_action(
+#         lambda e: MToN(e[0], m=int(e[1]), n=int(e[1]))
+#     )
+#     | primary
+# )
+
+concatenation = pp.OneOrMore(repetition)
+
+
+def compile_disjunction(args):
+    if len(args) == 1:
+        return args[0]
+    else:
+        result = []
+        for i in range(len(args) - 1):
+            result.append(Split(1, len(args[i]) + 2))
+            result.extend(args[i])
+            result.append(Jump(len(args[i + 1]) + 1))
+        result.extend(args[-1])
+        return result
+
 
 disjunction = (
-    concatenation + pp.ZeroOrMore(pp.Suppress("|") + concatenation)
-).set_parse_action(lambda toks: Alt(*toks) if len(toks) > 1 else toks[0])
-
+    pp.Group(concatenation) + pp.ZeroOrMore(pp.Suppress("|") + pp.Group(concatenation))
+).set_parse_action(compile_disjunction)
 
 cqp <<= disjunction

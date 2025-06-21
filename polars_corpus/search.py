@@ -6,7 +6,7 @@ import polars as pl
 import polars.selectors as cs
 
 from ._internal import _to_spans, _make_spans_mask
-from .cqp import cqp
+from .cqp import matchall
 
 __all__ = ["search", "SearchResults", "with_span_index", "to_span_index"]
 
@@ -83,8 +83,7 @@ class SearchResults:
 
 
 def search(df: pl.DataFrame, query: str) -> SearchResults:
-    parsed_query = cqp.parse_string(query, parse_all=True)[0]
-    spans, bindings = zip(*list(parsed_query.matchall(df)))
+    spans, bindings = zip(*list(matchall(df, query)))
     new_bindings = defaultdict(list)
     for binding in bindings:
         for var, val in binding.items():
