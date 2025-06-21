@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from collections import deque, namedtuple
-from typing import Iterator, Optional
+from collections import deque, namedtuple, defaultdict
+from typing import Iterator, Optional, Any
 
 import numpy as np
 import polars as pl
@@ -26,14 +26,12 @@ Span: type[Span] = namedtuple("Span", ("start", "end"))
 
 
 class ScanContext:
-    __slots__ = "max", "vars", "bindings", "trace"
+    __slots__ = "bindings"
 
     # TODO: get rid of this class. pass everything as args so we can use local variables
 
     def __init__(self) -> None:
-        pass
-        # self.vars: list[Var] = list()
-        # self.bindings: dict[int, Any] = dict()
+        self.bindings: dict[str, list[str]] = dict()
 
 
 class Pattern:
@@ -45,7 +43,7 @@ class Pattern:
         self.valid_tokens: np.typing.NDArray[np.bool_]
 
     def __repr__(self) -> str:
-        return f"{type(self).__name__}({', '.join(str(p) for p in self.subpatterns)})"
+        return f"<{type(self).__name__} {', '.join(str(p) for p in self.subpatterns)})>"
 
     def _op(self, ctxt: ScanContext, cursor: int) -> Iterator[int]:
         raise NotImplementedError
@@ -65,7 +63,7 @@ class Pattern:
         subject: pl.DataFrame,
         longest_match: bool = True,
         progress: bool = False,
-    ) -> Iterator[tuple[int, int]]:
+    ) -> Iterator[Span, dict[str, list[str]]]:
         self.set_subject(subject)
         ctxt = ScanContext()
 
@@ -82,7 +80,7 @@ class Pattern:
                     if match_end > longest:
                         longest = match_end
                 if longest > cursor:
-                    yield Span(int(cursor), int(longest))
+                    yield Span(int(cursor), int(longest)), ctxt.bindings.copy()
                     cursor = longest
                 else:
                     cursor = cursor + 1
@@ -94,15 +92,19 @@ class Pattern:
                 cursor = valid_indices[i]
                 if progress:
                     bar.update(cursor - bar.n)
-                longest = cursor
+                matched_span = Span(cursor, cursor)
                 for match_end in self._op(ctxt, cursor):
-                    if match_end > longest:
-                        longest = match_end
+                    if match_end > matched_span.end:
+                        matched_span = Span(int(cursor), int(match_end))
+                        bindings = {
+                            var: Span(int(x), int(y))
+                            for var, (x, y) in ctxt.bindings.items()
+                        }
                     if not longest_match:
                         break
-                if longest > cursor:
-                    yield Span(int(cursor), int(longest))
-                    while i < n_indices and valid_indices[i] < longest:
+                if matched_span.end > matched_span.start:
+                    yield matched_span, bindings
+                    while i < n_indices and valid_indices[i] < matched_span.end:
                         i = i + 1
                 else:
                     i = i + 1
@@ -118,7 +120,7 @@ class Token(Pattern):
         self.constraint = constraint
 
     def __repr__(self) -> str:
-        return f'Token({self.constraint}")'
+        return f'<Token {self.constraint}">'
 
     def set_subject(self, subject: pl.DataFrame) -> None:
         super().set_subject(subject)
@@ -130,12 +132,32 @@ class Token(Pattern):
             yield cursor + 1
 
 
+class Bind(Pattern):
+    def __init__(self, variable: str, pattern: Pattern) -> None:
+        super().__init__()
+        self.subpatterns = [pattern]
+        self.variable = variable
+
+    def __repr__(self) -> str:
+        return f"<Bind {self.variable}={self.subpatterns[0]})>"
+
+    def _op(self, ctxt: ScanContext, cursor: int) -> Iterator[int]:
+        saved_val = ctxt.bindings.get(self.variable, None)
+        for i in self.subpatterns[0]._op(ctxt, cursor):
+            ctxt.bindings[self.variable] = (cursor, i)
+            yield i
+        if saved_val is None and self.variable in ctxt.bindings:
+            del ctxt.bindings[self.variable]
+        else:
+            ctxt.bindings[self.variable] = saved_val
+
+
 class Skip(Pattern):
     def __init__(self) -> None:
         super().__init__()
 
     def __repr__(self) -> str:
-        return 'Skip()")'
+        return "<Skip>"
 
     def set_subject(self, subject: pl.DataFrame) -> None:
         super().set_subject(subject)
@@ -211,15 +233,17 @@ class Concat(Pattern):
         yield cursor
 
     def _slow_op(self, ctxt: ScanContext, cursor: int) -> Iterator[int]:
-        def traverse(patterns: list[Pattern], cursor: int) -> Iterator[int]:
-            if not patterns:
-                yield cursor
-            else:
-                p0, *patterns = patterns
-                for i in p0._op(ctxt, cursor):
-                    yield from traverse(patterns, i)
+        yield from self.traverse(self.subpatterns, ctxt, cursor)
 
-        yield from traverse(self.subpatterns, cursor)
+    def traverse(
+        self, patterns: list[Pattern], ctxt: ScanContext, cursor: int
+    ) -> Iterator[int]:
+        if not patterns:
+            yield cursor
+        else:
+            p0, *patterns = patterns
+            for i in p0._op(ctxt, cursor):
+                yield from self.traverse(patterns, ctxt, i)
 
 
 class Alt(Pattern):
@@ -277,7 +301,13 @@ node = (pp.Suppress("[") + constraint_formula + pp.Suppress("]")).set_parse_acti
 
 cqp = pp.Forward()
 
-primary = node | pp.Suppress("(") + cqp + pp.Suppress(")")
+# TODO: bindings don't work right with multi-token matches
+
+simple_primary = node | pp.Suppress("(") + cqp + pp.Suppress(")")
+binding = (feature + pp.Suppress(":") + simple_primary).set_parse_action(
+    lambda toks: Bind(toks[0], toks[1])
+)
+primary = simple_primary | binding
 
 repetition = (
     (primary + pp.Suppress("*")).set_parse_action(lambda e: ZeroOrMore(e[0]))

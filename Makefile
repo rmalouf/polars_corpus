@@ -26,4 +26,4 @@ clean:
 
 compile:
 	maturin build --release
-	cp target/release/libpolars_corpus.dylib polars_corpus/_internal.so
+	cp target/release/libpolars_corpus.dylib polars_corpus/_internal.abi3.so

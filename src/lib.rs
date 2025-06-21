@@ -2,7 +2,7 @@
 // #![warn(unused_variables)]
 // #![warn(dead_code)]
 
-mod expressions;
+//mod expressions;
 use polars::prelude::*;
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
@@ -16,14 +16,58 @@ fn _to_spans(n: usize, spans: Vec<(usize, usize)>) -> PyResult<PySeries> {
             return Err(PyValueError::new_err("index out of bounds"));
         } else {
             span_vec[start] = "B";
-            for i in start + 1..end {
-                span_vec[i] = "I";
+            if start + 1 < end {
+                span_vec[start + 1..end].fill("I");
             }
         }
     }
     let result = Series::new("spans".into(), &span_vec);
     Ok(PySeries(result))
 }
+
+#[pyfunction]
+fn _make_spans_mask(n: usize, spans: Vec<(usize, usize)>) -> PyResult<PySeries> {
+    let mut mask = vec![false; n];
+    for (start, end) in spans {
+        for i in start..end {
+            mask[i] = true;
+            }
+        }
+    let result = Series::new("mask".into(), &mask);
+    Ok(PySeries(result))
+}
+
+
+// #[pyfunction]
+// fn _set_vars(n: usize, spans: Vec<(usize, usize)>, values: Vec<String>) -> PyResult<PySeries> {
+//     let mut span_vec : Vec<Option<Vec<String>>> = vec![None; n];
+//     for ((start, end), value) in spans.iter().zip(values) {
+//         if (*start > n) || (*end > n) {
+//             return Err(PyValueError::new_err("index out of bounds"));
+//         } else {
+//             for i in *start..*end {
+//                 span_vec[i] = Some(value.clone());
+//             }
+//         }
+//     }
+//
+//     let mut builder = ListStringChunkedBuilder::new("example".into(), n, n*10);
+//
+//     for item in span_vec {
+//         match item {
+//             Some(strings) => {
+//                 builder.append_values_iter(strings.iter().map(|s| s.as_str()));
+//             }
+//             None => {
+//                 builder.append_null();
+//             }
+//         }
+//     }
+//
+//     Ok(PySeries(builder.finish().into_series()))
+// }
+
+
 
 #[pymodule]
 fn _internal(py: Python, m: &Bound<PyModule>) -> PyResult<()> {
@@ -33,6 +77,8 @@ fn _internal(py: Python, m: &Bound<PyModule>) -> PyResult<()> {
         <pyo3::panic::PanicException as pyo3::PyTypeInfo>::type_object(py),
     )?;
     m.add_function(wrap_pyfunction!(_to_spans, m)?)?;
+    // m.add_function(wrap_pyfunction!(_set_vars, m)?)?;
+    m.add_function(wrap_pyfunction!(_make_spans_mask, m)?)?;
     Ok(())
 }
 
