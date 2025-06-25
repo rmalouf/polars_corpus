@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import time
 from collections import deque, namedtuple, defaultdict
+from enum import IntEnum
 from typing import Iterator, Optional, Any
 
 import numpy as np
@@ -8,15 +10,13 @@ import polars as pl
 import pyparsing as pp
 from tqdm import tqdm
 
-Token: type[Token] = namedtuple("Token", ("expr"))
-Jump: type[Jump] = namedtuple("Jump", ("offset"))
-Split: type[Split] = namedtuple("Split", ("offset1", "offset2"))
-Match: type[Match] = namedtuple("Match", ())
+from ._internal import Opcode, OpcodeMatcher
 
 Span: type[Span] = namedtuple("Span", ("start", "end"))
 
 
 type Mask = np.typing.NDArray[np.bool_]
+
 
 class ScanContext:
     __slots__ = "bindings"
@@ -28,48 +28,57 @@ class ScanContext:
 
 
 def compute_masks(df: pl.DataFrame, opcodes: list[Any]) -> Mask:
-    print("1")
     token_exprs = []
     back_refs = defaultdict(list)
+    columns = []
     for i, opcode in enumerate(opcodes):
         match opcode:
-            case Token(expr):
-                token_exprs.append(opcode.expr.alias(str(i)))
-            case Jump(offset):
+            case (Opcode.TOKEN, expr):
+                token_exprs.append(expr.alias(str(i)))
+                columns.append(str(i))
+                #print(f'Add {i}')
+            case (Opcode.JUMP, offset):
                 back_refs[i + offset].append(i)
-            case Split(offset1, offset2):
+            case (Opcode.SPLIT, offset1, offset2):
                 back_refs[i + offset1].append(i)
                 back_refs[i + offset2].append(i)
-            case Match():
+            case (Opcode.MATCH,) | (Opcode.SKIP,):
                 token_exprs.append(pl.lit(True).alias(str(i)))
+                columns.append(str(i))
+                #print(f'Add {i}')
             case _:
-                pass
+                raise ValueError(f"Unknown opcode {opcode}")
 
-    print("2")
     masks_df = df.select(token_exprs)
-    print("3")
 
-    masks = np.zeros((len(opcodes), len(df)), dtype=bool)
-    for col in masks_df.columns:
-        masks[int(col), :] = masks_df[col].to_numpy()
-
-    print("4")
-    agenda = [int(i) for i in masks_df.columns]
+    agenda = [int(i) for i in columns]
     seen = set()
     while agenda:
         pc = agenda.pop(0)
         if pc not in seen:
             match opcodes[pc]:
-                case Jump(offset):
-                    masks[pc] = masks[offset + pc]
-                case Split(offset1, offset2):
-                    masks[pc] = np.logical_or(masks[offset1 + pc], masks[offset2 + pc])
+                case (Opcode.JUMP, offset):
+                    masks_df = masks_df.with_columns(pl.col(str(offset + pc)).alias(str(pc)))
+                    #print(f'Add {pc}')
+                    #masks[pc] = masks[offset + pc]
+                case (Opcode.SPLIT, offset1, offset2):
+                    masks_df = masks_df.with_columns((pl.col(str(offset1 + pc)) | pl.col(str(offset2 + pc))).alias(str(pc)))
+                    #print(f'Add {pc}')
+                    #masks[pc] = np.logical_or(masks[offset1 + pc], masks[offset2 + pc])
                 case _:
                     pass
             agenda.extend(back_refs[pc])
             seen.add(pc)
 
-    return masks
+    #masks_df = masks_df.collect()
+
+    #masks = np.zeros((len(opcodes), len(df)), dtype=bool)
+    #for col in masks_df.columns:
+    #    masks[int(col), :] = masks_df[col].to_numpy()
+
+
+
+    return masks_df
 
 
 def matchall(
@@ -79,50 +88,68 @@ def matchall(
         bar = tqdm(total=len(df))
 
     opcodes = list(cqp.parse_string(query, parse_all=True))
-    opcodes.append(Match())
+    opcodes.append((Opcode.MATCH,))
 
-    masks = compute_masks(df, opcodes)
+    now = time.time()
+    mask = compute_masks(df, opcodes)
+    print("Compute mask:", time.time() - now)
+    now = time.time()
 
-    starts = np.where(masks[0, :])[0]
-    n = len(starts)
-    i = 0
-    while i < n:
-        cursor = starts[i]
-        if progress:
-            bar.update(cursor - bar.n)
-        if (match_end := match_opcodes(opcodes, masks, cursor)) is None:
-            i = i + 1
-        else:
-            yield Span(cursor, match_end), {}
-            while i < n and starts[i] < match_end:
-                i = i + 1
+    # opcodes = [(Opcode.TOKEN) if opcode[0]==Opcode.TOKEN else opcode  for opcode in opcodes]
+
+    now = time.time()
+    opcode_matcher = OpcodeMatcher(opcodes, mask)
+    print("Init OpcodeMatcher:", time.time() - now)
+    now = time.time()
+
+    now = time.time()
+    spans = opcode_matcher.matchall()
+    print("Search:", time.time() - now)
 
     if progress:
         bar.update(len(df) - bar.n)
         bar.close()
 
+    now = time.time()
+    if spans is not None:
+        spans = [Span(x, y) for x, y in spans]
+    print("Result:", time.time() - now)
 
-def match_opcodes(
-    opcodes: list[Any], masks: Mask, cursor: int, pc: int = 0
-) -> int:
-    while True:
-        if not masks[pc, cursor]:
-            break
-        match opcodes[pc]:
-            case Token(_):
-                cursor = cursor + 1
-                pc = pc + 1
-            case Split(offset1, offset2):
-                if (
-                    match_end := match_opcodes(opcodes, masks, cursor, pc + offset1)
-                ) is None:
-                    pc = pc + offset2
-                else:
-                    return match_end
-            case Jump(offset):
-                pc = pc + offset
-            case Match():
-                return cursor
+    return spans
+
+
+def rust_match_opcodes(o, c):
+    return o._match_opcodes(c)
+
+
+def match_opcodes(opcodes: list[Any], masks: Mask, cursor: int) -> Optional[int]:
+    match_end = cursor
+
+    def _match(sp: int, pc: int) -> None:
+        nonlocal match_end
+        while True:
+            if not masks[pc, sp]:
+                break
+            match opcodes[pc]:
+                case (Opcode.TOKEN, *_) | (Opcode.SKIP, *_):
+                    sp = sp + 1
+                    pc = pc + 1
+                case (Opcode.SPLIT, offset1, offset2):
+                    _match(sp, pc + offset2)
+                    pc = pc + offset1
+                case (Opcode.JUMP, offset, *_):
+                    pc = pc + offset
+                case (Opcode.MATCH, *_):
+                    match_end = max(match_end, sp)
+                    break
+                case _:
+                    raise ValueError("Unknown opcode")
+
+    _match(cursor, 0)
+    if match_end > cursor:
+        return match_end
+    else:
+        return None
 
 
 ## compile token-level annotations into polars expressions
@@ -152,9 +179,9 @@ constraint_formula <<= token_disj
 
 
 node = (pp.Suppress("[") + constraint_formula + pp.Suppress("]")).set_parse_action(
-    lambda x: Token(x[0])
+    lambda x: (Opcode.TOKEN, x[0])
 ) | (pp.Suppress("[") + pp.Empty() + pp.Suppress("]")).set_parse_action(
-    lambda x: Skip()
+    lambda x: (Opcode.SKIP,)
 )
 
 ## compile CQP commands into search operations
@@ -172,39 +199,69 @@ primary = simple_primary
 
 
 def compile_star(args):
-    result = [Split(1, len(args) + 2)]
+    result = [(Opcode.SPLIT, 1, len(args) + 2)]
     result.extend(args)
-    result.append(Jump(-(len(args) + 1)))
+    result.append((Opcode.JUMP, -(len(args) + 1)))
     return result
 
 
 def compile_plus(args):
     result = []
     result.extend(args)
-    result.append(Split(-len(args), 1))
+    result.append((Opcode.SPLIT, -len(args), 1))
     return result
 
 
 def compile_question(args):
-    result = [Split(1, len(args) + 1)]
+    result = [(Opcode.SPLIT, 1, len(args) + 1)]
     result.extend(args)
     return result
 
 
-#
-# def compile_m_to_n(args, m, n):
-#     result = [ ]
-#     if m == 0:
-#         result.extend(compile_question(compile_m_to_n(args, 1, n)))
-#     else:
-#         for _ in range(m):
-#             result.append(args)
+def compile_m_to_n(args, m=None, n=None):
+    result = []
+    if m is None:
+        m = 0
+    else:
+        for _ in range(m):
+            result.extend(args)
+    if n is None:
+        result.extend(compile_star(args))
+    else:
+        for i in range(0, n - m):
+            result.extend(compile_question(args))
+    return result
 
 
 repetition = (
     (primary + pp.Suppress("*")).set_parse_action(compile_star)
     | (primary + pp.Suppress("+")).set_parse_action(compile_plus)
     | (primary + pp.Suppress("?")).set_parse_action(compile_question)
+    | (
+        pp.Group(primary)
+        + pp.Suppress("{")
+        + number
+        + pp.Suppress(",")
+        + number
+        + pp.Suppress("}")
+    ).set_parse_action(lambda e: compile_m_to_n(e[0], m=int(e[1]), n=int(e[2])))
+    | (
+        pp.Group(primary)
+        + pp.Suppress("{")
+        + number
+        + pp.Suppress(",")
+        + pp.Suppress("}")
+    ).set_parse_action(lambda e: compile_m_to_n(e[0], m=int(e[1])))
+    | (
+        pp.Group(primary)
+        + pp.Suppress("{")
+        + pp.Suppress(",")
+        + number
+        + pp.Suppress("}")
+    ).set_parse_action(lambda e: compile_m_to_n(e[0], n=int(e[1])))
+    | (
+        pp.Group(primary) + pp.Suppress("{") + number + pp.Suppress("}")
+    ).set_parse_action(lambda e: compile_m_to_n(e[0], m=int(e[1]), n=int(e[1])))
     | primary
 )
 
@@ -242,9 +299,9 @@ def compile_disjunction(args):
     else:
         result = []
         for i in range(len(args) - 1):
-            result.append(Split(1, len(args[i]) + 2))
+            result.append((Opcode.SPLIT, 1, len(args[i]) + 2))
             result.extend(args[i])
-            result.append(Jump(len(args[i + 1]) + 1))
+            result.append((Opcode.JUMP, len(args[i + 1]) + 1))
         result.extend(args[-1])
         return result
 

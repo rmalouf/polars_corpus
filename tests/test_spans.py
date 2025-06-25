@@ -136,7 +136,9 @@ class TestWithSpans:
             }
         )
 
-        concordance = SearchResults(df, "", [Span(1, 3), Span(4, 6)])  # "quick brown" and "jumps high"
+        concordance = SearchResults(
+            df, "", [Span(1, 3), Span(4, 6)]
+        )  # "quick brown" and "jumps high"
         result = with_spans(df, concordance)
         expected_spans = ["O", "B", "I", "O", "B", "I"]
 
@@ -166,7 +168,9 @@ class TestWithSpans:
             }
         )
 
-        concordance = SearchResults(df, "", [Span(0, 2), Span(2, 4)])  # "New York" and "City Mayor"
+        concordance = SearchResults(
+            df, "", [Span(0, 2), Span(2, 4)]
+        )  # "New York" and "City Mayor"
         result = with_spans(df, concordance)
         expected_spans = ["B", "I", "B", "I"]
 
@@ -300,7 +304,9 @@ class TestIntegration:
             }
         )
 
-        concordance = SearchResults(df, "", [Span(0, 2), Span(3, 5)])  # "John Smith" and "Mary Johnson"
+        concordance = SearchResults(
+            df, "", [Span(0, 2), Span(3, 5)]
+        )  # "John Smith" and "Mary Johnson"
 
         df_with_spans = with_spans(df, concordance)
         df_with_indices = with_span_index(df_with_spans, "spans")
@@ -360,7 +366,9 @@ class TestCorpusLinguisticsScenarios:
     def test_noun_phrase_extraction(self, sample_corpus_df):
         """Test extracting noun phrases."""
         # Simulate noun phrase spans
-        np_concordance = SearchResults(sample_corpus_df, "", [Span(1, 4), Span(6, 9)])  # Adjective + Noun phrases
+        np_concordance = SearchResults(
+            sample_corpus_df, "", [Span(1, 4), Span(6, 9)]
+        )  # Adjective + Noun phrases
 
         result = with_spans(sample_corpus_df, np_concordance, name="np_spans")
         result = with_span_index(result, "np_spans", name="np_idx")
@@ -374,11 +382,15 @@ class TestCorpusLinguisticsScenarios:
     def test_multiple_annotation_layers(self, sample_corpus_df):
         """Test multiple non-overlapping annotation layers (e.g., syntactic vs semantic spans)."""
         # Non-overlapping syntactic and semantic spans
-        syntactic_spans = SearchResults(sample_corpus_df, "", [Span(1, 4)])  # "quick brown fox"
+        syntactic_spans = SearchResults(
+            sample_corpus_df, "", [Span(1, 4)]
+        )  # "quick brown fox"
 
         result = with_spans(sample_corpus_df, syntactic_spans, name="syntax")
 
-        semantic_spans = SearchResults(result, "", [Span(6, 9)])  # "the lazy dog" (different span)
+        semantic_spans = SearchResults(
+            result, "", [Span(6, 9)]
+        )  # "the lazy dog" (different span)
         result = with_spans(result, semantic_spans, name="semantics")
 
         # Both span types should be present

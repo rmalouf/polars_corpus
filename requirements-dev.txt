@@ -51,6 +51,8 @@ defusedxml==0.7.1
     # via nbconvert
 executing==2.2.0
     # via stack-data
+fastexcel==0.14.0
+    # via -r requirements-examples.in
 fastjsonschema==2.21.1
     # via nbformat
 fonttools==4.58.4
@@ -245,10 +247,12 @@ ptyprocess==0.7.0
 pure-eval==0.2.3
     # via stack-data
 pyarrow==20.0.0
-    # via -r requirements-examples.in
+    # via
+    #   -r requirements-examples.in
+    #   fastexcel
 pycparser==2.22
     # via cffi
-pygments==2.19.1
+pygments==2.19.2
     # via
     #   ipython
     #   ipython-pygments-lexers

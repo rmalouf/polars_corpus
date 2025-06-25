@@ -98,7 +98,7 @@ def get_xml(filename):
                     data["pos"].append(None)
             sent_tag = "I"
 
-    c = pl.DataFrame(
+    corpus_df = pl.DataFrame(
         data,
         schema={
             "token": pl.String,
@@ -112,15 +112,17 @@ def get_xml(filename):
             "speaker_id": pl.String,
         },
     )
-    return c, speakers_df
+    return corpus_df, speakers_df
 
 
-paths = sorted(list(Path("/Volumes/Corpora/bnc_xml").glob("**/*.xml")))
+paths = sorted(list(Path("/Volumes/Corpora/bnc_xml/Texts").glob("**/*.xml")))
 with joblib_progress(total=len(paths)):
-    with Parallel(n_jobs=8, return_as="generator_unordered", verbose=0) as parallel:
-        data1, data2 = zip(*parallel(delayed(get_xml)(path) for path in paths))
-        c = pl.concat(data1)
-        s = pl.concat(data2)
+    with Parallel(n_jobs=8, return_as="generator", verbose=0) as parallel:
+        corpus_dfs, speakers_dfs = zip(
+            *parallel(delayed(get_xml)(path) for path in paths)
+        )
+        corpus_df = pl.concat(corpus_dfs)
+        speakers_df = pl.concat(speakers_dfs)
 
-c.write_parquet("bnc.parquet")
-s.write_parquet("bnc-speakers.parquet")
+corpus_df.write_parquet("bnc.parquet")
+speakers_df.write_parquet("bnc-speakers.parquet")

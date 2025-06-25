@@ -31,28 +31,29 @@ class SearchResults:
         columns = self.df.columns + ["var_" + v for v in self.bindings.keys()]
 
         df = (
-            self.df.with_columns(self.to_spans(name="_spans"), *self.to_bindings())
+            self.df.with_columns(self.to_spans(name="_spans"))  # , *self.to_bindings())
             .pipe(with_span_index, span_col="_spans", name="_span_idx")
             .drop_nulls("_span_idx")
             .group_by("_span_idx")
             .agg(cs.all())
+            .sort(by="_span_idx")
             .select(
                 cs.by_name(columns).list.drop_nulls().list.unique(maintain_order=True)
             )
         )
 
-        singleton_cols = [
-            col
-            for col in columns
-            if df.select(pl.col(col).list.len().max()).item() == 1
-        ]
-
-        df = df.select(
-            [
-                pl.col(col).list.get(0) if col in singleton_cols else pl.col(col)
-                for col in columns
-            ]
-        )
+        # singleton_cols = [
+        #     col
+        #     for col in columns
+        #     if df.select(pl.col(col).list.len().max()).item() == 1
+        # ]
+        #
+        # df = df.select(
+        #     [
+        #         pl.col(col).list.get(0) if col in singleton_cols else pl.col(col)
+        #         for col in columns
+        #     ]
+        # )
 
         return df
 
@@ -83,11 +84,13 @@ class SearchResults:
 
 
 def search(df: pl.DataFrame, query: str) -> SearchResults:
-    spans, bindings = zip(*list(matchall(df, query)))
-    new_bindings = defaultdict(list)
-    for binding in bindings:
-        for var, val in binding.items():
-            new_bindings[var].append(val)
+    spans = matchall(df, query)
+    new_bindings = {}
+    # spans, bindings = zip(*list(matchall(df, query)))
+    # new_bindings = defaultdict(list)
+    # for binding in bindings:
+    #    for var, val in binding.items():
+    #        new_bindings[var].append(val)
     return SearchResults(df, query, spans, new_bindings)
 
 

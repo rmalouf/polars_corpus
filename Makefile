@@ -27,3 +27,9 @@ clean:
 compile:
 	maturin build --release
 	cp target/release/libpolars_corpus.dylib polars_corpus/_internal.abi3.so
+	codesign --force --sign - polars_corpus/_internal.abi3.so
+
+debug:
+	maturin build
+	cp target/debug/libpolars_corpus.dylib polars_corpus/_internal.abi3.so
+	codesign --force --sign - polars_corpus/_internal.abi3.so

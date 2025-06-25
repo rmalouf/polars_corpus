@@ -3,40 +3,15 @@
 // #![warn(dead_code)]
 
 //mod expressions;
-use polars::prelude::*;
-use pyo3::exceptions::PyValueError;
+mod matcher;
+
+use matcher::{_make_spans_mask, _to_spans, Opcode, OpcodeMatcher};
+// use ndarray::s;
+// use numpy::PyReadonlyArray2;
+// use polars::prelude::*;
+// use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
-use pyo3_polars::{PolarsAllocator, PySeries};
-
-#[pyfunction]
-fn _to_spans(n: usize, spans: Vec<(usize, usize)>) -> PyResult<PySeries> {
-    let mut span_vec = vec!["O"; n];
-    for (start, end) in spans {
-        if (start > n) | (end > n) {
-            return Err(PyValueError::new_err("index out of bounds"));
-        } else {
-            span_vec[start] = "B";
-            if start + 1 < end {
-                span_vec[start + 1..end].fill("I");
-            }
-        }
-    }
-    let result = Series::new("spans".into(), &span_vec);
-    Ok(PySeries(result))
-}
-
-#[pyfunction]
-fn _make_spans_mask(n: usize, spans: Vec<(usize, usize)>) -> PyResult<PySeries> {
-    let mut mask = vec![false; n];
-    for (start, end) in spans {
-        for i in start..end {
-            mask[i] = true;
-            }
-        }
-    let result = Series::new("mask".into(), &mask);
-    Ok(PySeries(result))
-}
-
+use pyo3_polars::PolarsAllocator;
 
 // #[pyfunction]
 // fn _set_vars(n: usize, spans: Vec<(usize, usize)>, values: Vec<String>) -> PyResult<PySeries> {
@@ -67,8 +42,6 @@ fn _make_spans_mask(n: usize, spans: Vec<(usize, usize)>) -> PyResult<PySeries> 
 //     Ok(PySeries(builder.finish().into_series()))
 // }
 
-
-
 #[pymodule]
 fn _internal(py: Python, m: &Bound<PyModule>) -> PyResult<()> {
     m.add("__version__", env!("CARGO_PKG_VERSION"))?;
@@ -79,6 +52,9 @@ fn _internal(py: Python, m: &Bound<PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(_to_spans, m)?)?;
     // m.add_function(wrap_pyfunction!(_set_vars, m)?)?;
     m.add_function(wrap_pyfunction!(_make_spans_mask, m)?)?;
+    // m.add_function(wrap_pyfunction!(_match_opcodes, m)?)?;
+    m.add_class::<Opcode>()?;
+    m.add_class::<OpcodeMatcher>()?;
     Ok(())
 }
 

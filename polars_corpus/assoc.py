@@ -195,6 +195,7 @@ def compute_loglik(table: TPolarsFrame) -> TPolarsFrame:
 #         result[i] = result[i] * 2.0
 #
 
+
 def compute_min_sens(table: TPolarsFrame) -> TPolarsFrame:
     """
     Compute the mean square (ms) values for a given data table. The function
