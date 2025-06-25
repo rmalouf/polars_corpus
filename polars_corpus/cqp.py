@@ -1,8 +1,7 @@
 from __future__ import annotations
 
 import time
-from collections import deque, namedtuple, defaultdict
-from enum import IntEnum
+from collections import defaultdict
 from typing import Iterator, Optional, Any
 
 import numpy as np
@@ -10,10 +9,7 @@ import polars as pl
 import pyparsing as pp
 from tqdm import tqdm
 
-from ._internal import Opcode, OpcodeMatcher
-
-Span: type[Span] = namedtuple("Span", ("start", "end"))
-
+from ._internal import Opcode, OpcodeMatcher, Span
 
 type Mask = np.typing.NDArray[np.bool_]
 
@@ -28,6 +24,7 @@ class ScanContext:
 
 
 def compute_masks(df: pl.DataFrame, opcodes: list[Any]) -> Mask:
+
     token_exprs = []
     back_refs = defaultdict(list)
     columns = []
@@ -45,7 +42,6 @@ def compute_masks(df: pl.DataFrame, opcodes: list[Any]) -> Mask:
             case (Opcode.MATCH,) | (Opcode.SKIP,):
                 token_exprs.append(pl.lit(True).alias(str(i)))
                 columns.append(str(i))
-                #print(f'Add {i}')
             case _:
                 raise ValueError(f"Unknown opcode {opcode}")
 
@@ -59,24 +55,12 @@ def compute_masks(df: pl.DataFrame, opcodes: list[Any]) -> Mask:
             match opcodes[pc]:
                 case (Opcode.JUMP, offset):
                     masks_df = masks_df.with_columns(pl.col(str(offset + pc)).alias(str(pc)))
-                    #print(f'Add {pc}')
-                    #masks[pc] = masks[offset + pc]
                 case (Opcode.SPLIT, offset1, offset2):
                     masks_df = masks_df.with_columns((pl.col(str(offset1 + pc)) | pl.col(str(offset2 + pc))).alias(str(pc)))
-                    #print(f'Add {pc}')
-                    #masks[pc] = np.logical_or(masks[offset1 + pc], masks[offset2 + pc])
                 case _:
                     pass
             agenda.extend(back_refs[pc])
             seen.add(pc)
-
-    #masks_df = masks_df.collect()
-
-    #masks = np.zeros((len(opcodes), len(df)), dtype=bool)
-    #for col in masks_df.columns:
-    #    masks[int(col), :] = masks_df[col].to_numpy()
-
-
 
     return masks_df.rechunk()
 
@@ -90,17 +74,12 @@ def matchall(
     opcodes = list(cqp.parse_string(query, parse_all=True))
     opcodes.append((Opcode.MATCH,))
 
-    now = time.time()
+#    now = time.time()
     mask = compute_masks(df, opcodes)
     print("Compute mask:", time.time() - now)
-    now = time.time()
+#    now = time.time()
 
-    print(mask.null_count())
-
-
-    # opcodes = [(Opcode.TOKEN) if opcode[0]==Opcode.TOKEN else opcode  for opcode in opcodes]
-
-    now = time.time()
+#    now = time.time()
     columns = [ ]
     masks = [ ]
     for col in sorted(mask.columns):
@@ -108,21 +87,12 @@ def matchall(
         masks.append(mask[col])
     #    print(len(mask[col].get_chunks()))
     opcode_matcher = OpcodeMatcher(list(opcodes), masks)
-    print("Init OpcodeMatcher:", time.time() - now)
+#    print("Init OpcodeMatcher:", time.time() - now)
     now = time.time()
 
-    now = time.time()
+#    now = time.time()
     spans = opcode_matcher.matchall()
-    print("Search:", time.time() - now)
-
-    if progress:
-        bar.update(len(df) - bar.n)
-        bar.close()
-
-    now = time.time()
-    if spans is not None:
-        spans = [Span(x, y) for x, y in spans]
-    print("Result:", time.time() - now)
+#    print("Search:", time.time() - now)
 
     return spans
 

@@ -5,7 +5,7 @@
 //mod expressions;
 mod matcher;
 
-use matcher::{_make_spans_mask, _to_spans, Opcode, OpcodeMatcher};
+use matcher::{_make_spans_mask, _to_spans, Opcode, OpcodeMatcher, Span};
 // use ndarray::s;
 // use numpy::PyReadonlyArray2;
 // use polars::prelude::*;
@@ -53,6 +53,7 @@ fn _internal(py: Python, m: &Bound<PyModule>) -> PyResult<()> {
     // m.add_function(wrap_pyfunction!(_set_vars, m)?)?;
     m.add_function(wrap_pyfunction!(_make_spans_mask, m)?)?;
     // m.add_function(wrap_pyfunction!(_match_opcodes, m)?)?;
+    m.add_class::<Span>()?;
     m.add_class::<Opcode>()?;
     m.add_class::<OpcodeMatcher>()?;
     Ok(())

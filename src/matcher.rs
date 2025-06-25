@@ -6,9 +6,9 @@
 use std::cmp;
 
 use polars::prelude::*;
-use pyo3::exceptions::PyValueError;
+use pyo3::exceptions::{PyIndexError, PyValueError};
 use pyo3::prelude::*;
-use pyo3::types::{PyTuple, PyList};
+use pyo3::types::{PyList, PyTuple};
 use pyo3_polars::PySeries;
 
 #[pyfunction]
@@ -38,6 +38,41 @@ pub fn _make_spans_mask(n: usize, spans: Vec<(usize, usize)>) -> PyResult<PySeri
     }
     let result = Series::new("mask".into(), &mask);
     Ok(PySeries(result))
+}
+
+// Span
+
+#[pyclass]
+#[derive(Clone)]
+pub struct Span {
+    #[pyo3(get)]
+    pub start: usize,
+    #[pyo3(get)]
+    pub end: usize,
+}
+
+#[pymethods]
+impl Span {
+    #[new]
+    fn new(start: usize, end: usize) -> Self {
+        Span { start, end }
+    }
+
+    fn __repr__(&self) -> String {
+        format!("Span({}, {})", self.start, self.end)
+    }
+
+    fn __getitem__(&self, index: usize) -> PyResult<usize> {
+        match index {
+            0 => Ok(self.start),
+            1 => Ok(self.end),
+            _ => Err(PyIndexError::new_err("Index out of range")),
+        }
+    }
+
+    fn __len__(&self) -> usize {
+        2
+    }
 }
 
 #[pyclass]
@@ -101,7 +136,10 @@ impl OpcodeMatcher {
         let mut mask_vec = Vec::with_capacity(py_masks.len());
         for m in py_masks.iter() {
             let series: PySeries = m.extract()?;
-            let data = series.as_ref().bool().map_err(|_| PyValueError::new_err("all masks must be boolean"))?;
+            let data = series
+                .as_ref()
+                .bool()
+                .map_err(|_| PyValueError::new_err("all masks must be boolean"))?;
             mask_vec.push(data.clone());
         }
         Ok(OpcodeMatcher {
@@ -110,15 +148,15 @@ impl OpcodeMatcher {
         })
     }
 
-    fn matchall(&self) -> PyResult<Option<Vec<(usize, usize)>>> {
+    fn matchall(&self, py: Python) -> PyResult<Option<Vec<Span>>> {
         let mut cursor: usize = 0;
         let starts = &self.mask_vec[0];
-        let mut spans: Vec<(usize, usize)> = Vec::with_capacity(1000);
+        let mut spans: Vec<Span> = Vec::with_capacity(1000);
         while cursor < starts.len() {
             if unsafe { starts.value_unchecked(cursor) }
                 && let Some(match_end) = self._match_opcodes(cursor)?
             {
-                spans.push((cursor, match_end));
+                spans.push(Span::new(cursor, match_end));
                 cursor = match_end;
             } else {
                 cursor += 1;
