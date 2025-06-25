@@ -34,7 +34,7 @@ def compute_masks(df: pl.DataFrame, opcodes: list[Any]) -> Mask:
     for i, opcode in enumerate(opcodes):
         match opcode:
             case (Opcode.TOKEN, expr):
-                token_exprs.append(expr.alias(str(i)))
+                token_exprs.append(expr.fill_null(False).alias(str(i)))
                 columns.append(str(i))
                 #print(f'Add {i}')
             case (Opcode.JUMP, offset):
@@ -78,7 +78,7 @@ def compute_masks(df: pl.DataFrame, opcodes: list[Any]) -> Mask:
 
 
 
-    return masks_df
+    return masks_df.rechunk()
 
 
 def matchall(
@@ -95,10 +95,19 @@ def matchall(
     print("Compute mask:", time.time() - now)
     now = time.time()
 
+    print(mask.null_count())
+
+
     # opcodes = [(Opcode.TOKEN) if opcode[0]==Opcode.TOKEN else opcode  for opcode in opcodes]
 
     now = time.time()
-    opcode_matcher = OpcodeMatcher(opcodes, mask)
+    columns = [ ]
+    masks = [ ]
+    for col in sorted(mask.columns):
+        columns.append(col)
+        masks.append(mask[col])
+    #    print(len(mask[col].get_chunks()))
+    opcode_matcher = OpcodeMatcher(list(opcodes), masks)
     print("Init OpcodeMatcher:", time.time() - now)
     now = time.time()
 

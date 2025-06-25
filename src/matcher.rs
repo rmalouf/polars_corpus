@@ -5,13 +5,10 @@
 
 use std::cmp;
 
-use ndarray::s;
-use numpy::PyReadonlyArray2;
 use polars::prelude::*;
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
-use pyo3::types::{PyList, PyTuple};
-// use pyo3_polars::PyExpr;
+use pyo3::types::{PyTuple, PyList};
 use pyo3_polars::PySeries;
 
 #[pyfunction]
@@ -65,7 +62,7 @@ pub enum Opcode {
 #[pyclass]
 pub struct OpcodeMatcher {
     instructions: Vec<Instruction>,
-    mask_array: ndarray::Array2<bool>,
+    mask_vec: Vec<BooleanChunked>,
 }
 
 fn parse_opcodes<'py>(opcodes: &Bound<'py, PyList>) -> PyResult<Vec<Instruction>> {
@@ -99,21 +96,26 @@ fn parse_opcodes<'py>(opcodes: &Bound<'py, PyList>) -> PyResult<Vec<Instruction>
 #[pymethods]
 impl OpcodeMatcher {
     #[new]
-    fn new<'py>(opcodes: &Bound<'py, PyList>, mask: PyReadonlyArray2<bool>) -> PyResult<Self> {
-        let mask_array = mask.as_array().to_owned();
+    fn new<'py>(opcodes: &Bound<'py, PyList>, py_masks: &Bound<'py, PyList>) -> PyResult<Self> {
         let instructions = parse_opcodes(opcodes)?;
+        let mut mask_vec = Vec::with_capacity(py_masks.len());
+        for m in py_masks.iter() {
+            let series: PySeries = m.extract()?;
+            let data = series.as_ref().bool().map_err(|_| PyValueError::new_err("all masks must be boolean"))?;
+            mask_vec.push(data.clone());
+        }
         Ok(OpcodeMatcher {
             instructions,
-            mask_array,
+            mask_vec,
         })
     }
 
     fn matchall(&self) -> PyResult<Option<Vec<(usize, usize)>>> {
         let mut cursor: usize = 0;
-        let starts = self.mask_array.slice(s![0, ..]);
+        let starts = &self.mask_vec[0];
         let mut spans: Vec<(usize, usize)> = Vec::with_capacity(1000);
         while cursor < starts.len() {
-            if starts[cursor]
+            if unsafe { starts.value_unchecked(cursor) }
                 && let Some(match_end) = self._match_opcodes(cursor)?
             {
                 spans.push((cursor, match_end));
@@ -132,20 +134,20 @@ impl OpcodeMatcher {
     fn _match_opcodes(&self, cursor: usize) -> PyResult<Option<usize>> {
         let mut match_end = cursor;
         let mut stack = Vec::with_capacity(64);
-        let n = self.mask_array.len_of(ndarray::Axis(1));
+        let n = self.mask_vec[0].len();
         let last_pc = self.instructions.len() - 1;
         stack.push((cursor, 0));
         while let Some(task) = stack.pop() {
             let (mut sp, mut pc) = task;
             loop {
-                if pc == last_pc {
+                if pc >= last_pc {
                     // Success!
                     if sp > match_end {
                         match_end = sp;
                     };
                     break;
                 };
-                if sp >= n || !self.mask_array[[pc, sp]] {
+                if sp >= n || unsafe { !self.mask_vec[pc].value_unchecked(sp) } {
                     // Failure!
                     break;
                 };
