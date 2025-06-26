@@ -1,137 +1,82 @@
 from __future__ import annotations
 
 import time
-from collections import defaultdict
-from typing import Iterator, Optional, Any
+from typing import Any, Iterator, Optional
 
-import numpy as np
 import polars as pl
 import pyparsing as pp
-from tqdm import tqdm
 
 from ._internal import Opcode, OpcodeMatcher, Span
 
-type Mask = np.typing.NDArray[np.bool_]
+
+def col_name(i):
+    return f"_{i}"
 
 
-class ScanContext:
-    __slots__ = "bindings"
-
-    # TODO: get rid of this class. pass everything as args so we can use local variables
-
-    def __init__(self) -> None:
-        self.bindings: dict[str, list[str]] = dict()
+def compute_masks(df: pl.DataFrame, opcodes: list[Any]) -> pl.DataFrame:
+    for pc in range(len(opcodes)):
+        df = propagate_masks(pc, opcodes, df)
+    df = df.select([col_name(i) for i in range(len(opcodes))])
+    return df.rechunk()
 
 
-def compute_masks(df: pl.DataFrame, opcodes: list[Any]) -> Mask:
-
-    token_exprs = []
-    back_refs = defaultdict(list)
-    columns = []
-    for i, opcode in enumerate(opcodes):
-        match opcode:
+def propagate_masks(pc, opcodes, df) -> pl.DataFrame:
+    if col_name(pc) not in df:
+        match opcodes[pc]:
             case (Opcode.TOKEN, expr):
-                token_exprs.append(expr.fill_null(False).alias(str(i)))
-                columns.append(str(i))
-                #print(f'Add {i}')
-            case (Opcode.JUMP, offset):
-                back_refs[i + offset].append(i)
-            case (Opcode.SPLIT, offset1, offset2):
-                back_refs[i + offset1].append(i)
-                back_refs[i + offset2].append(i)
+                df = df.with_columns(expr.fill_null(False).alias(col_name(pc)))
             case (Opcode.MATCH,) | (Opcode.SKIP,):
-                token_exprs.append(pl.lit(True).alias(str(i)))
-                columns.append(str(i))
+                df = df.with_columns(pl.lit(True).alias(col_name(pc)))
+            case (Opcode.JUMP, offset):
+                if col_name(pc + offset) not in df.columns:
+                    df = propagate_masks(pc + offset, opcodes, df)
+                df = df.with_columns(pl.col(col_name(pc + offset)).alias(col_name(pc)))
+            case (Opcode.SPLIT, offset1, offset2):
+                if col_name(pc + offset1) not in df.columns:
+                    df = propagate_masks(pc + offset1, opcodes, df)
+                if col_name(pc + offset2) not in df.columns:
+                    df = propagate_masks(pc + offset2, opcodes, df)
+                df = df.with_columns(
+                    (
+                        pl.col(col_name(pc + offset1)) | pl.col(col_name(pc + offset2))
+                    ).alias(col_name(pc))
+                )
             case _:
-                raise ValueError(f"Unknown opcode {opcode}")
-
-    masks_df = df.select(token_exprs)
-
-    agenda = [int(i) for i in columns]
-    seen = set()
-    while agenda:
-        pc = agenda.pop(0)
-        if pc not in seen:
-            match opcodes[pc]:
-                case (Opcode.JUMP, offset):
-                    masks_df = masks_df.with_columns(pl.col(str(offset + pc)).alias(str(pc)))
-                case (Opcode.SPLIT, offset1, offset2):
-                    masks_df = masks_df.with_columns((pl.col(str(offset1 + pc)) | pl.col(str(offset2 + pc))).alias(str(pc)))
-                case _:
-                    pass
-            agenda.extend(back_refs[pc])
-            seen.add(pc)
-
-    return masks_df.rechunk()
+                raise ValueError(f"Unknown opcode {opcodes[pc]}")
+    return df
 
 
-def matchall(
-    df: pl.DataFrame, query: str, progress: bool = False
-) -> Iterator[tuple[Span, dict[str, Any]]]:
-    if progress:
-        bar = tqdm(total=len(df))
+def matchall(df: pl.DataFrame, query: str) -> Iterator[tuple[Span, dict[str, Any]]]:
+    now = time.time()
 
     opcodes = list(cqp.parse_string(query, parse_all=True))
     opcodes.append((Opcode.MATCH,))
 
-#    now = time.time()
     mask = compute_masks(df, opcodes)
-    print("Compute mask:", time.time() - now)
-#    now = time.time()
+    #    print("Compute mask:", time.time() - now)
+    #    now = time.time()
 
-#    now = time.time()
-    columns = [ ]
-    masks = [ ]
+    #    now = time.time()
+    columns = []
+    masks = []
     for col in sorted(mask.columns):
         columns.append(col)
         masks.append(mask[col])
     #    print(len(mask[col].get_chunks()))
     opcode_matcher = OpcodeMatcher(list(opcodes), masks)
-#    print("Init OpcodeMatcher:", time.time() - now)
-    now = time.time()
+    #    print("Init OpcodeMatcher:", time.time() - now)
+    #    now = time.time()
 
-#    now = time.time()
+    #    now = time.time()
     spans = opcode_matcher.matchall()
-#    print("Search:", time.time() - now)
+    #    print("Search:", time.time() - now)
+
+    print(f"{time.time()-now:.3f} seconds")
 
     return spans
 
 
-def rust_match_opcodes(o, c):
-    return o._match_opcodes(c)
-
-
-def match_opcodes(opcodes: list[Any], masks: Mask, cursor: int) -> Optional[int]:
-    match_end = cursor
-
-    def _match(sp: int, pc: int) -> None:
-        nonlocal match_end
-        while True:
-            if not masks[pc, sp]:
-                break
-            match opcodes[pc]:
-                case (Opcode.TOKEN, *_) | (Opcode.SKIP, *_):
-                    sp = sp + 1
-                    pc = pc + 1
-                case (Opcode.SPLIT, offset1, offset2):
-                    _match(sp, pc + offset2)
-                    pc = pc + offset1
-                case (Opcode.JUMP, offset, *_):
-                    pc = pc + offset
-                case (Opcode.MATCH, *_):
-                    match_end = max(match_end, sp)
-                    break
-                case _:
-                    raise ValueError("Unknown opcode")
-
-    _match(cursor, 0)
-    if match_end > cursor:
-        return match_end
-    else:
-        return None
-
-
-## compile token-level annotations into polars expressions
+## compile token-level constraints into polars expressions
 
 
 feature = pp.Word(pp.alphas + pp.nums)

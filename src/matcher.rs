@@ -3,80 +3,18 @@
 // #![warn(unused_variables)]
 // #![warn(dead_code)]
 
-use std::cmp;
+//use span::Span;
+
+use super::span::Span;
 
 use polars::prelude::*;
-use pyo3::exceptions::{PyIndexError, PyValueError};
 use pyo3::prelude::*;
+use pyo3::exceptions::{PyValueError};
 use pyo3::types::{PyList, PyTuple};
 use pyo3_polars::PySeries;
 
-#[pyfunction]
-pub fn _to_spans(n: usize, spans: Vec<(usize, usize)>) -> PyResult<PySeries> {
-    let mut span_vec = vec!["O"; n];
-    for (start, end) in spans {
-        if (start > n) | (end > n) {
-            return Err(PyValueError::new_err("index out of bounds"));
-        } else {
-            span_vec[start] = "B";
-            if start + 1 < end {
-                span_vec[start + 1..end].fill("I");
-            }
-        }
-    }
-    let result = Series::new("spans".into(), &span_vec);
-    Ok(PySeries(result))
-}
-
-#[pyfunction]
-pub fn _make_spans_mask(n: usize, spans: Vec<(usize, usize)>) -> PyResult<PySeries> {
-    let mut mask = vec![false; n];
-    for (start, end) in spans {
-        for i in start..end {
-            mask[i] = true;
-        }
-    }
-    let result = Series::new("mask".into(), &mask);
-    Ok(PySeries(result))
-}
-
-// Span
-
 #[pyclass]
-#[derive(Clone)]
-pub struct Span {
-    #[pyo3(get)]
-    pub start: usize,
-    #[pyo3(get)]
-    pub end: usize,
-}
-
-#[pymethods]
-impl Span {
-    #[new]
-    fn new(start: usize, end: usize) -> Self {
-        Span { start, end }
-    }
-
-    fn __repr__(&self) -> String {
-        format!("Span({}, {})", self.start, self.end)
-    }
-
-    fn __getitem__(&self, index: usize) -> PyResult<usize> {
-        match index {
-            0 => Ok(self.start),
-            1 => Ok(self.end),
-            _ => Err(PyIndexError::new_err("Index out of range")),
-        }
-    }
-
-    fn __len__(&self) -> usize {
-        2
-    }
-}
-
-#[pyclass]
-enum Instruction {
+enum Operation {
     Token(),
     Jump(isize),
     Split(isize, isize),
@@ -96,43 +34,43 @@ pub enum Opcode {
 
 #[pyclass]
 pub struct OpcodeMatcher {
-    instructions: Vec<Instruction>,
+    operations: Vec<Operation>,
     mask_vec: Vec<BooleanChunked>,
 }
 
-fn parse_opcodes<'py>(opcodes: &Bound<'py, PyList>) -> PyResult<Vec<Instruction>> {
-    let mut instructions = Vec::new();
+fn parse_opcodes<'py>(opcodes: &Bound<'py, PyList>) -> PyResult<Vec<Operation>> {
+    let mut operations = Vec::new();
     for item in opcodes.iter() {
         let tuple = item.downcast::<PyTuple>()?;
         let py_opcode = tuple.get_item(0)?;
         let opcode = py_opcode.extract::<Opcode>()?;
-        let instruction = {
+        let operation = {
             match opcode {
-                Opcode::TOKEN => Instruction::Token(),
-                Opcode::MATCH => Instruction::Match(),
-                Opcode::SKIP => Instruction::Skip(),
+                Opcode::TOKEN => Operation::Token(),
+                Opcode::MATCH => Operation::Match(),
+                Opcode::SKIP => Operation::Skip(),
                 Opcode::JUMP => {
                     let offset: isize = tuple.get_item(1)?.extract()?;
-                    Instruction::Jump(offset)
+                    Operation::Jump(offset)
                 },
                 Opcode::SPLIT => {
                     let offset1: isize = tuple.get_item(1)?.extract()?;
                     let offset2: isize = tuple.get_item(2)?.extract()?;
-                    Instruction::Split(offset1, offset2)
+                    Operation::Split(offset1, offset2)
                 },
             }
         };
-        instructions.push(instruction);
+        operations.push(operation);
     }
     // be sure to check in advance to make sure all branches lead to valid pcs
-    Ok(instructions)
+    Ok(operations)
 }
 
 #[pymethods]
 impl OpcodeMatcher {
     #[new]
     fn new<'py>(opcodes: &Bound<'py, PyList>, py_masks: &Bound<'py, PyList>) -> PyResult<Self> {
-        let instructions = parse_opcodes(opcodes)?;
+        let operations = parse_opcodes(opcodes)?;
         let mut mask_vec = Vec::with_capacity(py_masks.len());
         for m in py_masks.iter() {
             let series: PySeries = m.extract()?;
@@ -143,12 +81,12 @@ impl OpcodeMatcher {
             mask_vec.push(data.clone());
         }
         Ok(OpcodeMatcher {
-            instructions,
+            operations,
             mask_vec,
         })
     }
 
-    fn matchall(&self, py: Python) -> PyResult<Option<Vec<Span>>> {
+    fn matchall(&self) -> PyResult<Option<Vec<Span>>> {
         let mut cursor: usize = 0;
         let starts = &self.mask_vec[0];
         let mut spans: Vec<Span> = Vec::with_capacity(1000);
@@ -173,7 +111,7 @@ impl OpcodeMatcher {
         let mut match_end = cursor;
         let mut stack = Vec::with_capacity(64);
         let n = self.mask_vec[0].len();
-        let last_pc = self.instructions.len() - 1;
+        let last_pc = self.operations.len() - 1;
         stack.push((cursor, 0));
         while let Some(task) = stack.pop() {
             let (mut sp, mut pc) = task;
@@ -185,26 +123,27 @@ impl OpcodeMatcher {
                     };
                     break;
                 };
-                if sp >= n || unsafe { !self.mask_vec[pc].value_unchecked(sp) } {
+               // if sp >= n || unsafe { !self.mask_vec[pc].value_unchecked(sp) } {
+                if sp >= n || !self.mask_vec[pc].get(sp).unwrap()  {
                     // Failure!
                     break;
                 };
-                match self.instructions[pc] {
-                    Instruction::Token() | Instruction::Skip() => {
+                match self.operations[pc] {
+                    Operation::Token() | Operation::Skip() => {
                         sp += 1;
                         pc += 1;
                     },
-                    Instruction::Split(offset1, offset2) => {
+                    Operation::Split(offset1, offset2) => {
                         let pc2 = (pc as isize + offset2) as usize;
                         stack.push((sp, pc2));
                         pc = (pc as isize + offset1) as usize;
                     },
-                    Instruction::Jump(offset) => {
+                    Operation::Jump(offset) => {
                         pc = (pc as isize + offset) as usize;
                     },
-                    Instruction::Match() => {
-                        // we should never get here
-                        match_end = cmp::max(match_end, sp);
+                    Operation::Match() => {
+                        // we should never get here!!!
+                        // match_end = cmp::max(match_end, sp);
                         break;
                     },
                 }

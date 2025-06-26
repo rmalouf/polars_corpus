@@ -232,8 +232,6 @@ pluggy==1.6.0
     # via pytest
 polars==1.30.0
     # via -r requirements.in
-target/wheels/polars_corpus-0.1.0-cp39-abi3-macosx_11_0_arm64.whl
-    # via -r requirements.in
 prometheus-client==0.22.1
     # via jupyter-server
 prompt-toolkit==3.0.51

@@ -2,14 +2,9 @@
 // #![warn(unused_variables)]
 // #![warn(dead_code)]
 
-//mod expressions;
 mod matcher;
+mod span;
 
-use matcher::{_make_spans_mask, _to_spans, Opcode, OpcodeMatcher, Span};
-// use ndarray::s;
-// use numpy::PyReadonlyArray2;
-// use polars::prelude::*;
-// use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use pyo3_polars::PolarsAllocator;
 
@@ -49,13 +44,12 @@ fn _internal(py: Python, m: &Bound<PyModule>) -> PyResult<()> {
         "PanicException",
         <pyo3::panic::PanicException as pyo3::PyTypeInfo>::type_object(py),
     )?;
-    m.add_function(wrap_pyfunction!(_to_spans, m)?)?;
+    m.add_function(wrap_pyfunction!(span::_to_spans, m)?)?;
     // m.add_function(wrap_pyfunction!(_set_vars, m)?)?;
-    m.add_function(wrap_pyfunction!(_make_spans_mask, m)?)?;
-    // m.add_function(wrap_pyfunction!(_match_opcodes, m)?)?;
-    m.add_class::<Span>()?;
-    m.add_class::<Opcode>()?;
-    m.add_class::<OpcodeMatcher>()?;
+    m.add_function(wrap_pyfunction!(span::_make_spans_mask, m)?)?;
+    m.add_class::<span::Span>()?;
+    m.add_class::<matcher::Opcode>()?;
+    m.add_class::<matcher::OpcodeMatcher>()?;
     Ok(())
 }
 

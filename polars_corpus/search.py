@@ -5,7 +5,7 @@ from collections import defaultdict
 import polars as pl
 import polars.selectors as cs
 
-from ._internal import _to_spans, _make_spans_mask
+from ._internal import _make_spans_mask, _to_spans
 from .cqp import matchall
 
 __all__ = ["search", "SearchResults", "with_span_index", "to_span_index"]
@@ -28,7 +28,7 @@ class SearchResults:
         return f"SearchResults<'{self.query}'; {len(self.matched_spans):,} matches>"
 
     def matches(self, fields: str = "token") -> pl.DataFrame:
-        columns = self.df.columns + ["var_" + v for v in self.bindings.keys()]
+        columns = self.df.columns  # + ["var_" + v for v in self.bindings.keys()]
 
         df = (
             self.df.with_columns(self.to_spans(name="_spans"))  # , *self.to_bindings())
