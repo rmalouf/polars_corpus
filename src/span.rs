@@ -41,8 +41,8 @@ pub fn _make_spans_mask(n: usize, spans: Vec<(usize, usize)>) -> PyResult<PySeri
 
 // Span
 
-#[pyclass]
-#[derive(Clone)]
+#[pyclass(eq,module="polars_corpus")]
+#[derive(Clone, PartialEq)]
 pub struct Span {
     #[pyo3(get)]
     pub start: usize,

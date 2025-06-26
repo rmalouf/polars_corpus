@@ -1,8 +1,9 @@
-import pytest
 import polars as pl
-import numpy as np
-from polars_corpus.cqp import matchall, compute_masks, match_opcodes, Opcode, Span
 import pyparsing as pp
+import pytest
+
+from polars_corpus.search import Span
+from polars_corpus.cqp import matchall
 
 
 @pytest.fixture
@@ -348,57 +349,6 @@ class TestEdgeCases:
         long_pattern = " ".join(['[pos="NN"]'] * 20)
         matches = matchall(sample_corpus, long_pattern)
         assert matches is None
-
-
-class TestComputeMasks:
-    """Test the mask computation functionality"""
-
-    def test_token_mask_computation(self, sample_corpus):
-        """Test mask computation for token expressions"""
-        opcodes = [
-            (Opcode.TOKEN, pl.col("pos").str.contains("^(JJ)$")),
-            (Opcode.MATCH,),
-        ]
-        masks = compute_masks(sample_corpus, opcodes)
-
-        assert masks.shape == (2, len(sample_corpus))
-        # Check that JJ positions are marked True
-        jj_positions = [1, 2, 7]  # quick, brown, lazy
-        for pos in jj_positions:
-            assert masks[0, pos] == True
-
-    def test_skip_mask_computation(self, sample_corpus):
-        """Test mask computation for skip operations"""
-        opcodes = [(Opcode.SKIP,), (Opcode.MATCH,)]
-        masks = compute_masks(sample_corpus, opcodes)
-
-        # Skip should match all positions
-        assert np.all(masks[0, :] == True)
-
-
-class TestMatchOpcodes:
-    """Test the low-level opcode matching functionality"""
-
-    def test_simple_token_match(self, sample_corpus):
-        """Test basic token matching at opcode level"""
-        opcodes = [(Opcode.TOKEN, None), (Opcode.MATCH,)]
-        # Create a simple mask where only position 3 (fox) matches
-        masks = np.zeros((2, len(sample_corpus)), dtype=bool)
-        masks[0, 3] = True  # TOKEN matches at position 3
-        masks[1, :] = True  # MATCH always succeeds
-
-        result = match_opcodes(opcodes, masks, 3)
-        assert result == 4  # Should match from 3 to 4
-
-    def test_no_match_opcodes(self, sample_corpus):
-        """Test opcode matching when no match is possible"""
-        opcodes = [(Opcode.TOKEN, None), (Opcode.MATCH,)]
-        # Create mask where no positions match
-        masks = np.zeros((2, len(sample_corpus)), dtype=bool)
-        masks[1, :] = True  # Only MATCH succeeds
-
-        result = match_opcodes(opcodes, masks, 0)
-        assert result is None
 
 
 class TestRegexPatterns:

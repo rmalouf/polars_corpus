@@ -9,7 +9,7 @@ import pyparsing as pp
 from ._internal import Opcode, OpcodeMatcher, Span
 
 
-def col_name(i):
+def col_name(i: int) -> str:
     return f"_{i}"
 
 
@@ -20,7 +20,7 @@ def compute_masks(df: pl.DataFrame, opcodes: list[Any]) -> pl.DataFrame:
     return df.rechunk()
 
 
-def propagate_masks(pc, opcodes, df) -> pl.DataFrame:
+def propagate_masks(pc: int, opcodes: list[Any], df: pl.DataFrame) -> pl.DataFrame:
     if col_name(pc) not in df:
         match opcodes[pc]:
             case (Opcode.TOKEN, expr):
@@ -46,7 +46,7 @@ def propagate_masks(pc, opcodes, df) -> pl.DataFrame:
     return df
 
 
-def matchall(df: pl.DataFrame, query: str) -> Iterator[tuple[Span, dict[str, Any]]]:
+def matchall(df: pl.DataFrame, query: str) -> list[Span]:
     now = time.time()
 
     opcodes = list(cqp.parse_string(query, parse_all=True))
@@ -122,27 +122,27 @@ simple_primary = node | (pp.Suppress("(") + cqp + pp.Suppress(")"))
 primary = simple_primary
 
 
-def compile_star(args):
+def compile_star(args: list[Any]) -> list[Any]:
     result = [(Opcode.SPLIT, 1, len(args) + 2)]
     result.extend(args)
     result.append((Opcode.JUMP, -(len(args) + 1)))
     return result
 
 
-def compile_plus(args):
+def compile_plus(args: list[Any]) -> list[Any]:
     result = []
     result.extend(args)
     result.append((Opcode.SPLIT, -len(args), 1))
     return result
 
 
-def compile_question(args):
+def compile_question(args: list[Any]) -> list[Any]:
     result = [(Opcode.SPLIT, 1, len(args) + 1)]
     result.extend(args)
     return result
 
 
-def compile_m_to_n(args, m=None, n=None):
+def compile_m_to_n(args :list[Any], m: Optional[int] = None, n: Optional[int] = None):
     result = []
     if m is None:
         m = 0
@@ -218,6 +218,7 @@ concatenation = pp.OneOrMore(repetition)
 
 
 def compile_disjunction(args):
+    print(type(args))
     if len(args) == 1:
         return args[0]
     else:
@@ -227,6 +228,7 @@ def compile_disjunction(args):
             result.extend(args[i])
             result.append((Opcode.JUMP, len(args[i + 1]) + 1))
         result.extend(args[-1])
+        print(type(result))
         return result
 
 

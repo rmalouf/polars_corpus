@@ -1,8 +1,7 @@
 import polars as pl
 import pytest
-
-from polars_corpus.cqp import Span
-from polars_corpus.search import SearchResults, with_span_index, with_spans
+from _internal.cqp import Span
+from _internal.search import SearchResults, with_span_index, with_spans
 
 
 class TestWithSpanIndex:

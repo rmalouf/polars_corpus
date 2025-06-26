@@ -1,9 +1,8 @@
 import polars as pl
 import pytest
+from _internal.assoc import crosstab
 from polars.polars import ColumnNotFoundError, ComputeError
 from polars.testing import assert_frame_equal
-
-from polars_corpus.assoc import crosstab
 
 
 def test_crosstab_basic() -> None:

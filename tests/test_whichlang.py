@@ -1,8 +1,7 @@
 import polars as pl
 import pytest
+from _internal import whichlang
 from polars.polars import ComputeError
-
-from polars_corpus import whichlang
 
 
 @pytest.fixture

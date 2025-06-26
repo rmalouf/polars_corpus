@@ -5,7 +5,7 @@ from collections import defaultdict
 import polars as pl
 import polars.selectors as cs
 
-from ._internal import _make_spans_mask, _to_spans
+from ._internal import _make_spans_mask, _to_spans, Span
 from .cqp import matchall
 
 __all__ = ["search", "SearchResults", "with_span_index", "to_span_index"]
@@ -34,9 +34,8 @@ class SearchResults:
             self.df.with_columns(self.to_spans(name="_spans"))  # , *self.to_bindings())
             .pipe(with_span_index, span_col="_spans", name="_span_idx")
             .drop_nulls("_span_idx")
-            .group_by("_span_idx")
+            .group_by("_span_idx", maintain_order=True)
             .agg(cs.all())
-            .sort(by="_span_idx")
             .select(
                 cs.by_name(columns).list.drop_nulls().list.unique(maintain_order=True)
             )
@@ -110,7 +109,12 @@ def with_span_index(
 ) -> pl.DataFrame:
     if scheme != "BIO":
         raise NotImplementedError("Only BIO is supported")
-    return df.with_columns(to_span_index(df[span_col], name, scheme))
+    return df \
+        .with_columns((pl.col(span_col) == 'B').cum_sum().alias(name)) \
+        .with_columns(pl.when(pl.col(span_col) == "O") \
+                      .then(pl.lit(None))\
+                      .otherwise(pl.col('_span_idx'))\
+                      .alias(name))
 
 
 def with_spans(

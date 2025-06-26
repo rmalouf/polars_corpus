@@ -22,7 +22,7 @@ enum Operation {
     Match(),
 }
 
-#[pyclass]
+#[pyclass(module="polars_corpus")]
 #[derive(Copy, Clone)]
 pub enum Opcode {
     TOKEN,
@@ -32,7 +32,7 @@ pub enum Opcode {
     MATCH,
 }
 
-#[pyclass]
+#[pyclass(module="polars_corpus")]
 pub struct OpcodeMatcher {
     operations: Vec<Operation>,
     mask_vec: Vec<BooleanChunked>,
