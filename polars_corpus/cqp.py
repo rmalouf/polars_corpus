@@ -52,34 +52,19 @@ def matchall(df: pl.DataFrame, query: str) -> list[Span]:
     opcodes = list(cqp.parse_string(query, parse_all=True))
     opcodes.append((Opcode.MATCH,))
 
-    mask = compute_masks(df, opcodes)
-    #    print("Compute mask:", time.time() - now)
-    #    now = time.time()
-
-    #    now = time.time()
-    columns = []
-    masks = []
-    for col in sorted(mask.columns):
-        columns.append(col)
-        masks.append(mask[col])
-    #    print(len(mask[col].get_chunks()))
-    opcode_matcher = OpcodeMatcher(list(opcodes), masks)
-    #    print("Init OpcodeMatcher:", time.time() - now)
-    #    now = time.time()
-
-    #    now = time.time()
+    mask_df = compute_masks(df, opcodes)
+    masks = [mask_df.get_column(col) for col in mask_df.columns]
+    opcode_matcher = OpcodeMatcher(opcodes, masks)
     spans = opcode_matcher.matchall()
-    #    print("Search:", time.time() - now)
 
     print(f"{time.time()-now:.3f} seconds")
-
     return spans
 
 
 ## compile token-level constraints into polars expressions
 
 
-feature = pp.Word(pp.alphas + pp.nums)
+feature = pp.Word(pp.alphas + pp.nums + "_")
 number = pp.Word(pp.nums)
 value = pp.QuotedString('"')
 
@@ -92,27 +77,50 @@ constraint = atomic_constraint | pp.Suppress("(") + constraint_formula + pp.Supp
     ")"
 )
 
+
+def compile_atomic_constraint(args: pp.ParseResults) -> pl.Expr:
+    expr = pl.col(args[0]).str.contains("^(" + args[2] + ")$")
+    if args[1] == "=":
+        return expr
+    elif args[1] == "!=":
+        return expr.not_()
+    else:
+        raise ValueError("Unknown constraint")
+
+
+atomic_constraint = (
+    feature + (pp.Literal("=") | pp.Literal("!=")) + value
+).set_parse_action(compile_atomic_constraint)
+
+constraint = atomic_constraint | pp.Suppress("(") + constraint_formula + pp.Suppress(
+    ")"
+)
+
 token_conj = (
     constraint + pp.ZeroOrMore(pp.Suppress("&") + constraint)
-).set_parse_action(lambda toks: toks[0].and_(*toks[1:]))
+).set_parse_action(lambda args: args[0].and_(*args[1:]))
 token_disj = (
     token_conj + pp.ZeroOrMore(pp.Suppress("|") + token_conj)
-).set_parse_action(lambda toks: toks[0].or_(*toks[1:]))
+).set_parse_action(lambda args: args[0].or_(*args[1:]))
 
 constraint_formula <<= token_disj
 
 
-node = (pp.Suppress("[") + constraint_formula + pp.Suppress("]")).set_parse_action(
-    lambda x: (Opcode.TOKEN, x[0])
-) | (pp.Suppress("[") + pp.Empty() + pp.Suppress("]")).set_parse_action(
-    lambda x: (Opcode.SKIP,)
-)
+def compile_node(args: pp.ParseResults) -> tuple[Any]:
+    if args:
+        return (Opcode.TOKEN, args[0])
+    else:
+        return (Opcode.SKIP,)
+
+
+node = (
+    pp.Suppress("[") + (constraint_formula | pp.Empty()) + pp.Suppress("]")
+).set_parse_action(compile_node)
+
 
 ## compile CQP commands into search operations
 
 cqp = pp.Forward()
-
-# TODO: bindings don't work right with multi-token matches
 
 simple_primary = node | (pp.Suppress("(") + cqp + pp.Suppress(")"))
 # binding = (feature + pp.Suppress(":") + simple_primary).set_parse_action(
@@ -122,39 +130,46 @@ simple_primary = node | (pp.Suppress("(") + cqp + pp.Suppress(")"))
 primary = simple_primary
 
 
-def compile_star(args: list[Any]) -> list[Any]:
-    result = [(Opcode.SPLIT, 1, len(args) + 2)]
-    result.extend(args)
-    result.append((Opcode.JUMP, -(len(args) + 1)))
-    return result
+def compile_star(args: pp.ParseResults) -> list[Any]:
+    operations = [(Opcode.SPLIT, 1, len(args) + 2)]
+    operations.extend(args)
+    operations.append((Opcode.JUMP, -(len(args) + 1)))
+    return operations
 
 
-def compile_plus(args: list[Any]) -> list[Any]:
-    result = []
-    result.extend(args)
-    result.append((Opcode.SPLIT, -len(args), 1))
-    return result
+def compile_plus(args: pp.ParseResults) -> list[Any]:
+    operations = args
+    operations.append((Opcode.SPLIT, -len(args), 1))
+    return operations
 
 
-def compile_question(args: list[Any]) -> list[Any]:
-    result = [(Opcode.SPLIT, 1, len(args) + 1)]
-    result.extend(args)
-    return result
+def compile_question(args: pp.ParseResults) -> list[Any]:
+    operations = [(Opcode.SPLIT, 1, len(args) + 1)]
+    operations.extend(args)
+    return operations
 
 
-def compile_m_to_n(args :list[Any], m: Optional[int] = None, n: Optional[int] = None):
-    result = []
-    if m is None:
-        m = 0
+def compile_m_to_n(args: pp.ParseResults):
+
+    args_dict = args.as_dict()
+    if "m_n" in args_dict:
+        m = int(args_dict["m_n"])
+        n = int(args_dict["m_n"])
     else:
-        for _ in range(m):
-            result.extend(args)
+        m = int(args_dict["m"]) if "m" in args_dict else 0
+        n = int(args_dict["n"]) if "n" in args_dict else None
+    if n and m > n:
+        raise ValueError("m > n")
+
+    operations = []
+    for _ in range(m):
+        operations.extend(args[0])
     if n is None:
-        result.extend(compile_star(args))
+        operations.extend(compile_star(args[0]))
     else:
         for i in range(0, n - m):
-            result.extend(compile_question(args))
-    return result
+            operations.extend(compile_question(args[0]))
+    return operations
 
 
 repetition = (
@@ -164,28 +179,17 @@ repetition = (
     | (
         pp.Group(primary)
         + pp.Suppress("{")
-        + number
+        + pp.Opt(number).set_results_name("m")
         + pp.Suppress(",")
-        + number
+        + pp.Opt(number).set_results_name("n")
         + pp.Suppress("}")
-    ).set_parse_action(lambda e: compile_m_to_n(e[0], m=int(e[1]), n=int(e[2])))
+    ).set_parse_action(compile_m_to_n)
     | (
         pp.Group(primary)
         + pp.Suppress("{")
-        + number
-        + pp.Suppress(",")
+        + number.set_results_name("m_n")
         + pp.Suppress("}")
-    ).set_parse_action(lambda e: compile_m_to_n(e[0], m=int(e[1])))
-    | (
-        pp.Group(primary)
-        + pp.Suppress("{")
-        + pp.Suppress(",")
-        + number
-        + pp.Suppress("}")
-    ).set_parse_action(lambda e: compile_m_to_n(e[0], n=int(e[1])))
-    | (
-        pp.Group(primary) + pp.Suppress("{") + number + pp.Suppress("}")
-    ).set_parse_action(lambda e: compile_m_to_n(e[0], m=int(e[1]), n=int(e[1])))
+    ).set_parse_action(compile_m_to_n)
     | primary
 )
 
@@ -217,19 +221,17 @@ repetition = (
 concatenation = pp.OneOrMore(repetition)
 
 
-def compile_disjunction(args):
-    print(type(args))
+def compile_disjunction(args: pp.ParseResults) -> list[Any]:
     if len(args) == 1:
         return args[0]
     else:
-        result = []
+        operations = []
         for i in range(len(args) - 1):
-            result.append((Opcode.SPLIT, 1, len(args[i]) + 2))
-            result.extend(args[i])
-            result.append((Opcode.JUMP, len(args[i + 1]) + 1))
-        result.extend(args[-1])
-        print(type(result))
-        return result
+            operations.append((Opcode.SPLIT, 1, len(args[i]) + 2))
+            operations.extend(args[i])
+            operations.append((Opcode.JUMP, len(args[i + 1]) + 1))
+        operations.extend(args[-1])
+        return operations
 
 
 disjunction = (

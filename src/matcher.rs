@@ -5,24 +5,23 @@
 
 //use span::Span;
 
-use super::span::Span;
-
 use polars::prelude::*;
+use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
-use pyo3::exceptions::{PyValueError};
 use pyo3::types::{PyList, PyTuple};
 use pyo3_polars::PySeries;
 
+use super::span::Span;
+
 #[pyclass]
 enum Operation {
-    Token(),
+    Advance(),
     Jump(isize),
     Split(isize, isize),
-    Skip(),
     Match(),
 }
 
-#[pyclass(module="polars_corpus")]
+#[pyclass(module = "polars_corpus")]
 #[derive(Copy, Clone)]
 pub enum Opcode {
     TOKEN,
@@ -32,7 +31,7 @@ pub enum Opcode {
     MATCH,
 }
 
-#[pyclass(module="polars_corpus")]
+#[pyclass(module = "polars_corpus")]
 pub struct OpcodeMatcher {
     operations: Vec<Operation>,
     mask_vec: Vec<BooleanChunked>,
@@ -46,9 +45,8 @@ fn parse_opcodes<'py>(opcodes: &Bound<'py, PyList>) -> PyResult<Vec<Operation>> 
         let opcode = py_opcode.extract::<Opcode>()?;
         let operation = {
             match opcode {
-                Opcode::TOKEN => Operation::Token(),
+                Opcode::TOKEN | Opcode::SKIP => Operation::Advance(),
                 Opcode::MATCH => Operation::Match(),
-                Opcode::SKIP => Operation::Skip(),
                 Opcode::JUMP => {
                     let offset: isize = tuple.get_item(1)?.extract()?;
                     Operation::Jump(offset)
@@ -123,13 +121,13 @@ impl OpcodeMatcher {
                     };
                     break;
                 };
-               // if sp >= n || unsafe { !self.mask_vec[pc].value_unchecked(sp) } {
-                if sp >= n || !self.mask_vec[pc].get(sp).unwrap()  {
+                // if sp >= n || unsafe { !self.mask_vec[pc].value_unchecked(sp) } {
+                if sp >= n || !self.mask_vec[pc].get(sp).unwrap() {
                     // Failure!
                     break;
                 };
                 match self.operations[pc] {
-                    Operation::Token() | Operation::Skip() => {
+                    Operation::Advance() => {
                         sp += 1;
                         pc += 1;
                     },

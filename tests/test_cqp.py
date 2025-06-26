@@ -114,11 +114,18 @@ class TestBasicTokenMatching:
     """Test basic token-level matching functionality"""
 
     def test_single_word_match(self, sample_corpus):
-        """Test matching a single specific word"""
+        """Test equality constraint on a single specific word"""
         query = '[word="fox"]'
         matches = matchall(sample_corpus, query)
         assert len(matches) == 1
         assert matches[0] == Span(3, 4)
+
+    def test_single_word_negative_match(self, sample_corpus):
+        """Test inequality constrain on a single specific word"""
+        query = '[word!="fox"]'
+        matches = matchall(sample_corpus, query)
+        assert len(matches) == 8
+        assert Span(3, 4) not in matches
 
     def test_pos_tag_match(self, sample_corpus):
         """Test matching by part-of-speech tag"""
@@ -550,8 +557,8 @@ class TestErrorHandling:
         for query in test_cases:
             try:
                 result = matchall(sample_corpus, query)
-                # If it doesn't raise an error, result should be valid
-                assert isinstance(result, list)
+                # If it doesn't raise an error, result should be empty
+                assert result is None
             except (ValueError, UnicodeError, pp.ParseException):
                 # These exceptions are acceptable for problematic unicode
                 pass

@@ -109,12 +109,14 @@ def with_span_index(
 ) -> pl.DataFrame:
     if scheme != "BIO":
         raise NotImplementedError("Only BIO is supported")
-    return df \
-        .with_columns((pl.col(span_col) == 'B').cum_sum().alias(name)) \
-        .with_columns(pl.when(pl.col(span_col) == "O") \
-                      .then(pl.lit(None))\
-                      .otherwise(pl.col('_span_idx'))\
-                      .alias(name))
+    return df.with_columns(
+        (pl.col(span_col) == "B").cum_sum().alias(name)
+    ).with_columns(
+        pl.when(pl.col(span_col) == "O")
+        .then(pl.lit(None))
+        .otherwise(pl.col("_span_idx"))
+        .alias(name)
+    )
 
 
 def with_spans(
