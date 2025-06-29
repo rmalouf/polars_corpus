@@ -25,7 +25,7 @@ def get_contexts(
     width: Optional[int] = None,
     left_width: Optional[int] = None,
     right_width: Optional[int] = None,
-) -> TPolarsFrame:
+) -> pl.DataFrame | pl.LazyFrame:
     """
     Generate a DataFrame containing the context around a column of values by
     shifting values left and right. The context size can be specified
@@ -83,7 +83,9 @@ def get_contexts(
     return w
 
 
-def crosstab(df: TPolarsFrame, x: str, y: str) -> TPolarsFrame:
+def crosstab(
+    df: pl.DataFrame | pl.LazyFrame, x: str, y: str
+) -> pl.DataFrame | pl.LazyFrame:
     """
     Creates a crosstabulation (contingency table) from a given dataframe with two variables.
 
@@ -123,7 +125,7 @@ def crosstab(df: TPolarsFrame, x: str, y: str) -> TPolarsFrame:
     return t
 
 
-def _validated_crosstab(df: TPolarsFrame) -> TPolarsFrame:
+def _validated_crosstab(df: pl.DataFrame | pl.LazyFrame) -> pl.DataFrame | pl.LazyFrame:
     # required_cols = ["f12", "n", "f1", "f2"]
     # if not all(col in df.columns for col in required_cols):
     #    raise ValueError(f"Missing required columns. Expected: {required_cols}")
@@ -132,7 +134,7 @@ def _validated_crosstab(df: TPolarsFrame) -> TPolarsFrame:
     )
 
 
-def compute_mi(table: TPolarsFrame) -> TPolarsFrame:
+def compute_mi(table: pl.DataFrame | pl.LazyFrame) -> pl.DataFrame | pl.LazyFrame:
     """
     Computes the Pointwise Mutual Information (PMI) for the given table using its columns.
 
@@ -140,17 +142,17 @@ def compute_mi(table: TPolarsFrame) -> TPolarsFrame:
         include at least four columns: `f12` (joint frequency of two events), `n` (total
         number of observations), `f1` (frequency of the first event), and `f2` (frequency of
         the second event). The columns are expected to use these exact names.
-    :type table: TPolarsFrame
+    :type table: pl.DataFrame | pl.LazyFrame
     :return: The same input table with an additional column `pmi` that contains the computed
         PMI values for each row.
-    :rtype: TPolarsFrame
+    :rtype: pl.DataFrame | pl.LazyFrame
     """
     return _validated_crosstab(table).with_columns(
         pmi=((pl.col("f12") * pl.col("n")) / (pl.col("f1") * pl.col("f2"))).log()
     )
 
 
-def compute_loglik(table: TPolarsFrame) -> TPolarsFrame:
+def compute_loglik(table: pl.DataFrame | pl.LazyFrame) -> pl.DataFrame | pl.LazyFrame:
     table = _validated_crosstab(table)
     data = table.with_columns(
         pl.struct(["f12", "f1", "f2", "n"])
@@ -196,17 +198,17 @@ def compute_loglik(table: TPolarsFrame) -> TPolarsFrame:
 #
 
 
-def compute_min_sens(table: TPolarsFrame) -> TPolarsFrame:
+def compute_min_sens(table: pl.DataFrame | pl.LazyFrame) -> pl.DataFrame | pl.LazyFrame:
     """
     Compute the mean square (ms) values for a given data table. The function
     calculates the minimum horizontal value between two derived columns,
     "f12 / f1" and "f12 / f2", and appends it as a new column named `ms` to
     the original data table.
 
-    :param table: The input table represented as a TPolarsFrame. The table is
+    :param table: The input table represented as a pl.DataFrame | pl.LazyFrame. The table is
         expected to have columns named "f12", "f1", and "f2", with numeric
         values involved in the calculations.
-    :return: A TPolarsFrame instance with an additional column `ms` containing
+    :return: A pl.DataFrame | pl.LazyFrame instance with an additional column `ms` containing
         the computed mean square values.
     """
     return table.with_columns(
@@ -217,8 +219,8 @@ def compute_min_sens(table: TPolarsFrame) -> TPolarsFrame:
 
 
 def assoc(
-    df: TPolarsFrame, x: str, y: str, method: str, min_freq: int = 0
-) -> TPolarsFrame:
+    df: pl.DataFrame | pl.LazyFrame, x: str, y: str, method: str, min_freq: int = 0
+) -> pl.DataFrame | pl.LazyFrame:
     """
     Calculate association metrics between two categorical variables in a dataframe.
 
@@ -238,7 +240,9 @@ def assoc(
     :return: A dataframe containing the computed association metrics.
     :raises ValueError: If an unknown method is specified.
     """
-    table: TPolarsFrame = crosstab(df, x, y).filter(pl.col("f12") >= min_freq)
+    table: pl.DataFrame | pl.LazyFrame = crosstab(df, x, y).filter(
+        pl.col("f12") >= min_freq
+    )
     match method:
         case "mi":
             return compute_mi(table)

@@ -11,7 +11,7 @@ use pyo3::prelude::*;
 use pyo3::types::{PyList, PyTuple};
 use pyo3_polars::PySeries;
 
-use super::span::Span;
+use crate::span::Span;
 
 #[pyclass]
 enum Operation {
@@ -29,12 +29,6 @@ pub enum Opcode {
     SPLIT,
     SKIP,
     MATCH,
-}
-
-#[pyclass(module = "polars_corpus")]
-pub struct OpcodeMatcher {
-    operations: Vec<Operation>,
-    mask_vec: Vec<BooleanChunked>,
 }
 
 fn parse_opcodes<'py>(opcodes: &Bound<'py, PyList>) -> PyResult<Vec<Operation>> {
@@ -60,8 +54,14 @@ fn parse_opcodes<'py>(opcodes: &Bound<'py, PyList>) -> PyResult<Vec<Operation>> 
         };
         operations.push(operation);
     }
-    // be sure to check in advance to make sure all branches lead to valid pcs
+    // TODO: still need to make sure all branches lead to valid pcs
     Ok(operations)
+}
+
+#[pyclass(module = "polars_corpus")]
+pub struct OpcodeMatcher {
+    operations: Vec<Operation>,
+    mask_vec: Vec<BooleanChunked>,
 }
 
 #[pymethods]
@@ -98,6 +98,7 @@ impl OpcodeMatcher {
                 cursor += 1;
             };
         }
+
         if spans.is_empty() {
             Ok(None)
         } else {

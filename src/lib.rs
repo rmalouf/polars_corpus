@@ -8,6 +8,9 @@ mod span;
 use pyo3::prelude::*;
 use pyo3_polars::PolarsAllocator;
 
+#[global_allocator]
+static ALLOC: PolarsAllocator = PolarsAllocator::new();
+
 // #[pyfunction]
 // fn _set_vars(n: usize, spans: Vec<(usize, usize)>, values: Vec<String>) -> PyResult<PySeries> {
 //     let mut span_vec : Vec<Option<Vec<String>>> = vec![None; n];
@@ -44,14 +47,11 @@ fn _internal(py: Python, m: &Bound<PyModule>) -> PyResult<()> {
         "PanicException",
         <pyo3::panic::PanicException as pyo3::PyTypeInfo>::type_object(py),
     )?;
-    m.add_function(wrap_pyfunction!(span::_to_spans, m)?)?;
-    // m.add_function(wrap_pyfunction!(_set_vars, m)?)?;
-    m.add_function(wrap_pyfunction!(span::_make_spans_mask, m)?)?;
-    m.add_class::<span::Span>()?;
     m.add_class::<matcher::Opcode>()?;
     m.add_class::<matcher::OpcodeMatcher>()?;
+    m.add_class::<span::Span>()?;
+    m.add_function(wrap_pyfunction!(span::_to_chunks, m)?)?;
+    m.add_function(wrap_pyfunction!(span::py_concordance, m)?)?;
+    // m.add_function(wrap_pyfunction!(span::py_matches, m)?)?;
     Ok(())
 }
-
-#[global_allocator]
-static ALLOC: PolarsAllocator = PolarsAllocator::new();

@@ -7,6 +7,9 @@ import polars as pl
 import pyparsing as pp
 
 from ._internal import Opcode, OpcodeMatcher, Span
+from .search import SearchResults
+
+__all__ = ["search", "Span"]
 
 
 def col_name(i: int) -> str:
@@ -46,8 +49,9 @@ def propagate_masks(pc: int, opcodes: list[Any], df: pl.DataFrame) -> pl.DataFra
     return df
 
 
-def matchall(df: pl.DataFrame, query: str) -> list[Span]:
-    now = time.time()
+def matchall(df: pl.DataFrame, query: str) -> SearchResult:
+    if df.is_empty():
+        return None  # SearchResults(df, query, [])
 
     opcodes = list(cqp.parse_string(query, parse_all=True))
     opcodes.append((Opcode.MATCH,))
@@ -55,10 +59,12 @@ def matchall(df: pl.DataFrame, query: str) -> list[Span]:
     mask_df = compute_masks(df, opcodes)
     masks = [mask_df.get_column(col) for col in mask_df.columns]
     opcode_matcher = OpcodeMatcher(opcodes, masks)
-    spans = opcode_matcher.matchall()
 
-    print(f"{time.time()-now:.3f} seconds")
-    return spans
+    return opcode_matcher.matchall()
+
+
+def search(df: pl.DataFrame, query: str) -> SearchResults:
+    return SearchResults(df, query, matchall(df, query))
 
 
 ## compile token-level constraints into polars expressions
@@ -150,7 +156,6 @@ def compile_question(args: pp.ParseResults) -> list[Any]:
 
 
 def compile_m_to_n(args: pp.ParseResults):
-
     args_dict = args.as_dict()
     if "m_n" in args_dict:
         m = int(args_dict["m_n"])

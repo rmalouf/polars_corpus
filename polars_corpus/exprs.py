@@ -7,9 +7,8 @@ import polars as pl
 from polars.plugins import register_plugin_function
 
 from .assoc import assoc, crosstab
-from .search import with_span_index
-
-# from .concordance import concordance
+from .matcher import search
+from .search import SearchResults
 
 LIB = Path(__file__).parent
 
@@ -21,8 +20,8 @@ if TYPE_CHECKING:
 all = ["whichlang"]
 
 
-@pl.api.register_expr_namespace("text")
-class TextExpr:
+@pl.api.register_expr_namespace("corpus")
+class CorpusExpr:
     def __init__(self, expr: pl.Expr) -> None:
         self._expr = expr
 
@@ -38,9 +37,17 @@ class TextExpr:
     def whichlang(self) -> pl.Expr:
         return whichlang(self._expr)
 
+    def kwic_concordance(
+        self, search_results: SearchResults, window_size
+    ) -> pl.DataFrame:
+        return search_results.kwic_concordance(self._expr, window_size)
 
-@pl.api.register_dataframe_namespace("text")
-class TextDataFrame:
+    def matches(self, search_results: SearchResults) -> pl.DataFrame:
+        return search_results.matches(self._expr)
+
+
+@pl.api.register_dataframe_namespace("corpus")
+class CorpusDataFrame:
     def __init__(self, df: pl.DataFrame) -> None:
         self._df = df
 
@@ -59,12 +66,22 @@ class TextDataFrame:
     def with_span_index(self, span_col: str, **kwargs: Any) -> pl.DataFrame:
         return with_span_index(self, span_col, **kwargs)
 
-    # def concordance(self, expr: pl.Expr, context: int) -> pl.DataFrame:
-    #    return concordance(self._df, expr, context)
+    def search(self, query: str) -> SearchResults:
+        return search(self._df, query)
+
+    def kwic_concordance(
+        self, search_results: SearchResults, expr: pl.Expr, window_size,
+    ) -> pl.Expr:
+        return search_results.kwic_concordance(expr, window_size)
+
+    def matches(
+        self, search_results: SearchResults, expr: pl.Expr, **kwargs
+    ) -> pl.Expr:
+        return search_results.matches(expr)
 
 
-@pl.api.register_lazyframe_namespace("text")
-class TextLazyFrame:
+@pl.api.register_lazyframe_namespace("corpus")
+class CorpusLazyFrame:
     def __init__(self, lf: pl.LazyFrame) -> None:
         self._lf = lf
 
@@ -79,13 +96,6 @@ class TextLazyFrame:
 
     def assoc(self, x: str, y: str, method: str, **kwargs: Any) -> pl.LazyFrame:
         return assoc(self._lf, x, y, method, **kwargs)
-
-    # def concordance(
-    #    self,
-    #    expr: pl.Expr,
-    #    context: int,
-    # ) -> pl.LazyFrame:
-    #    return concordance(self._lf, expr, context)
 
 
 def whichlang(expr: IntoExprColumn) -> pl.Expr:

@@ -1533,6 +1533,7 @@ dependencies = [
  "polars",
  "pyo3",
  "pyo3-polars",
+ "rayon",
  "whichlang",
 ]
 
