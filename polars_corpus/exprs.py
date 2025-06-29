@@ -4,7 +4,6 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import polars as pl
-from polars.plugins import register_plugin_function
 
 from .assoc import assoc, crosstab
 from .matcher import search
@@ -15,10 +14,6 @@ LIB = Path(__file__).parent
 
 if TYPE_CHECKING:
     from polars.type_aliases import IntoExprColumn
-
-
-all = ["whichlang"]
-
 
 @pl.api.register_expr_namespace("corpus")
 class CorpusExpr:
@@ -33,9 +28,6 @@ class CorpusExpr:
 
     def ngrams(self, n: int) -> pl.Expr:
         return pl.concat_list(self._expr.shift(-i) for i in range(0, n))
-
-    def whichlang(self) -> pl.Expr:
-        return whichlang(self._expr)
 
     def kwic_concordance(
         self, search_results: SearchResults, window_size
@@ -96,12 +88,3 @@ class CorpusLazyFrame:
 
     def assoc(self, x: str, y: str, method: str, **kwargs: Any) -> pl.LazyFrame:
         return assoc(self._lf, x, y, method, **kwargs)
-
-
-def whichlang(expr: IntoExprColumn) -> pl.Expr:
-    return register_plugin_function(
-        args=[expr],
-        plugin_path=LIB,
-        function_name="whichlang",
-        is_elementwise=True,
-    )

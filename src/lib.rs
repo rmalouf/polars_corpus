@@ -11,35 +11,6 @@ use pyo3_polars::PolarsAllocator;
 #[global_allocator]
 static ALLOC: PolarsAllocator = PolarsAllocator::new();
 
-// #[pyfunction]
-// fn _set_vars(n: usize, spans: Vec<(usize, usize)>, values: Vec<String>) -> PyResult<PySeries> {
-//     let mut span_vec : Vec<Option<Vec<String>>> = vec![None; n];
-//     for ((start, end), value) in spans.iter().zip(values) {
-//         if (*start > n) || (*end > n) {
-//             return Err(PyValueError::new_err("index out of bounds"));
-//         } else {
-//             for i in *start..*end {
-//                 span_vec[i] = Some(value.clone());
-//             }
-//         }
-//     }
-//
-//     let mut builder = ListStringChunkedBuilder::new("example".into(), n, n*10);
-//
-//     for item in span_vec {
-//         match item {
-//             Some(strings) => {
-//                 builder.append_values_iter(strings.iter().map(|s| s.as_str()));
-//             }
-//             None => {
-//                 builder.append_null();
-//             }
-//         }
-//     }
-//
-//     Ok(PySeries(builder.finish().into_series()))
-// }
-
 #[pymodule]
 fn _internal(py: Python, m: &Bound<PyModule>) -> PyResult<()> {
     m.add("__version__", env!("CARGO_PKG_VERSION"))?;
@@ -52,6 +23,5 @@ fn _internal(py: Python, m: &Bound<PyModule>) -> PyResult<()> {
     m.add_class::<span::Span>()?;
     m.add_function(wrap_pyfunction!(span::_to_chunks, m)?)?;
     m.add_function(wrap_pyfunction!(span::py_concordance, m)?)?;
-    // m.add_function(wrap_pyfunction!(span::py_matches, m)?)?;
     Ok(())
 }
