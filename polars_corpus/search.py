@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import random
+from typing import Optional
+
 import polars as pl
 
 from ._internal import py_concordance
@@ -27,9 +30,49 @@ class SearchResults:
     def matches(self, expr) -> pl.DataFrame:
         return py_concordance(self.df.select(expr), self.matched_spans, None)
 
+    def head(self, n: int) -> SearchResults:
+        if abs(n) > len(self.matched_spans):
+            return self
+        else:
+            return SearchResults(self.df, self.query, self.matched_spans[:n])
+
+    def tail(self, n: int) -> SearchResults:
+        if n > len(self.matched_spans):
+            return self
+        elif n > 0:
+            return SearchResults(self.df, self.query, self.matched_spans[-n:])
+        else:
+            raise ValueError
+
+    def sample(self, k: int, seed: Optional[int] = None) -> SearchResults:
+        state = random.getstate()
+        random.seed(seed)
+        if k < 0 or k > len(self.matched_spans):
+            raise ValueError
+        try:
+            new_results = SearchResults(
+                self.df, self.query, random.sample(self.matched_spans, k)
+            )
+        finally:
+            random.setstate(state)
+        return new_results
+
+    def shuffle(self, seed: Optional[int] = None) -> SearchResults:
+        state = random.getstate()
+        random.seed(seed)
+        try:
+            new_results = SearchResults(
+                self.df,
+                self.query,
+                random.sample(self.matched_spans, len(self.matched_spans)),
+            )
+        finally:
+            random.setstate(state)
+        return new_results
+
+
 def kwic_concordance(search_results, expr, window_size: int = 5) -> pl.DataFrame:
     return search_results.kwic_concordance(expr, window_size)
-
 
     #
     # def to_chunks(self, name: str = "chunks") -> pl.Series:
