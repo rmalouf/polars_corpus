@@ -44,7 +44,7 @@ pandas==2.3.0
     # via seaborn
 pillow==11.2.1
     # via matplotlib
-polars==1.30.0
+polars==1.31.0
     # via -r requirements.in
 pyarrow==20.0.0
     # via
@@ -70,7 +70,5 @@ seaborn==0.13.2
     # via -r requirements-examples.in
 six==1.17.0
     # via python-dateutil
-tqdm==4.67.1
-    # via -r requirements.in
 tzdata==2025.2
     # via pandas

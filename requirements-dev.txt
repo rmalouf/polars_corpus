@@ -230,7 +230,7 @@ platformdirs==4.3.8
     # via jupyter-core
 pluggy==1.6.0
     # via pytest
-polars==1.30.0
+polars==1.31.0
     # via -r requirements.in
 prometheus-client==0.22.1
     # via jupyter-server
@@ -335,8 +335,6 @@ tornado==6.5.1
     #   jupyterlab
     #   notebook
     #   terminado
-tqdm==4.67.1
-    # via -r requirements.in
 traitlets==5.14.3
     # via
     #   comm
