@@ -27,7 +27,7 @@ class SearchResults:
     def kwic_concordance(self, expr: pl.Expr, window_size: int = 5) -> pl.DataFrame:
         return py_concordance(self.df.select(expr), self.matched_spans, window_size)
 
-    def matches(self, expr) -> pl.DataFrame:
+    def matches(self, expr: pl.Expr) -> pl.DataFrame:
         return py_concordance(self.df.select(expr), self.matched_spans, None)
 
     def head(self, n: int) -> SearchResults:
@@ -71,7 +71,9 @@ class SearchResults:
         return new_results
 
 
-def kwic_concordance(search_results, expr, window_size: int = 5) -> pl.DataFrame:
+def kwic_concordance(
+    search_results: SearchResults, expr: pl.Expr, window_size: int = 5
+) -> pl.DataFrame:
     return search_results.kwic_concordance(expr, window_size)
 
     #

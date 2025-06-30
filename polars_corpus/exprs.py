@@ -15,6 +15,7 @@ LIB = Path(__file__).parent
 if TYPE_CHECKING:
     from polars.type_aliases import IntoExprColumn
 
+
 @pl.api.register_expr_namespace("corpus")
 class CorpusExpr:
     def __init__(self, expr: pl.Expr) -> None:
@@ -30,7 +31,7 @@ class CorpusExpr:
         return pl.concat_list(self._expr.shift(-i) for i in range(0, n))
 
     def kwic_concordance(
-        self, search_results: SearchResults, window_size
+        self, search_results: SearchResults, window_size: int
     ) -> pl.DataFrame:
         return search_results.kwic_concordance(self._expr, window_size)
 
@@ -62,13 +63,14 @@ class CorpusDataFrame:
         return search(self._df, query)
 
     def kwic_concordance(
-        self, search_results: SearchResults, expr: pl.Expr, window_size,
+        self,
+        search_results: SearchResults,
+        expr: pl.Expr,
+        window_size,
     ) -> pl.DataFrame:
         return search_results.kwic_concordance(expr, window_size)
 
-    def matches(
-        self, search_results: SearchResults, expr: pl.Expr, **kwargs
-    ) -> pl.Expr:
+    def matches(self, search_results: SearchResults, expr: pl.Expr) -> pl.Expr:
         return search_results.matches(expr)
 
 

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from optparse import Option
 from typing import Any, Optional
 
 import polars as pl
@@ -155,7 +154,7 @@ def compile_question(args: pp.ParseResults) -> list[Any]:
     return operations
 
 
-def compile_m_to_n(args: pp.ParseResults):
+def compile_m_to_n(args: pp.ParseResults) -> list[Any]:
     args_dict = args.as_dict()
     if "m_n" in args_dict:
         m = int(args_dict["m_n"])

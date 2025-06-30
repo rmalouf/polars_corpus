@@ -18,4 +18,4 @@ if TYPE_CHECKING:
     # IntoExprColumn: TypeAlias = Union[pl.Expr, str, pl.Series]
     # PolarsDataType: TypeAlias = Union[DataType, DataTypeClass]
 
-TPolarsFrame = TypeVar("TPolarsFrame", pl.DataFrame, pl.LazyFrame)
+T_Frame = TypeVar("T_Frame", pl.DataFrame, pl.LazyFrame)
