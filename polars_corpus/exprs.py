@@ -63,7 +63,7 @@ class CorpusDataFrame:
 
     def kwic_concordance(
         self, search_results: SearchResults, expr: pl.Expr, window_size,
-    ) -> pl.Expr:
+    ) -> pl.DataFrame:
         return search_results.kwic_concordance(expr, window_size)
 
     def matches(

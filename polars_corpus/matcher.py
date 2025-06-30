@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-import time
-from typing import Any, Iterator, Optional
+from optparse import Option
+from typing import Any, Optional
 
 import polars as pl
 import pyparsing as pp
@@ -49,7 +49,7 @@ def propagate_masks(pc: int, opcodes: list[Any], df: pl.DataFrame) -> pl.DataFra
     return df
 
 
-def matchall(df: pl.DataFrame, query: str) -> SearchResult:
+def matchall(df: pl.DataFrame, query: str) -> Optional[SearchResults]:
     if df.is_empty():
         return None  # SearchResults(df, query, [])
 
@@ -112,7 +112,7 @@ token_disj = (
 constraint_formula <<= token_disj
 
 
-def compile_node(args: pp.ParseResults) -> tuple[Any]:
+def compile_node(args: pp.ParseResults) -> tuple[Opcode, ...]:
     if args:
         return (Opcode.TOKEN, args[0])
     else:

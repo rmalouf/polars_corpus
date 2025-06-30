@@ -21,7 +21,7 @@ class SearchResults:
     def __repr__(self) -> str:
         return f"SearchResults<'{self.query}'; {len(self.matched_spans):,} matches>"
 
-    def kwic_concordance(self, expr, window_size: int = 5) -> pl.DataFrame:
+    def kwic_concordance(self, expr: pl.Expr, window_size: int = 5) -> pl.DataFrame:
         return py_concordance(self.df.select(expr), self.matched_spans, window_size)
 
     def matches(self, expr) -> pl.DataFrame:

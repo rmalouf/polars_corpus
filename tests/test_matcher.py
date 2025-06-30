@@ -2,7 +2,7 @@ import polars as pl
 import pyparsing as pp
 import pytest
 
-from polars_corpus.matcher import matchall, Span
+from _internal.matcher import matchall, Span
 
 
 @pytest.fixture
