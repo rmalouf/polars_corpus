@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from .exprs import *   # noqa: F403
+from .exprs import *  # noqa: F403
 from .search import *  # noqa: F403
+from .assoc import *  # noqa: F403
 
-# #from .assoc import *  # noqa: F403
 # from .concordance import *  # noqa: F403
 #
 # # from ._internal import __version__ as __version__

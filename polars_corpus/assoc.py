@@ -4,10 +4,11 @@ from typing import Optional
 
 import numpy as np
 import polars as pl
-from numba import float64, guvectorize, int64
 from polars._typing import IntoExprColumn
+from polars.plugins import register_plugin_function
 
 from ._typing import T_Frame
+from pathlib import Path
 
 __all__ = [
     "crosstab",
@@ -17,6 +18,7 @@ __all__ = [
     "compute_loglik",
     "assoc",
 ]
+LIB = Path(__file__).parent
 
 
 def get_contexts(
@@ -150,50 +152,22 @@ def compute_mi(table: T_Frame) -> T_Frame:
     )
 
 
+def loglik(
+    f12: IntoExprColumn, f1: IntoExprColumn, f2: IntoExprColumn, n: IntoExprColumn
+) -> pl.Expr:
+    return register_plugin_function(
+        plugin_path=LIB,
+        args=[f12, f1, f2, n],
+        function_name="loglik",
+        is_elementwise=True,
+    )
+
+
+
 def compute_loglik(table: T_Frame) -> T_Frame:
     table = _validated_crosstab(table)
-    data = table.with_columns(
-        pl.struct(["f12", "f1", "f2", "n"])
-        .map_batches(
-            lambda r: _loglik(
-                r.struct.field("f12"),
-                r.struct.field("f1"),
-                r.struct.field("f2"),
-                r.struct.field("n"),
-            ),
-            is_elementwise=True,
-        )
-        .alias("loglik")
-    )
-    return data
-
-
-# @guvectorize(
-#     [(int64[:], int64[:], int64[:], int64[:], float64[:])],
-#     "(n),(n),(n),(n)->(n)",
-#     nopython=True,
-# )
-# def _loglik(f12, f1, f2, n, result):
-#     for i in range(len(f12)):
-#         o11 = f12[i]
-#         o12 = f1[i] - f12[i]
-#         o21 = f2[i] - f12[i]
-#         o22 = n[i] - f1[i] - f2[i] + f12[i]
-#         result[i] = 0.0
-#         if o11 != 0:
-#             e11 = f1[i] * f2[i] / n[i]
-#             result[i] += o11 * np.log(o11 / e11)
-#         if o12 != 0:
-#             e12 = f1[i] * (n[i] - f2[i]) / n[i]
-#             result[i] += o12 * np.log(o12 / e12)
-#         if o21 != 0:
-#             e21 = (n[i] - f1[i]) * f2[i] / n[i]
-#             result[i] += o21 * np.log(o21 / e21)
-#         if o22 != 0:
-#             e22 = (n[i] - f1[i]) * (n[i] - f2[i]) / n[i]
-#             result[i] += o22 * np.log(o22 / e22)
-#         result[i] = result[i] * 2.0
-#
+    data = loglik(table["f12"], table["f1"], table["f2"], table["n"]).alias("LL")
+    return table.with_columns(data)
 
 
 def compute_min_sens(table: T_Frame) -> T_Frame:

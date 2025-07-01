@@ -145,8 +145,6 @@ jupyterlab-server==2.27.3
     #   notebook
 kiwisolver==1.4.8
     # via matplotlib
-llvmlite==0.44.0
-    # via numba
 lxml==5.4.0
     # via -r requirements-examples.in
 markdown-it-py==3.0.0
@@ -184,19 +182,16 @@ nbformat==5.10.4
     #   nbconvert
 nest-asyncio==1.6.0
     # via ipykernel
-notebook==7.4.3
+notebook==7.4.4
     # via -r requirements-dev.in
 notebook-shim==0.2.4
     # via
     #   jupyterlab
     #   notebook
-numba==0.61.2
-    # via -r requirements.in
-numpy==2.2.6
+numpy==2.3.1
     # via
     #   contourpy
     #   matplotlib
-    #   numba
     #   pandas
     #   scipy
     #   seaborn

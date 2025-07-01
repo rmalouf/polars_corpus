@@ -16,8 +16,6 @@ joblib-progress==1.0.6
     # via -r requirements-examples.in
 kiwisolver==1.4.8
     # via matplotlib
-llvmlite==0.44.0
-    # via numba
 lxml==5.4.0
     # via -r requirements-examples.in
 markdown-it-py==3.0.0
@@ -28,13 +26,10 @@ matplotlib==3.10.3
     #   seaborn
 mdurl==0.1.2
     # via markdown-it-py
-numba==0.61.2
-    # via -r requirements.in
-numpy==2.2.6
+numpy==2.3.1
     # via
     #   contourpy
     #   matplotlib
-    #   numba
     #   pandas
     #   scipy
     #   seaborn

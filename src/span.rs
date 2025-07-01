@@ -4,9 +4,10 @@
 
 use polars::chunked_array::builder::{ListBuilderTrait, get_list_builder};
 use polars::prelude::*;
-use pyo3::exceptions::{PyException, PyIndexError, PyValueError};
+use pyo3::PyResult;
+use pyo3::exceptions::{PyIndexError, PyValueError};
 use pyo3::prelude::*;
-use pyo3::{PyErr, PyResult};
+use pyo3_polars::error::PyPolarsErr;
 use pyo3_polars::{PyDataFrame, PySeries};
 
 #[pyfunction]
@@ -30,13 +31,17 @@ pub fn _to_chunks(n: usize, spans: Vec<Span>) -> PyResult<PySeries> {
 
 #[pyfunction]
 pub fn py_concordance(
+    // polars <-> pyo3 shim
     py_df: PyDataFrame,
     matched_spans: Vec<Span>,
     window_size: Option<i32>,
 ) -> PyResult<PyDataFrame> {
     let df: DataFrame = py_df.0;
-    let out_df = concordance_df(df, matched_spans, window_size)
-        .map_err(|e: PolarsError| PyErr::new::<PyException, _>(e.to_string()))?;
+    // let out_df = concordance_df(df, matched_spans, window_size)
+    //     .map_err(|e: PolarsError| PyErr::new::<PyException, _>(e.to_string()))?;
+
+    let out_df = concordance_df(df, matched_spans, window_size).map_err(PyPolarsErr::from)?;
+
     Ok(PyDataFrame(out_df))
 }
 
