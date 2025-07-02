@@ -6,4 +6,7 @@ pip==25.1.*
 pytest==8.4.*
 coverage==7.9.*
 seaborn==0.13.*
-
+mkdocs
+mkdocs-material
+mkdocstrings
+mkdocstrings-python

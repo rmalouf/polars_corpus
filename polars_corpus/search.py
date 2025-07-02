@@ -11,6 +11,9 @@ __all__ = ["SearchResults", "kwic_concordance"]
 
 
 class SearchResults:
+    """Results of a search.
+    """
+
     def __init__(
         self,
         df: pl.DataFrame,
@@ -25,6 +28,12 @@ class SearchResults:
         return f"SearchResults<'{self.query}'; {len(self.matched_spans):,} matches>"
 
     def kwic_concordance(self, expr: pl.Expr, window_size: int = 5) -> pl.DataFrame:
+        """Return a KWIC concordance dataframe.
+
+        expr: Columns
+        window_size: contex to include
+        """
+
         return py_concordance(self.df.select(expr), self.matched_spans, window_size)
 
     def matches(self, expr: pl.Expr) -> pl.DataFrame:

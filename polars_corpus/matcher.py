@@ -63,6 +63,19 @@ def matchall(df: pl.DataFrame, query: str) -> Optional[SearchResults]:
 
 
 def search(df: pl.DataFrame, query: str) -> SearchResults:
+    """Search corpus using CQP query.
+
+    Args:
+        df: Corpus DataFrame.
+        query: cqp query
+
+    Returns:
+        search results.
+
+    Raises:
+        ValueError: If there's a problem
+
+    """
     return SearchResults(df, query, matchall(df, query))
 
 

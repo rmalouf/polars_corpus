@@ -21,7 +21,11 @@ attrs==25.3.0
     #   jsonschema
     #   referencing
 babel==2.17.0
-    # via jupyterlab-server
+    # via
+    #   jupyterlab-server
+    #   mkdocs-material
+backrefs==5.9
+    # via mkdocs-material
 beautifulsoup4==4.13.4
     # via nbconvert
 bleach==6.2.0
@@ -36,7 +40,13 @@ cffi==1.17.1
 charset-normalizer==3.4.2
     # via requests
 click==8.2.1
-    # via nltk
+    # via
+    #   mkdocs
+    #   nltk
+colorama==0.4.6
+    # via
+    #   griffe
+    #   mkdocs-material
 comm==0.2.2
     # via ipykernel
 contourpy==1.3.2
@@ -61,6 +71,10 @@ fonttools==4.58.4
     # via matplotlib
 fqdn==1.5.1
     # via jsonschema
+ghp-import==2.1.0
+    # via mkdocs
+griffe==1.7.3
+    # via mkdocstrings-python
 h11==0.16.0
     # via httpcore
 httpcore==1.0.9
@@ -90,6 +104,9 @@ jinja2==3.1.6
     #   jupyter-server
     #   jupyterlab
     #   jupyterlab-server
+    #   mkdocs
+    #   mkdocs-material
+    #   mkdocstrings
     #   nbconvert
 joblib==1.5.1
     # via
@@ -150,11 +167,21 @@ kiwisolver==1.4.8
     # via matplotlib
 lxml==5.4.0
     # via -r requirements-examples.in
+markdown==3.8.2
+    # via
+    #   mkdocs
+    #   mkdocs-autorefs
+    #   mkdocs-material
+    #   mkdocstrings
+    #   pymdown-extensions
 markdown-it-py==3.0.0
     # via rich
 markupsafe==3.0.2
     # via
     #   jinja2
+    #   mkdocs
+    #   mkdocs-autorefs
+    #   mkdocstrings
     #   nbconvert
 matplotlib==3.10.3
     # via
@@ -168,8 +195,34 @@ maturin==1.8.7
     # via -r requirements-dev.in
 mdurl==0.1.2
     # via markdown-it-py
+mergedeep==1.3.4
+    # via
+    #   mkdocs
+    #   mkdocs-get-deps
 mistune==3.1.3
     # via nbconvert
+mkdocs==1.6.1
+    # via
+    #   -r requirements-dev.in
+    #   mkdocs-autorefs
+    #   mkdocs-material
+    #   mkdocstrings
+mkdocs-autorefs==1.4.2
+    # via
+    #   mkdocstrings
+    #   mkdocstrings-python
+mkdocs-get-deps==0.2.0
+    # via mkdocs
+mkdocs-material==9.6.15
+    # via -r requirements-dev.in
+mkdocs-material-extensions==1.3.1
+    # via mkdocs-material
+mkdocstrings==0.29.1
+    # via
+    #   -r requirements-dev.in
+    #   mkdocstrings-python
+mkdocstrings-python==1.16.12
+    # via -r requirements-dev.in
 mypy==1.16.1
     # via -r requirements-dev.in
 mypy-extensions==1.1.0
@@ -210,8 +263,11 @@ packaging==25.0
     #   jupyterlab
     #   jupyterlab-server
     #   matplotlib
+    #   mkdocs
     #   nbconvert
     #   pytest
+paginate==0.5.7
+    # via mkdocs-material
 pandas==2.3.0
     # via seaborn
 pandocfilters==1.5.1
@@ -219,7 +275,9 @@ pandocfilters==1.5.1
 parso==0.8.4
     # via jedi
 pathspec==0.12.1
-    # via mypy
+    # via
+    #   mkdocs
+    #   mypy
 pexpect==4.9.0
     # via ipython
 pillow==11.3.0
@@ -227,7 +285,9 @@ pillow==11.3.0
 pip==25.1.1
     # via -r requirements-dev.in
 platformdirs==4.3.8
-    # via jupyter-core
+    # via
+    #   jupyter-core
+    #   mkdocs-get-deps
 pluggy==1.6.0
     # via pytest
 polars==1.31.0
@@ -254,9 +314,14 @@ pygments==2.19.2
     # via
     #   ipython
     #   ipython-pygments-lexers
+    #   mkdocs-material
     #   nbconvert
     #   pytest
     #   rich
+pymdown-extensions==10.16
+    # via
+    #   mkdocs-material
+    #   mkdocstrings
 pyparsing==3.2.3
     # via
     #   -r requirements.in
@@ -266,6 +331,7 @@ pytest==8.4.1
 python-dateutil==2.9.0.post0
     # via
     #   arrow
+    #   ghp-import
     #   jupyter-client
     #   matplotlib
     #   pandas
@@ -274,7 +340,14 @@ python-json-logger==3.3.0
 pytz==2025.2
     # via pandas
 pyyaml==6.0.2
-    # via jupyter-events
+    # via
+    #   jupyter-events
+    #   mkdocs
+    #   mkdocs-get-deps
+    #   pymdown-extensions
+    #   pyyaml-env-tag
+pyyaml-env-tag==1.1
+    # via mkdocs
 pyzmq==27.0.0
     # via
     #   ipykernel
@@ -288,7 +361,9 @@ referencing==0.36.2
 regex==2024.11.6
     # via nltk
 requests==2.32.4
-    # via jupyterlab-server
+    # via
+    #   jupyterlab-server
+    #   mkdocs-material
 rfc3339-validator==0.1.4
     # via
     #   jsonschema
@@ -365,6 +440,8 @@ uri-template==1.3.0
     # via jsonschema
 urllib3==2.5.0
     # via requests
+watchdog==6.0.0
+    # via mkdocs
 wcwidth==0.2.13
     # via prompt-toolkit
 webcolors==24.11.1
