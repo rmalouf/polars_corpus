@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Optional
 
 import numpy as np
@@ -8,7 +9,6 @@ from polars._typing import IntoExprColumn
 from polars.plugins import register_plugin_function
 
 from ._typing import T_Frame
-from pathlib import Path
 
 __all__ = [
     "crosstab",
@@ -161,7 +161,6 @@ def loglik(
         function_name="loglik",
         is_elementwise=True,
     )
-
 
 
 def compute_loglik(table: T_Frame) -> T_Frame:
