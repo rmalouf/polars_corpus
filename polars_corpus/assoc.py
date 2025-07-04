@@ -12,78 +12,12 @@ from ._typing import T_Frame
 
 __all__ = [
     "crosstab",
-    "get_contexts",
     "compute_mi",
     "compute_min_sens",
     "compute_loglik",
     "assoc",
 ]
 LIB = Path(__file__).parent
-
-
-def get_contexts(
-    df: T_Frame,
-    by: IntoExprColumn,
-    width: Optional[int] = None,
-    left_width: Optional[int] = None,
-    right_width: Optional[int] = None,
-) -> T_Frame:
-    """
-    Generate a DataFrame containing the context around a column of values by
-    shifting values left and right. The context size can be specified
-    symmetrically or asymmetrically based on given width parameters.
-
-    :param df:
-        The input DataFrame to process. Must be a TPolarsFrame.
-    :param by:
-        The column (or expression to select a column) used to generate
-        context values. Accepts a string column name or an instance of
-        IntoExprColumn.
-    :param width:
-        The symmetrical width of the context around the target column. If
-        specified, both `left_width` and `right_width` are inferred based
-        on this value (i.e., left_width = right_width = width). Cannot be
-        specified along with `left_width` or `right_width` individually.
-    :param left_width:
-        The width of the context to the left of the target column. Must be
-        non-negative. Should not be used together with `width`.
-    :param right_width:
-        The width of the context to the right of the target column. Must be
-        non-negative. Should not be used together with `width`.
-    :return:
-        A transformed DataFrame containing the context values for the target
-        column, including shifted columns prefixed with 'context-' (left)
-        and 'context+' (right), as well as the original column labeled
-        'node'.
-    :rtype:
-        TPolarsFrame
-    """
-    if width:
-        if left_width is not None or right_width is not None:
-            raise ValueError(
-                "left_width and right_width cannot be specified when width is specified"
-            )
-        else:
-            left_width = width
-            right_width = width
-
-    if left_width is None or right_width is None:
-        raise ValueError("left_width and right_width must be specified")
-
-    if left_width < 0 or right_width < 0:
-        raise ValueError("left_width and right_width must be non-negative")
-
-    if isinstance(by, str):
-        by = pl.col(by)
-
-    w = df.select(
-        [by.shift(i).alias(f"context-{i}") for i in range(left_width, 0, -1)]
-        + [by.alias("node")]
-        + [by.shift(-i).alias(f"context+{i}") for i in range(1, right_width + 1)]
-    )
-
-    return w
-
 
 def crosstab(df: T_Frame, x: str, y: str) -> T_Frame:
     """

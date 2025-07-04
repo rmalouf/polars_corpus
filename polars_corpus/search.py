@@ -11,8 +11,7 @@ __all__ = ["SearchResults", "kwic_concordance"]
 
 
 class SearchResults:
-    """Results of a search.
-    """
+    """Results of a search."""
 
     def __init__(
         self,
@@ -20,12 +19,12 @@ class SearchResults:
         query: str,
         matched_spans: list[tuple[int, int]],
     ) -> None:
-        self.df = df
-        self.query = query
-        self.matched_spans = matched_spans
+        self._df = df
+        self._query = query
+        self._matched_spans = matched_spans
 
     def __repr__(self) -> str:
-        return f"SearchResults<'{self.query}'; {len(self.matched_spans):,} matches>"
+        return f"SearchResults<'{self._query}'; {len(self._matched_spans):,} matches>"
 
     def kwic_concordance(self, expr: pl.Expr, window_size: int = 5) -> pl.DataFrame:
         """Return a KWIC concordance dataframe.
@@ -34,46 +33,48 @@ class SearchResults:
         window_size: contex to include
         """
 
-        return py_concordance(self.df.select(expr), self.matched_spans, window_size)
+        return py_concordance(self._df.select(expr), self._matched_spans, window_size)
 
     def matches(self, expr: pl.Expr) -> pl.DataFrame:
-        return py_concordance(self.df.select(expr), self.matched_spans, None)
+        return py_concordance(self._df.select(expr), self._matched_spans, None)
 
     def head(self, n: int) -> SearchResults:
-        if abs(n) > len(self.matched_spans):
+        if abs(n) > len(self._matched_spans):
             return self
         else:
-            return SearchResults(self.df, self.query, self.matched_spans[:n])
+            return SearchResults(self._df, self._query, self._matched_spans[:n])
 
     def tail(self, n: int) -> SearchResults:
-        if n > len(self.matched_spans):
+        if n > len(self._matched_spans):
             return self
         elif n > 0:
-            return SearchResults(self.df, self.query, self.matched_spans[-n:])
+            return SearchResults(self._df, self._query, self._matched_spans[-n:])
         else:
             raise ValueError
 
     def sample(self, k: int, seed: Optional[int] = None) -> SearchResults:
         state = random.getstate()
         random.seed(seed)
-        if k < 0 or k > len(self.matched_spans):
+        if k < 0 or k > len(self._matched_spans):
             raise ValueError
         try:
             new_results = SearchResults(
-                self.df, self.query, random.sample(self.matched_spans, k)
+                self._df, self._query, random.sample(self._matched_spans, k)
             )
         finally:
             random.setstate(state)
         return new_results
 
+    # Do really want to do this? Am I assuming somewhere else that the spans are sorted?
+    # We can always shuffle the concordances after it's built.
     def shuffle(self, seed: Optional[int] = None) -> SearchResults:
         state = random.getstate()
         random.seed(seed)
         try:
             new_results = SearchResults(
-                self.df,
-                self.query,
-                random.sample(self.matched_spans, len(self.matched_spans)),
+                self._df,
+                self._query,
+                random.sample(self._matched_spans, len(self._matched_spans)),
             )
         finally:
             random.setstate(state)
@@ -85,60 +86,23 @@ def kwic_concordance(
 ) -> pl.DataFrame:
     return search_results.kwic_concordance(expr, window_size)
 
-    #
-    # def to_chunks(self, name: str = "chunks") -> pl.Series:
-    #     try:
-    #         return _to_chunks(len(self.df), self.matched_spans).alias(name)
-    #     except OverflowError:
-    #         raise ValueError("negative index")
-    #
-    # def to_bindings(self, prefix: str = "var_") -> list[pl.Series]:
-    #     try:
-    #         n = len(self.df)
-    #         cols = []
-    #         for var, val in self.bindings.items():
-    #             mask = _make_spans_mask(n, val)
-    #             new_df = self.df.select(pl.col("token"), pl.Series("_mask", mask))
-    #             new_col = new_df.select(
-    #                 pl.when(pl.col("_mask"))
-    #                 .then(pl.col("token"))
-    #                 .otherwise(None)
-    #                 .alias(prefix + var)
-    #             ).get_column(prefix + var)
-    #             cols.append(new_col)
-    #         #            print(cols)
-    #         return cols
-    #     except OverflowError:
-    #         raise ValueError("negative index")
 
-
-# def to_chunk_index(
-#     spans: pl.Series, name: str = "span_idx", scheme: str = "BIO"
-# ) -> pl.Series:
-#     if scheme != "BIO":
-#         raise NotImplementedError("Only BIO is supported")
-#     span_idx = pl.Series(spans == "B").cum_sum()
-#     span_idx = pl.when(spans == "O").then(pl.lit(None)).otherwise(span_idx)
-#     # span_idx = (spans != "O" & spans == "B").cum_sum()
-#     return span_idx.alias(name)
-
-
-# def with_chunk_index(
-#     df: pl.DataFrame, span_col: str, name: str = "span_idx", scheme: str = "BIO"
-# ) -> pl.DataFrame:
-#     if scheme != "BIO":
-#         raise NotImplementedError("Only BIO is supported")
-#     return df.with_columns(
-#         (pl.col(span_col) == "B").cum_sum().alias(name)
-#     ).with_columns(
-#         pl.when(pl.col(span_col) == "O")
-#         .then(pl.lit(None))
-#         .otherwise(pl.col("_span_idx"))
-#         .alias(name)
-#     )
-#
-#
-# def with_chunks(
-#     df: pl.DataFrame, matches: SearchResults, name: str = "chunks"
-# ) -> pl.DataFrame:
-#     return df.with_columns(matches.to_chunks().alias(name))
+def collocates(
+    search_results: SearchResults, column: str, window_size: int = 5
+) -> pl.DataFrame:
+    f1 = search_results._df.lazy().group_by(column).len(name="f1")
+    concordance = kwic_concordance(search_results, column, window_size).lazy()
+    tbl = (
+        concordance.select(
+            context=pl.col(f"{column}_left_context")
+            .list.concat(f"{column}_right_context")
+            .explode()
+        )
+        .group_by("context")
+        .len(name="f12")
+        .join(f1, left_on="context", right_on="token", how="left")
+        .with_columns(
+            f2=pl.lit(concordance.height), n=search_results._df.height * window_size * 2
+        )
+    )
+    return tbl.collect()
