@@ -107,14 +107,6 @@ value = pp.QuotedString('"')
 
 constraint_formula = pp.Forward()
 
-atomic_constraint = (feature + "=" + value).set_parse_action(
-    lambda toks: pl.col(toks[0]).str.contains("^(" + toks[2] + ")$")
-)
-constraint = atomic_constraint | pp.Suppress("(") + constraint_formula + pp.Suppress(
-    ")"
-)
-
-
 def compile_atomic_constraint(args: pp.ParseResults) -> pl.Expr:
     expr = pl.col(args[0]).str.contains("^(" + args[2] + ")$")
     if args[1] == "=":
