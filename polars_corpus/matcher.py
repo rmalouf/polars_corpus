@@ -16,13 +16,15 @@ def col_name(i: int) -> str:
 
 
 def compute_masks(df: pl.DataFrame, opcodes: list[Any]) -> pl.DataFrame:
+    """Find token positions where a (sub-)query might potentially match"""
     for pc in range(len(opcodes)):
-        df = propagate_masks(pc, opcodes, df)
+        df = propagate_masks(df, opcodes, pc)
     df = df.select([col_name(i) for i in range(len(opcodes))])
     return df.rechunk()
 
 
-def propagate_masks(pc: int, opcodes: list[Any], df: pl.DataFrame) -> pl.DataFrame:
+def propagate_masks(df: pl.DataFrame, opcodes: list[Any], pc: int) -> pl.DataFrame:
+    """Propagate token masks backwards through the NFA"""
     if col_name(pc) not in df:
         match opcodes[pc]:
             case (Opcode.TOKEN, expr):
@@ -31,26 +33,27 @@ def propagate_masks(pc: int, opcodes: list[Any], df: pl.DataFrame) -> pl.DataFra
                 df = df.with_columns(pl.lit(True).alias(col_name(pc)))
             case (Opcode.JUMP, offset):
                 if col_name(pc + offset) not in df.columns:
-                    df = propagate_masks(pc + offset, opcodes, df)
+                    df = propagate_masks(df, opcodes, pc + offset)
                 df = df.with_columns(pl.col(col_name(pc + offset)).alias(col_name(pc)))
             case (Opcode.SPLIT, offset1, offset2):
                 if col_name(pc + offset1) not in df.columns:
-                    df = propagate_masks(pc + offset1, opcodes, df)
+                    df = propagate_masks(df, opcodes, pc + offset1)
                 if col_name(pc + offset2) not in df.columns:
-                    df = propagate_masks(pc + offset2, opcodes, df)
+                    df = propagate_masks(df, opcodes, pc + offset2)
                 df = df.with_columns(
                     (
                         pl.col(col_name(pc + offset1)) | pl.col(col_name(pc + offset2))
                     ).alias(col_name(pc))
                 )
             case _:
-                raise ValueError(f"Unknown opcode {opcodes[pc]}")
+                raise RuntimeError(f"Unknown opcode {opcodes[pc]}")
     return df
 
 
-def matchall(df: pl.DataFrame, query: str) -> Optional[SearchResults]:
+def get_matches(df: pl.DataFrame, query: str) -> Optional[list[tuple[int, int]]]:
+    """Parse query and retrieve matching spans"""
     if df.is_empty():
-        return None  # SearchResults(df, query, [])
+        return None
 
     opcodes = list(cqp.parse_string(query, parse_all=True))
     opcodes.append((Opcode.MATCH,))
@@ -62,21 +65,37 @@ def matchall(df: pl.DataFrame, query: str) -> Optional[SearchResults]:
     return opcode_matcher.matchall()
 
 
-def search(df: pl.DataFrame, query: str) -> SearchResults:
-    """Search corpus using CQP query.
+def search(df: pl.DataFrame, query: str) -> Optional[SearchResults]:
+    """Search corpus using a CQP-style query.
 
-    Args:
-        df: Corpus DataFrame.
-        query: cqp query
+    Parameters
+    ----------
+    df : pl.DataFrame
+         Corpus to be searched.
+    query: str
+        Search query
 
-    Returns:
-        search results.
+    Returns
+    -------
+    SearchResults
+        Result of the search
 
-    Raises:
-        ValueError: If there's a problem
+    Raises
+    ------
+    ParseException
+        If there's an error in the query
+    RuntimeError
+        If there's an internal error in the search procedure
+
+    Notes
+    -----
+    Put in a link to docs about the query language
 
     """
-    return SearchResults(df, query, matchall(df, query))
+    if matched_spans := get_matches(df, query):
+        return SearchResults(df, query, matched_spans)
+    else:
+        return None
 
 
 ## compile token-level constraints into polars expressions
@@ -149,25 +168,28 @@ primary = simple_primary
 
 
 def compile_star(args: pp.ParseResults) -> list[Any]:
-    operations = [(Opcode.SPLIT, 1, len(args) + 2)]
+    operations: list[Any] = [(Opcode.SPLIT, 1, len(args) + 2)]
     operations.extend(args)
     operations.append((Opcode.JUMP, -(len(args) + 1)))
     return operations
 
 
 def compile_plus(args: pp.ParseResults) -> list[Any]:
-    operations = args
+    operations: list[Any] = []
+    operations.extend(args)
     operations.append((Opcode.SPLIT, -len(args), 1))
     return operations
 
 
 def compile_question(args: pp.ParseResults) -> list[Any]:
-    operations = [(Opcode.SPLIT, 1, len(args) + 1)]
+    operations: list[Any] = [(Opcode.SPLIT, 1, len(args) + 1)]
     operations.extend(args)
     return operations
 
 
 def compile_m_to_n(args: pp.ParseResults) -> list[Any]:
+    m: Optional[int]
+    n: Optional[int]
     args_dict = args.as_dict()
     if "m_n" in args_dict:
         m = int(args_dict["m_n"])
@@ -178,7 +200,7 @@ def compile_m_to_n(args: pp.ParseResults) -> list[Any]:
     if n and m > n:
         raise ValueError("m > n")
 
-    operations = []
+    operations: list[Any] = []
     for _ in range(m):
         operations.extend(args[0])
     if n is None:
@@ -211,38 +233,14 @@ repetition = (
 )
 
 
-# repetition = (
-#     (primary + pp.Suppress("*")).set_parse_action(compile_star)
-#     | (primary + pp.Suppress("+")).set_parse_action(lambda e: OneOrMore(e[0]))
-#     | (primary + pp.Suppress("?")).set_parse_action(lambda e: OneOrZero(e[0]))
-#     | (
-#         primary
-#         + pp.Suppress("{")
-#         + number
-#         + pp.Suppress(",")
-#         + number
-#         + pp.Suppress("}")
-#     ).set_parse_action(lambda e: MToN(e[0], m=int(e[1]), n=int(e[2])))
-#     | (
-#         primary + pp.Suppress("{") + number + pp.Suppress(",") + pp.Suppress("}")
-#     ).set_parse_action(lambda e: MToN(e[0], m=int(e[1])))
-#     | (
-#         primary + pp.Suppress("{") + pp.Suppress(",") + number + pp.Suppress("}")
-#     ).set_parse_action(lambda e: MToN(e[0], n=int(e[1])))
-#     | (primary + pp.Suppress("{") + number + pp.Suppress("}")).set_parse_action(
-#         lambda e: MToN(e[0], m=int(e[1]), n=int(e[1]))
-#     )
-#     | primary
-# )
-
 concatenation = pp.OneOrMore(repetition)
 
 
-def compile_disjunction(args: pp.ParseResults) -> list[Any]:
+def compile_disjunction(args: pp.ParseResults) -> Any:
     if len(args) == 1:
         return args[0]
     else:
-        operations = []
+        operations: list[Any] = []
         for i in range(len(args) - 1):
             operations.append((Opcode.SPLIT, 1, len(args[i]) + 2))
             operations.extend(args[i])

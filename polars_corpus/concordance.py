@@ -18,7 +18,7 @@ class Concordance:
         self.df = df
         self.query = query
         self.spans = list(
-            cqp.parse_string(query, parse_all=True)[0].matchall(
+            cqp.parse_string(query, parse_all=True)[0].get_matches(
                 df, longest_match=longest_match, progress=progress
             )
         )

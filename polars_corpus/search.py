@@ -7,7 +7,7 @@ import polars as pl
 
 from ._internal import py_concordance
 
-__all__ = ["SearchResults", "kwic_concordance"]
+__all__ = ["SearchResults", "kwic_concordance", "collocates"]
 
 
 class SearchResults:
@@ -91,16 +91,17 @@ def collocates(
     search_results: SearchResults, column: str, window_size: int = 5
 ) -> pl.DataFrame:
     f1 = search_results._df.lazy().group_by(column).len(name="f1")
-    concordance = kwic_concordance(search_results, column, window_size).lazy()
+    concordance = kwic_concordance(search_results, column, window_size)
     tbl = (
-        concordance.select(
-            context=pl.col(f"{column}_left_context")
+        concordance.lazy()
+        .select(
+            collocate=pl.col(f"{column}_left_context")
             .list.concat(f"{column}_right_context")
             .explode()
         )
-        .group_by("context")
+        .group_by("collocate")
         .len(name="f12")
-        .join(f1, left_on="context", right_on="token", how="left")
+        .join(f1, left_on="collocate", right_on="token", how="left")
         .with_columns(
             f2=pl.lit(concordance.height), n=search_results._df.height * window_size * 2
         )

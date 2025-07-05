@@ -1,3 +1,4 @@
+#![feature(strict_overflow_ops)]
 // #![allow(clippy::unused_unit)]
 // #![warn(unused_variables)]
 // #![warn(dead_code)]
