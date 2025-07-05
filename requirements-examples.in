@@ -6,3 +6,4 @@ lxml==5.4.*
 pyarrow==20.0.*
 scipy==1.15.*
 fastexcel==0.14.*
+adjustText
