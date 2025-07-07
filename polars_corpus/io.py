@@ -16,10 +16,10 @@ class CorpusReader:
     def __init__(self, corpus_files: Iterator[PathType]):
         self._corpus_files = list(corpus_files)
 
-    def read_file(self, path: PathType) -> Generator[dict[str, str], None, None]:
+    def read_file(self, path: PathType) -> Generator[dict[str, str]]:
         raise NotImplementedError()
 
-    def read_files(self) -> Generator[dict[str, str], None, None]:
+    def read_files(self) -> Generator[dict[str, str]]:
         for file in self._corpus_files:
             yield from self.read_file(file)
 
@@ -71,7 +71,7 @@ class CorpusReader:
 
 
 class TextCorpusReader(CorpusReader):
-    def read_file(self, file: PathType) -> Generator[dict[str, str], None, None]:
+    def read_file(self, file: PathType) -> Generator[dict[str, str]]:
         bos = True
         for line in open(file, "rt"):
             if line != "\n":

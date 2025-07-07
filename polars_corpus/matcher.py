@@ -107,6 +107,7 @@ value = pp.QuotedString('"')
 
 constraint_formula = pp.Forward()
 
+
 def compile_atomic_constraint(args: pp.ParseResults) -> pl.Expr:
     expr = pl.col(args[0]).str.contains("^(" + args[2] + ")$")
     if args[1] == "=":

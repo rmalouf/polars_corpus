@@ -7,7 +7,7 @@ import polars as pl
 
 from ._internal import py_concordance
 
-__all__ = ["SearchResults", "kwic_concordance", "collocates"]
+__all__ = ["SearchResults", "concordance", "collocates"]
 
 
 class SearchResults:
@@ -26,17 +26,39 @@ class SearchResults:
     def __repr__(self) -> str:
         return f"SearchResults<'{self._query}'; {len(self._matched_spans):,} matches>"
 
-    def kwic_concordance(self, expr: pl.Expr, window_size: int = 5) -> pl.DataFrame:
+    def concordance(self, expr: pl.Expr, context) -> pl.DataFrame:
         """Return a KWIC concordance dataframe.
 
         expr: Columns
         window_size: contex to include
         """
 
-        return py_concordance(self._df.select(expr), self._matched_spans, window_size)
+        if isinstance(context, str):
+            chunk_tag = self._df.get_column(context)
+            left_window, right_window = 0, 0
+        else:
+            chunk_tag = None
+            if isinstance(context, int):
+                left_window = context
+                right_window = context
+            elif isinstance(context, tuple):
+                left_window, right_window = context
+            else:
+                raise ValueError
+
+        return py_concordance(
+            self._df.select(expr),
+            self._matched_spans,
+            False,
+            left_window,
+            right_window,
+            chunk_tag,
+        )
 
     def matches(self, expr: pl.Expr) -> pl.DataFrame:
-        return py_concordance(self._df.select(expr), self._matched_spans, None)
+        return py_concordance(
+            self._df.select(expr), self._matched_spans, True, 0, 0, None
+        )
 
     def head(self, n: int) -> SearchResults:
         if abs(n) > len(self._matched_spans):
@@ -81,19 +103,17 @@ class SearchResults:
         return new_results
 
 
-def kwic_concordance(
-    search_results: SearchResults, expr: pl.Expr, window_size: int = 5
-) -> pl.DataFrame:
-    return search_results.kwic_concordance(expr, window_size)
+def concordance(search_results: SearchResults, expr: pl.Expr, context) -> pl.DataFrame:
+    return search_results.concordance(expr, context)
 
 
 def collocates(
     search_results: SearchResults, column: str, window_size: int = 5
 ) -> pl.DataFrame:
     f1 = search_results._df.lazy().group_by(column).len(name="f1")
-    concordance = kwic_concordance(search_results, column, window_size)
+    conc = concordance(search_results, column, window_size)
     tbl = (
-        concordance.lazy()
+        conc.lazy()
         .select(
             collocate=pl.col(f"{column}_left_context")
             .list.concat(f"{column}_right_context")
@@ -103,7 +123,7 @@ def collocates(
         .len(name="f12")
         .join(f1, left_on="collocate", right_on="token", how="left")
         .with_columns(
-            f2=pl.lit(concordance.height), n=search_results._df.height * window_size * 2
+            f2=pl.lit(conc.height), n=search_results._df.height * window_size * 2
         )
     )
     return tbl.collect()

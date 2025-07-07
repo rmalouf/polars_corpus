@@ -19,6 +19,7 @@ __all__ = [
 ]
 LIB = Path(__file__).parent
 
+
 def crosstab(df: T_Frame, x: str, y: str) -> T_Frame:
     """
     Creates a crosstabulation (contingency table) from a given dataframe with two variables.
