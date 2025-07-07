@@ -1,9 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Optional
 
-import numpy as np
 import polars as pl
 from polars._typing import IntoExprColumn
 from polars.plugins import register_plugin_function
@@ -97,10 +95,10 @@ def loglik(
         is_elementwise=True,
     )
 
-
-def compute_loglik(table: T_Frame) -> T_Frame:
+## TODO: make this work with LazyFrames
+def compute_loglik(table: pl.DataFrame) -> pl.DataFrame:
     table = _validated_crosstab(table)
-    data = loglik(table["f12"], table["f1"], table["f2"], table["n"]).alias("LL")
+    data = loglik(table.get_column("f12"), table.get_column("f1"), table.get_column("f2"), table.get_column("n")).alias("LL")
     return table.with_columns(data)
 
 

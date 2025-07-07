@@ -4,8 +4,9 @@ import random
 from typing import Optional
 
 import polars as pl
+from polars._typing import IntoExprColumn
 
-from ._internal import py_concordance
+from ._internal import py_concordance, Span
 
 __all__ = ["SearchResults", "concordance", "collocates"]
 
@@ -17,7 +18,7 @@ class SearchResults:
         self,
         df: pl.DataFrame,
         query: str,
-        matched_spans: list[tuple[int, int]],
+        matched_spans: list[Span],
     ) -> None:
         self._df = df
         self._query = query
@@ -26,7 +27,7 @@ class SearchResults:
     def __repr__(self) -> str:
         return f"SearchResults<'{self._query}'; {len(self._matched_spans):,} matches>"
 
-    def concordance(self, expr: pl.Expr, context) -> pl.DataFrame:
+    def concordance(self, expr: IntoExprColumn, context: str | int | tuple[int,int]) -> pl.DataFrame:
         """Return a KWIC concordance dataframe.
 
         expr: Columns
@@ -103,7 +104,7 @@ class SearchResults:
         return new_results
 
 
-def concordance(search_results: SearchResults, expr: pl.Expr, context) -> pl.DataFrame:
+def concordance(search_results: SearchResults, expr: IntoExprColumn, context: str | int | tuple[int,int]) -> pl.DataFrame:
     return search_results.concordance(expr, context)
 
 

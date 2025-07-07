@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import Any, Optional
 
 import polars as pl
 
@@ -10,10 +10,6 @@ from .matcher import search
 from .search import SearchResults
 
 LIB = Path(__file__).parent
-
-
-if TYPE_CHECKING:
-    from polars.type_aliases import IntoExprColumn
 
 
 @pl.api.register_expr_namespace("corpus")
@@ -59,7 +55,7 @@ class CorpusDataFrame:
     def with_span_index(self, span_col: str, **kwargs: Any) -> pl.DataFrame:
         return with_span_index(self, span_col, **kwargs)
 
-    def search(self, query: str) -> SearchResults:
+    def search(self, query: str) -> Optional[SearchResults]:
         return search(self._df, query)
 
     def kwic_concordance(

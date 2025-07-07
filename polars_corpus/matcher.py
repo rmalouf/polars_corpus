@@ -50,7 +50,7 @@ def propagate_masks(df: pl.DataFrame, opcodes: list[Any], pc: int) -> pl.DataFra
     return df
 
 
-def get_matches(df: pl.DataFrame, query: str) -> Optional[list[tuple[int, int]]]:
+def get_matches(df: pl.DataFrame, query: str) -> Optional[list[Span]]:
     """Parse query and retrieve matching spans"""
     if df.is_empty():
         return None
