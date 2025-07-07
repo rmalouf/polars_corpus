@@ -95,10 +95,16 @@ def loglik(
         is_elementwise=True,
     )
 
+
 ## TODO: make this work with LazyFrames
 def compute_loglik(table: pl.DataFrame) -> pl.DataFrame:
     table = _validated_crosstab(table)
-    data = loglik(table.get_column("f12"), table.get_column("f1"), table.get_column("f2"), table.get_column("n")).alias("LL")
+    data = loglik(
+        table.get_column("f12"),
+        table.get_column("f1"),
+        table.get_column("f2"),
+        table.get_column("n"),
+    ).alias("LL")
     return table.with_columns(data)
 
 

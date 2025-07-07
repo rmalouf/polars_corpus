@@ -27,7 +27,9 @@ class SearchResults:
     def __repr__(self) -> str:
         return f"SearchResults<'{self._query}'; {len(self._matched_spans):,} matches>"
 
-    def concordance(self, expr: IntoExprColumn, context: str | int | tuple[int,int]) -> pl.DataFrame:
+    def concordance(
+        self, expr: IntoExprColumn, context: str | int | tuple[int, int]
+    ) -> pl.DataFrame:
         """Return a KWIC concordance dataframe.
 
         expr: Columns
@@ -104,7 +106,11 @@ class SearchResults:
         return new_results
 
 
-def concordance(search_results: SearchResults, expr: IntoExprColumn, context: str | int | tuple[int,int]) -> pl.DataFrame:
+def concordance(
+    search_results: SearchResults,
+    expr: IntoExprColumn,
+    context: str | int | tuple[int, int],
+) -> pl.DataFrame:
     return search_results.concordance(expr, context)
 
 

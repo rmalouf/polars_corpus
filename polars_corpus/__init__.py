@@ -4,6 +4,7 @@ from .assoc import *  # noqa: F403
 from .convert import *  # noqa: F403
 from .exprs import *  # noqa: F403
 from .search import *  # noqa: F403
+from .utils import *  # noqa: F403
 
 # from .concordance import *  # noqa: F403
 #
