@@ -32,7 +32,7 @@ beautifulsoup4==4.13.4
     # via nbconvert
 bleach==6.2.0
     # via nbconvert
-certifi==2025.6.15
+certifi==2025.7.14
     # via
     #   httpcore
     #   httpx
@@ -49,15 +49,15 @@ colorama==0.4.6
     # via
     #   griffe
     #   mkdocs-material
-comm==0.2.2
+comm==0.2.3
     # via ipykernel
-contourpy==1.3.2
+contourpy==1.3.3
     # via matplotlib
-coverage==7.9.2
+coverage==7.10.0
     # via -r requirements-dev.in
 cycler==0.12.1
     # via matplotlib
-debugpy==1.8.14
+debugpy==1.8.15
     # via ipykernel
 decorator==5.2.1
     # via ipython
@@ -69,13 +69,13 @@ fastexcel==0.14.0
     # via -r requirements-examples.in
 fastjsonschema==2.21.1
     # via nbformat
-fonttools==4.58.5
+fonttools==4.59.0
     # via matplotlib
 fqdn==1.5.1
     # via jsonschema
 ghp-import==2.1.0
     # via mkdocs
-griffe==1.7.3
+griffe==1.8.0
     # via mkdocstrings-python
 h11==0.16.0
     # via httpcore
@@ -91,7 +91,7 @@ idna==3.10
     #   requests
 iniconfig==2.1.0
     # via pytest
-ipykernel==6.29.5
+ipykernel==6.30.0
     # via jupyterlab
 ipython==9.4.0
     # via ipykernel
@@ -121,7 +121,7 @@ json5==0.12.0
     # via jupyterlab-server
 jsonpointer==3.0.0
     # via jsonschema
-jsonschema==4.24.0
+jsonschema==4.25.0
     # via
     #   jupyter-events
     #   jupyterlab-server
@@ -144,7 +144,7 @@ jupyter-core==5.8.1
     #   nbformat
 jupyter-events==0.12.0
     # via jupyter-server
-jupyter-lsp==2.2.5
+jupyter-lsp==2.2.6
     # via jupyterlab
 jupyter-server==2.16.0
     # via
@@ -155,7 +155,7 @@ jupyter-server==2.16.0
     #   notebook-shim
 jupyter-server-terminals==0.5.3
     # via jupyter-server
-jupyterlab==4.4.4
+jupyterlab==4.4.5
     # via
     #   -r requirements-dev.in
     #   notebook
@@ -167,6 +167,8 @@ jupyterlab-server==2.27.3
     #   notebook
 kiwisolver==1.4.8
     # via matplotlib
+lark==1.2.2
+    # via rfc3987-syntax
 lxml==5.4.0
     # via -r requirements-examples.in
 markdown==3.8.2
@@ -194,7 +196,7 @@ matplotlib-inline==0.1.7
     # via
     #   ipykernel
     #   ipython
-maturin==1.8.7
+maturin==1.9.1
     # via -r requirements-dev.in
 mdurl==0.1.2
     # via markdown-it-py
@@ -216,17 +218,17 @@ mkdocs-autorefs==1.4.2
     #   mkdocstrings-python
 mkdocs-get-deps==0.2.0
     # via mkdocs
-mkdocs-material==9.6.15
+mkdocs-material==9.6.16
     # via -r requirements-dev.in
 mkdocs-material-extensions==1.3.1
     # via mkdocs-material
-mkdocstrings==0.29.1
+mkdocstrings==0.30.0
     # via
     #   -r requirements-dev.in
     #   mkdocstrings-python
 mkdocstrings-python==1.16.12
     # via -r requirements-dev.in
-mypy==1.16.1
+mypy==1.17.0
     # via -r requirements-dev.in
 mypy-extensions==1.1.0
     # via mypy
@@ -249,7 +251,7 @@ notebook-shim==0.2.4
     # via
     #   jupyterlab
     #   notebook
-numpy==2.3.1
+numpy==2.3.2
     # via
     #   adjusttext
     #   contourpy
@@ -272,7 +274,7 @@ packaging==25.0
     #   pytest
 paginate==0.5.7
     # via mkdocs-material
-pandas==2.3.0
+pandas==2.3.1
     # via seaborn
 pandocfilters==1.5.1
     # via nbconvert
@@ -376,7 +378,9 @@ rfc3986-validator==0.1.1
     # via
     #   jsonschema
     #   jupyter-events
-rich==14.0.0
+rfc3987-syntax==1.1.0
+    # via jsonschema
+rich==14.1.0
     # via joblib-progress
 rpds-py==0.26.0
     # via
@@ -422,7 +426,6 @@ tqdm==4.67.1
     # via nltk
 traitlets==5.14.3
     # via
-    #   comm
     #   ipykernel
     #   ipython
     #   jupyter-client
@@ -434,7 +437,7 @@ traitlets==5.14.3
     #   nbclient
     #   nbconvert
     #   nbformat
-types-python-dateutil==2.9.0.20250516
+types-python-dateutil==2.9.0.20250708
     # via arrow
 typing-extensions==4.14.1
     # via
