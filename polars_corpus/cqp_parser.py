@@ -16,12 +16,21 @@ __all__ = ["cqp"]
 feature = pp.Word(pp.alphas + pp.nums + "_")
 number = pp.Word(pp.nums)
 value = pp.QuotedString('"')
+case_modifier = pp.Optional(pp.Literal("%c"))
 
 constraint_formula = pp.Forward()
 
 
 def compile_atomic_constraint(args: pp.ParseResults) -> pl.Expr:
-    expr = pl.col(args[0]).str.contains("^(" + args[2] + ")$")
+    # Check if case-insensitive modifier is present (will be at position 3 if present)
+    case_insensitive = len(args) > 3 and args[3] == "%c"
+    
+    # Build regex pattern with optional case-insensitive flag
+    pattern = "^(" + args[2] + ")$"
+    if case_insensitive:
+        pattern = "(?i)" + pattern
+    
+    expr = pl.col(args[0]).str.contains(pattern)
     if args[1] == "=":
         return expr
     elif args[1] == "!=":
@@ -31,7 +40,7 @@ def compile_atomic_constraint(args: pp.ParseResults) -> pl.Expr:
 
 
 atomic_constraint = (
-    feature + (pp.Literal("=") | pp.Literal("!=")) + value
+    feature + (pp.Literal("=") | pp.Literal("!=")) + value + case_modifier
 ).set_parse_action(compile_atomic_constraint)
 
 constraint = atomic_constraint | pp.Suppress("(") + constraint_formula + pp.Suppress(

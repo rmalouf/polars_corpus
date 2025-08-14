@@ -588,6 +588,90 @@ class TestErrorHandling:
             pytest.skip("System limits reached for deeply nested pattern")
 
 
+class TestCaseInsensitiveMatching:
+    """Test case-insensitive matching with %c modifier"""
+
+    def test_basic_case_insensitive_match(self, sample_corpus):
+        """Test basic case-insensitive matching"""
+        # Test matching "the" case-insensitively should match both "The" and "the"
+        query = '[word="the"%c]'
+        matches = get_matches(sample_corpus, query)
+        assert len(matches) == 2
+        assert Span(0, 1) in matches  # "The"
+        assert Span(6, 7) in matches  # "the"
+
+    def test_case_insensitive_with_space(self, sample_corpus):
+        """Test case-insensitive matching with space before %c"""
+        query = '[word="THE" %c]'
+        matches = get_matches(sample_corpus, query)
+        assert len(matches) == 2
+        assert Span(0, 1) in matches  # "The"
+        assert Span(6, 7) in matches  # "the"
+
+    def test_case_insensitive_no_matches(self, sample_corpus):
+        """Test case-insensitive query with no matches"""
+        query = '[word="elephant"%c]'
+        matches = get_matches(sample_corpus, query)
+        assert matches is None
+
+    def test_case_insensitive_with_inequality(self, sample_corpus):
+        """Test case-insensitive matching with != operator"""
+        query = '[word!="THE"%c]'
+        matches = get_matches(sample_corpus, query)
+        # Should match everything except "The" and "the"
+        assert len(matches) == 7
+        assert Span(0, 1) not in matches  # "The"
+        assert Span(6, 7) not in matches  # "the"
+
+    def test_case_insensitive_with_regex(self, sample_corpus):
+        """Test case-insensitive matching with regex patterns"""
+        query = '[word="[Qq]uick"%c]'
+        matches = get_matches(sample_corpus, query)
+        assert len(matches) == 1
+        assert matches[0] == Span(1, 2)  # "quick"
+
+    def test_case_insensitive_in_boolean_expression(self, sample_corpus):
+        """Test case-insensitive matching in boolean expressions"""
+        query = '[pos="JJ" & word="BROWN"%c]'
+        matches = get_matches(sample_corpus, query)
+        assert len(matches) == 1
+        assert matches[0] == Span(2, 3)  # "brown"
+
+    def test_case_insensitive_in_disjunction(self, sample_corpus):
+        """Test case-insensitive matching in disjunction"""
+        query = '[word="QUICK"%c | word="LAZY"%c]'
+        matches = get_matches(sample_corpus, query)
+        assert len(matches) == 2
+        assert Span(1, 2) in matches  # "quick"
+        assert Span(7, 8) in matches  # "lazy"
+
+    def test_case_sensitive_vs_insensitive(self, sample_corpus):
+        """Test difference between case-sensitive and case-insensitive"""
+        # Case-sensitive should not match
+        query_sensitive = '[word="THE"]'
+        matches_sensitive = get_matches(sample_corpus, query_sensitive)
+        assert matches_sensitive is None
+
+        # Case-insensitive should match
+        query_insensitive = '[word="THE"%c]'
+        matches_insensitive = get_matches(sample_corpus, query_insensitive)
+        assert len(matches_insensitive) == 2
+
+    def test_case_insensitive_with_different_features(self, sample_corpus):
+        """Test case-insensitive matching with different features"""
+        # Test with lemma feature
+        query = '[lemma="THE"%c]'
+        matches = get_matches(sample_corpus, query)
+        assert len(matches) == 2  # Both "The" and "the" have lemma "the"
+
+    def test_case_insensitive_in_sequence(self, sample_corpus):
+        """Test case-insensitive matching in sequences"""
+        query = '[word="THE"%c] [word="LAZY"%c]'
+        matches = get_matches(sample_corpus, query)
+        assert len(matches) == 1
+        assert matches[0] == Span(6, 8)  # "the lazy"
+
+
 class TestSpanUtilities:
     """Test span-related utility functions"""
 
