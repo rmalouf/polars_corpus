@@ -296,7 +296,7 @@ platformdirs==4.3.8
     #   mkdocs-get-deps
 pluggy==1.6.0
     # via pytest
-polars==1.32.2
+polars==1.31.0
     # via -r requirements.in
 prometheus-client==0.22.1
     # via jupyter-server
