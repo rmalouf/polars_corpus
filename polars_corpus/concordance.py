@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import polars as pl
 
-from .matcher import cqp
+from .cqp_parser import cqp
 
 __all__ = ["Concordance"]
 
