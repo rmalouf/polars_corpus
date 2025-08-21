@@ -162,7 +162,7 @@ jupyter-events==0.12.0
     # via jupyter-server
 jupyter-lsp==2.2.6
     # via jupyterlab
-jupyter-server==2.16.0
+jupyter-server==2.17.0
     # via
     #   jupyter-lsp
     #   jupyterlab
@@ -185,7 +185,7 @@ kiwisolver==1.4.9
     # via matplotlib
 lark==1.2.2
     # via rfc3987-syntax
-lxml==5.4.0
+lxml==6.0.0
     # via -r requirements-examples.in
 markdown==3.8.2
     # via
@@ -273,11 +273,15 @@ numpy==2.3.2
     #   contourpy
     #   great-tables
     #   matplotlib
+    #   numpy-typing-compat
+    #   optype
     #   pandas
     #   scipy
     #   seaborn
-overrides==7.7.0
-    # via jupyter-server
+numpy-typing-compat==20250818.2.3
+    # via optype
+optype==0.13.4
+    # via scipy-stubs
 packaging==25.0
     # via
     #   htmltools
@@ -292,7 +296,7 @@ packaging==25.0
     #   pytest
 paginate==0.5.7
     # via mkdocs-material
-pandas==2.3.1
+pandas==2.3.2
     # via seaborn
 pandocfilters==1.5.1
     # via nbconvert
@@ -328,7 +332,7 @@ ptyprocess==0.7.0
     #   terminado
 pure-eval==0.2.3
     # via stack-data
-pyarrow==20.0.0
+pyarrow==21.0.0
     # via
     #   -r requirements-examples.in
     #   fastexcel
@@ -372,7 +376,7 @@ pyyaml==6.0.2
     #   pyyaml-env-tag
 pyyaml-env-tag==1.1
     # via mkdocs
-pyzmq==27.0.1
+pyzmq==27.0.2
     # via
     #   ipykernel
     #   jupyter-client
@@ -404,10 +408,12 @@ rpds-py==0.27.0
     # via
     #   jsonschema
     #   referencing
-scipy==1.15.3
+scipy==1.16.1
     # via
     #   -r requirements-examples.in
     #   adjusttext
+scipy-stubs==1.16.1.1
+    # via -r requirements-examples.in
 seaborn==0.13.2
     # via
     #   -r requirements-dev.in

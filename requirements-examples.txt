@@ -37,7 +37,7 @@ joblib-progress==1.0.6
     # via -r requirements-examples.in
 kiwisolver==1.4.9
     # via matplotlib
-lxml==5.4.0
+lxml==6.0.0
     # via -r requirements-examples.in
 markdown-it-py==4.0.0
     # via rich
@@ -56,20 +56,26 @@ numpy==2.3.2
     #   contourpy
     #   great-tables
     #   matplotlib
+    #   numpy-typing-compat
+    #   optype
     #   pandas
     #   scipy
     #   seaborn
+numpy-typing-compat==20250818.2.3
+    # via optype
+optype==0.13.4
+    # via scipy-stubs
 packaging==25.0
     # via
     #   htmltools
     #   matplotlib
-pandas==2.3.1
+pandas==2.3.2
     # via seaborn
 pillow==11.3.0
     # via matplotlib
 polars==1.31.0
     # via -r requirements.in
-pyarrow==20.0.0
+pyarrow==21.0.0
     # via
     #   -r requirements-examples.in
     #   fastexcel
@@ -89,10 +95,12 @@ regex==2025.7.34
     # via nltk
 rich==14.1.0
     # via joblib-progress
-scipy==1.15.3
+scipy==1.16.1
     # via
     #   -r requirements-examples.in
     #   adjusttext
+scipy-stubs==1.16.1.1
+    # via -r requirements-examples.in
 seaborn==0.13.2
     # via -r requirements-examples.in
 six==1.17.0
