@@ -36,10 +36,7 @@ def yules_K(expr: IntoExprColumn) -> pl.Expr:
     return (
         10000
         * (
-            (
-                spectrum.struct.field("m").pow(2) * spectrum.struct.field("V(m,N)")
-                - N
-            )
+            (spectrum.struct.field("m").pow(2) * spectrum.struct.field("V(m,N)") - N)
             / N**2
         ).sum()
     )

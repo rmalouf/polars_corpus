@@ -4,7 +4,7 @@ import polars as pl
 __all__ = ["with_chunk_index", "ngrams"]
 
 
-def with_chunk_index(df: T_Frame, column: str, name: str = "chunk_index") -> T_Frame:
+def with_chunk_index(df: T_Frame, column: str, name: str = "chunk_idx") -> T_Frame:
     return df.with_columns(pl.col(column).eq("B").alias(name)).with_columns(
         pl.col(name).cum_sum()
     )

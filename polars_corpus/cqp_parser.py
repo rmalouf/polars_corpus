@@ -24,12 +24,12 @@ constraint_formula = pp.Forward()
 def compile_atomic_constraint(args: pp.ParseResults) -> pl.Expr:
     # Check if case-insensitive modifier is present (will be at position 3 if present)
     case_insensitive = len(args) > 3 and args[3] == "%c"
-    
+
     # Build regex pattern with optional case-insensitive flag
     pattern = "^(" + args[2] + ")$"
     if case_insensitive:
         pattern = "(?i)" + pattern
-    
+
     expr = pl.col(args[0]).str.contains(pattern)
     if args[1] == "=":
         return expr

@@ -1,10 +1,9 @@
 import polars as pl
 import pytest
-from _internal.cqp import Span
-from _internal.search import SearchResults, with_span_index, with_spans
+from polars_corpus import Span, SearchResults, with_chunk_index
 
 
-class TestWithSpanIndex:
+class TestWithChunkIndex:
     """Tests for with_span_index function."""
 
     def test_basic_bio_tagging(self):
@@ -16,10 +15,10 @@ class TestWithSpanIndex:
             }
         )
 
-        result = with_span_index(df, "bio")
+        result = with_chunk_index(df, "bio")
         expected_indices = [1, 1, None, 2, 2]
 
-        assert result["span_idx"].to_list() == expected_indices
+        assert result["chunk_idx"].to_list() == expected_indices
 
     def test_single_token_spans(self):
         """Test spans that are only one token long."""
@@ -27,10 +26,10 @@ class TestWithSpanIndex:
             {"token": ["The", "quick", "brown", "fox"], "bio": ["B", "O", "B", "O"]}
         )
 
-        result = with_span_index(df, "bio")
+        result = with_chunk_index(df, "bio")
         expected_indices = [1, None, 2, None]
 
-        assert result["span_idx"].to_list() == expected_indices
+        assert result["chunk_idx"].to_list() == expected_indices
 
     def test_consecutive_spans(self):
         """Test multiple consecutive spans."""
@@ -41,37 +40,37 @@ class TestWithSpanIndex:
             }
         )
 
-        result = with_span_index(df, "bio")
+        result = with_chunk_index(df, "bio")
         expected_indices = [1, 1, 2, 2, 2, None]
 
-        assert result["span_idx"].to_list() == expected_indices
+        assert result["chunk_idx"].to_list() == expected_indices
 
     def test_all_outside_spans(self):
         """Test sequence with all O tags."""
         df = pl.DataFrame({"token": ["The", "quick", "brown"], "bio": ["O", "O", "O"]})
 
-        result = with_span_index(df, "bio")
+        result = with_chunk_index(df, "bio")
         expected_indices = [None, None, None]
 
-        assert result["span_idx"].to_list() == expected_indices
+        assert result["chunk_idx"].to_list() == expected_indices
 
     def test_all_inside_one_span(self):
         """Test sequence that is entirely one span."""
         df = pl.DataFrame({"token": ["New", "York", "City"], "bio": ["B", "I", "I"]})
 
-        result = with_span_index(df, "bio")
+        result = with_chunk_index(df, "bio")
         expected_indices = [1, 1, 1]
 
-        assert result["span_idx"].to_list() == expected_indices
+        assert result["chunk_idx"].to_list() == expected_indices
 
     def test_custom_column_name(self):
         """Test using custom column name for span index."""
         df = pl.DataFrame({"token": ["The", "quick"], "bio": ["B", "I"]})
 
-        result = with_span_index(df, "bio", name="my_span_idx")
+        result = with_chunk_index(df, "bio", name="my_chunk_idx")
 
-        assert "my_span_idx" in result.columns
-        assert result["my_span_idx"].to_list() == [1, 1]
+        assert "my_chunk_idx" in result.columns
+        assert result["my_chunk_idx"].to_list() == [1, 1]
 
     def test_empty_dataframe(self):
         """Test with empty dataframe."""
@@ -79,17 +78,17 @@ class TestWithSpanIndex:
             {"token": [], "bio": []}, schema={"token": pl.Utf8, "bio": pl.Utf8}
         )
 
-        result = with_span_index(df, "bio")
+        result = with_chunk_index(df, "bio")
 
         assert len(result) == 0
-        assert "span_idx" in result.columns
+        assert "chunk_idx" in result.columns
 
     def test_invalid_scheme_raises_error(self):
         """Test that non-BIO schemes raise NotImplementedError."""
         df = pl.DataFrame({"token": ["The"], "bio": ["B"]})
 
         with pytest.raises(NotImplementedError, match="Only BIO is supported"):
-            with_span_index(df, "bio", scheme="BILOU")
+            with_chunk_index(df, "bio", scheme="BILOU")
 
     def test_malformed_bio_sequence(self):
         """Test behavior with malformed BIO sequences (I without B)."""
@@ -102,10 +101,10 @@ class TestWithSpanIndex:
 
         # This should still work - the function should handle it gracefully
         # I tags without preceding B should get index 0 (since cum_sum starts at 0)
-        result = with_span_index(df, "bio")
+        result = with_chunk_index(df, "bio")
         expected_indices = [0, 0, None]  # or whatever the expected behavior is
 
-        assert result["span_idx"].to_list() == expected_indices
+        assert result["chunk_idx"].to_list() == expected_indices
 
 
 class TestWithSpans:
