@@ -6,10 +6,12 @@ from .exprs import *  # noqa: F403
 from .search import *  # noqa: F403
 from .utils import *  # noqa: F403
 from .productivity import *  # noqa: F403
+from .io import *  # noqa: F403
+from .cqp_parser import *  # noqa: F403
+
 
 # from .concordance import *  # noqa: F403
 #
 # # from ._internal import __version__ as __version__
-# from .io import *  # noqa: F403
 
 __version__ = "0.1.0"
