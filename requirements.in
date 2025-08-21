@@ -1,4 +1,4 @@
-polars==1.31.*
+polars==1.32.*
 pyparsing==3.2.*
 nltk==3.9.*
 # numba==0.61.*

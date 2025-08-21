@@ -10,7 +10,7 @@ cycler==0.12.1
     # via matplotlib
 fastexcel==0.14.0
     # via -r requirements-examples.in
-fonttools==4.59.0
+fonttools==4.59.1
     # via matplotlib
 joblib==1.5.1
     # via
