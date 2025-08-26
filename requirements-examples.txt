@@ -37,7 +37,7 @@ joblib-progress==1.0.6
     # via -r requirements-examples.in
 kiwisolver==1.4.9
     # via matplotlib
-lxml==6.0.0
+lxml==6.0.1
     # via -r requirements-examples.in
 markdown-it-py==4.0.0
     # via rich
@@ -107,7 +107,7 @@ six==1.17.0
     # via python-dateutil
 tqdm==4.67.1
     # via nltk
-typing-extensions==4.14.1
+typing-extensions==4.15.0
     # via
     #   great-tables
     #   htmltools
