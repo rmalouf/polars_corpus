@@ -16,7 +16,7 @@ faicons==0.2.2
     # via great-tables
 fastexcel==0.14.0
     # via -r requirements-examples.in
-fonttools==4.59.1
+fonttools==4.59.2
     # via matplotlib
 great-tables==0.18.0
     # via -r requirements-examples.in
@@ -28,7 +28,7 @@ importlib-metadata==8.7.0
     # via great-tables
 importlib-resources==6.5.2
     # via great-tables
-joblib==1.5.1
+joblib==1.5.2
     # via
     #   -r requirements-examples.in
     #   joblib-progress
@@ -41,7 +41,7 @@ lxml==6.0.1
     # via -r requirements-examples.in
 markdown-it-py==4.0.0
     # via rich
-matplotlib==3.10.5
+matplotlib==3.10.6
     # via
     #   -r requirements-examples.in
     #   adjusttext
@@ -91,7 +91,7 @@ python-dateutil==2.9.0.post0
     #   pandas
 pytz==2025.2
     # via pandas
-regex==2025.7.34
+regex==2025.9.1
     # via nltk
 rich==14.1.0
     # via joblib-progress
