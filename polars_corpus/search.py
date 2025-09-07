@@ -6,7 +6,7 @@ from typing import Optional
 import polars as pl
 from polars._typing import IntoExprColumn
 
-from ._internal import py_concordance, Span
+from ._internal import py_concordance, py_kwic, Span
 
 __all__ = ["SearchResults", "concordance", "collocates"]
 
@@ -59,13 +59,16 @@ class SearchResults:
 
     def __repr__(self) -> str:
         if len(self._matched_spans) != 1:
-            es = 'es'
+            es = "es"
         else:
-            es = ''
+            es = ""
         return f"SearchResults<'{self._query}'; {len(self._matched_spans):,} match{es}>"
 
     def concordance(
-        self, expr: IntoExprColumn, context: str | int | tuple[int, int]
+        self,
+        expr: IntoExprColumn,
+        window: Optional[int] = None,
+        chunk_tag: Optional[str] = None,
     ) -> pl.DataFrame:
         """Generate a KWIC (Key Word In Context) concordance DataFrame.
 
@@ -78,72 +81,54 @@ class SearchResults:
         expr : IntoExprColumn
             Column name or Polars expression specifying which column(s)
             to use for generating the concordance display.
-        context : str or int or tuple[int, int]
-            Context specification:
-            - str: Column name defining chunk boundaries (e.g., "sentence_id")
-            - int: Number of tokens to include on both sides
-            - tuple: (left_tokens, right_tokens) for asymmetric context
+        window : int, optional
+            Number of tokens to include on both left and right sides of
+            each match. If None, returns matches with no context (equivalent
+            to window=0). When chunk_tag is specified, this parameter is ignored.
+        chunk_tag : str, optional
+            Column name defining chunk boundaries for context extraction.
+            When specified, context extends to chunk boundaries marked by
+            "B" (begin) and "I" (inside) tags, ignoring the window parameter.
+            Context stops at the first non-"I" tag in each direction.
 
         Returns
         -------
         pl.DataFrame
-            Concordance DataFrame with columns for left context, keywords,
-            right context, and metadata about each match.
+            Concordance DataFrame with columns named according to the input
+            expression(s). For each column in expr, creates:
+            - "{column}_left_context": List of tokens before the match
+            - "{column}": List of matched tokens
+            - "{column}_right_context": List of tokens after the match
+            Context columns are omitted when window=0 or no context available.
 
         Examples
         --------
-        >>> results.concordance("token", 3)
-        >>> results.concordance("token", (2, 4))  # 2 left, 4 right
-        >>> results.concordance("token", "sentence_id")  # sentence boundaries
+        >>> results.concordance("token", window=3)
+        >>> results.concordance("token")  # No context, matches only
+        >>> results.concordance("token", chunk_tag="sentence_tags")  # Chunk boundaries
+        >>> results.concordance(["token", "pos"], window=5)  # Multiple columns
         """
 
-        if isinstance(context, str):
-            chunk_tag = self._df.get_column(context)
-            left_window, right_window = 0, 0
+        if chunk_tag is not None:
+            chunk_tag = self._df.get_column(chunk_tag)
+            return py_concordance(
+                self._df.select(expr),
+                self._matched_spans,
+                chunk_tag,
+            )
         else:
-            chunk_tag = None
-            if isinstance(context, int):
-                left_window = context
-                right_window = context
-            elif isinstance(context, tuple):
-                left_window, right_window = context
+            if window is None:
+                left_window = 0
+                right_window = 0
             else:
-                raise ValueError
-
-        return py_concordance(
-            self._df.select(expr),
-            self._matched_spans,
-            False,
-            left_window,
-            right_window,
-            chunk_tag,
-        )
-
-    def matches(self, expr: pl.Expr) -> pl.DataFrame:
-        """Extract the matched tokens without context.
-
-        Returns just the tokens that were matched by the search query,
-        without any surrounding context.
-
-        Parameters
-        ----------
-        expr : pl.Expr
-            Polars expression specifying which column(s) to extract
-            from the matched spans.
-
-        Returns
-        -------
-        pl.DataFrame
-            DataFrame containing only the matched tokens/spans.
-
-        Examples
-        --------
-        >>> results.matches(pl.col("token"))
-        >>> results.matches(pl.col(["token", "pos"]))
-        """
-        return py_concordance(
-            self._df.select(expr), self._matched_spans, True, 0, 0, None
-        )
+                left_window = window
+                right_window = window
+            return py_kwic(
+                self._df.select(expr),
+                self._matched_spans,
+                left_window,
+                right_window,
+            )
 
     def head(self, n: int) -> SearchResults:
         """Return the first n search results.
@@ -284,12 +269,13 @@ class SearchResults:
 def concordance(
     search_results: SearchResults,
     expr: IntoExprColumn,
-    context: str | int | tuple[int, int],
+    window: Optional[int] = None,
+    chunk_tag: Optional[str] = None,
 ) -> pl.DataFrame:
     """Generate a concordance from search results (functional interface).
 
     This function provides a functional interface to SearchResults.concordance().
-    It's equivalent to calling search_results.concordance(expr, context).
+    It's equivalent to calling search_results.concordance(expr, window, chunk_tag).
 
     Parameters
     ----------
@@ -297,8 +283,14 @@ def concordance(
         The search results to generate concordance from.
     expr : IntoExprColumn
         Column name or Polars expression for concordance display.
-    context : str or int or tuple[int, int]
-        Context specification (see SearchResults.concordance for details).
+    window : int, optional
+        Number of tokens to include on both left and right sides of
+        each match. If None, returns matches with no context (equivalent
+        to window=0). When chunk_tag is specified, this parameter is ignored.
+    chunk_tag : str, optional
+        Column name defining chunk boundaries for context extraction.
+        When specified, context extends to chunk boundaries marked by
+        "B" (begin) and "I" (inside) tags, ignoring the window parameter.
 
     Returns
     -------
@@ -311,9 +303,10 @@ def concordance(
 
     Examples
     --------
-    >>> conc = concordance(results, "token", 5)
+    >>> conc = concordance(results, "token", window=5)
+    >>> conc = concordance(results, "token", chunk_tag="sentence_tags")
     """
-    return search_results.concordance(expr, context)
+    return search_results.concordance(expr, window, chunk_tag)
 
 
 def collocates(

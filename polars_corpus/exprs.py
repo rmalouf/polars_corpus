@@ -27,14 +27,6 @@ class CorpusExpr:
     def ngrams(self, n: int) -> pl.Expr:
         return ngrams(n, self)
 
-    def kwic_concordance(
-        self, search_results: SearchResults, window_size: int
-    ) -> pl.DataFrame:
-        return search_results.concordance(self._expr, window_size)
-
-    def matches(self, search_results: SearchResults) -> pl.DataFrame:
-        return search_results.matches(self._expr)
-
 
 @pl.api.register_dataframe_namespace("corpus")
 class CorpusDataFrame:
@@ -58,17 +50,6 @@ class CorpusDataFrame:
 
     def search(self, query: str) -> Optional[SearchResults]:
         return search(self._df, query)
-
-    def kwic_concordance(
-        self,
-        search_results: SearchResults,
-        expr: pl.Expr,
-        window_size,
-    ) -> pl.DataFrame:
-        return search_results.concordance(expr, window_size)
-
-    def matches(self, search_results: SearchResults, expr: pl.Expr) -> pl.Expr:
-        return search_results.matches(expr)
 
 
 @pl.api.register_lazyframe_namespace("corpus")

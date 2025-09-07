@@ -8,10 +8,13 @@ import polars as pl
 def py_concordance(
     df: pl.DataFrame,
     matched_spans: list[Span],
-    match_only: bool,
+    chunk_tag: pl.Series,
+) -> pl.DataFrame: ...
+def py_kwic(
+    df: pl.DataFrame,
+    matched_spans: list[Span],
     left_window: int,
     right_window: int,
-    chunk_tag: Optional[pl.Series],
 ) -> pl.DataFrame: ...
 
 class Span:

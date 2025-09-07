@@ -34,74 +34,134 @@ pub fn py_concordance(
     // polars <-> pyo3 shim
     py_df: PyDataFrame,
     matched_spans: Vec<Span>,
-    match_only: bool,
-    left_window: i32,
-    right_window: i32,
-    py_chunk_tag: Option<PySeries>,
+    py_chunk_tag: PySeries,
 ) -> PyResult<PyDataFrame> {
     let df: DataFrame = py_df.0;
-    let chunk_tag = match py_chunk_tag {
-        Some(s) => Some(s.0),
-        _ => None,
-    };
-    let out_df = concordance_df(
-        df,
-        matched_spans,
-        match_only,
-        left_window,
-        right_window,
-        chunk_tag,
-    )
-    .map_err(PyPolarsErr::from)?;
-
+    let chunk_tag = py_chunk_tag.0;
+    let out_df = concordance_df(&df, &matched_spans, &chunk_tag).map_err(PyPolarsErr::from)?;
     Ok(PyDataFrame(out_df))
 }
 
 fn concordance_df(
-    df: DataFrame,
-    matched_spans: Vec<Span>,
-    match_only: bool,
-    left_window: i32,
-    right_window: i32,
-    chunk_tag: Option<Series>,
+    df: &DataFrame,
+    matched_spans: &[Span],
+    chunk_tag: &Series,
 ) -> PolarsResult<DataFrame> {
     let mut result_columns: Vec<Column> = Vec::new();
     for column in df.get_columns() {
-        let column_name = column.name();
-        let series = column.as_materialized_series();
+        let left_spans = Some(left_chunk_context_from_spans(matched_spans, chunk_tag)?);
+        let right_spans = Some(right_chunk_context_from_spans(matched_spans, chunk_tag)?);
+        add_columns(
+            column,
+            left_spans.as_deref(),
+            matched_spans,
+            right_spans.as_deref(),
+            &mut result_columns,
+        )?;
+    }
+    DataFrame::new(result_columns)
+}
 
-        let node = implode_series_by_spans(series, &matched_spans)?;
+fn add_columns(
+    column: &Column,
+    left_spans: Option<&[Span]>,
+    matched_spans: &[Span],
+    right_spans: Option<&[Span]>,
+    result_columns: &mut Vec<Column>,
+) -> PolarsResult<()> {
+    let column_name = column.name();
+    let series = column.as_materialized_series();
 
-        if match_only {
-            result_columns.push(node.with_name(format!("{column_name}").into()).into());
-        } else {
-            let (left_spans, right_spans) = {
-                if let Some(chunk) = chunk_tag.as_ref() {
-                    (
-                        left_chunk_context_from_spans(&matched_spans, chunk)?,
-                        right_chunk_context_from_spans(series.len(), &matched_spans, chunk)?,
-                    )
-                } else {
-                    (
-                        left_fixed_context_from_spans(&matched_spans, left_window)?,
-                        right_fixed_context_from_spans(series.len(), &matched_spans, right_window)?,
-                    )
-                }
-            };
-            let left_context = implode_series_by_spans(series, &left_spans)?;
-            let right_context = implode_series_by_spans(series, &right_spans)?;
-            result_columns.push(
-                left_context
-                    .with_name(format!("{column_name}_left_context").into())
-                    .into(),
-            );
-            result_columns.push(node.with_name(format!("{column_name}").into()).into());
-            result_columns.push(
-                right_context
-                    .with_name(format!("{column_name}_right_context").into())
-                    .into(),
-            );
+    if let Some(left_spans) = left_spans {
+        let left_context: Series = implode_series_by_spans(series, left_spans)?;
+        result_columns.push(
+            left_context
+                .with_name(format!("{column_name}_left_context").into())
+                .into(),
+        );
+    };
+
+    let node: Series = implode_series_by_spans(series, matched_spans)?;
+    result_columns.push(node.with_name(format!("{column_name}").into()).into());
+
+    if let Some(right_spans) = right_spans {
+        let right_context: Series = implode_series_by_spans(series, right_spans)?;
+        result_columns.push(
+            right_context
+                .with_name(format!("{column_name}_right_context").into())
+                .into(),
+        );
+    }
+
+    Ok(())
+}
+
+fn left_chunk_context_from_spans(spans: &[Span], chunk_tag: &Series) -> PolarsResult<Vec<Span>> {
+    let mut context_spans = Vec::with_capacity(spans.len());
+    for &Span { start, end: _ } in spans {
+        let mut left_edge = (start as i32) - 1;
+        while left_edge > 0 && chunk_tag.get(left_edge as usize)?.extract_str().unwrap() == "I" {
+            left_edge -= 1;
         }
+        context_spans.push(Span::new(left_edge as usize, start));
+    }
+    Ok(context_spans)
+}
+
+fn right_chunk_context_from_spans(spans: &[Span], chunk_tag: &Series) -> PolarsResult<Vec<Span>> {
+    let mut context_spans = Vec::with_capacity(spans.len());
+    let df_height = chunk_tag.len();
+    for &Span { start: _, end } in spans {
+        let mut right_edge = end as i32;
+        while right_edge < df_height as i32
+            && chunk_tag.get(right_edge as usize)?.extract_str().unwrap() == "I"
+        {
+            right_edge += 1;
+        }
+        context_spans.push(Span::new(end, right_edge as usize));
+    }
+    Ok(context_spans)
+}
+
+#[pyfunction]
+pub fn py_kwic(
+    // polars <-> pyo3 shim
+    py_df: PyDataFrame,
+    matched_spans: Vec<Span>,
+    left_window: i32,
+    right_window: i32,
+) -> PyResult<PyDataFrame> {
+    let df: DataFrame = py_df.0;
+    let out_df =
+        kwic_df(&df, &matched_spans, left_window, right_window).map_err(PyPolarsErr::from)?;
+    Ok(PyDataFrame(out_df))
+}
+
+fn kwic_df(
+    df: &DataFrame,
+    matched_spans: &[Span],
+    left_window: i32,
+    right_window: i32,
+) -> PolarsResult<DataFrame> {
+    let mut result_columns: Vec<Column> = Vec::new();
+    for column in df.get_columns() {
+        let left_spans = if left_window > 0 {
+            Some(left_fixed_context_from_spans(matched_spans, left_window)?)
+        } else {
+            None
+        };
+        let right_spans = if right_window > 0 {
+            Some(right_fixed_context_from_spans(matched_spans, right_window)?)
+        } else {
+            None
+        };
+        add_columns(
+            column,
+            left_spans.as_deref(),
+            matched_spans,
+            right_spans.as_deref(),
+            &mut result_columns,
+        )?;
     }
     DataFrame::new(result_columns)
 }
@@ -119,49 +179,11 @@ fn left_fixed_context_from_spans(spans: &[Span], window_size: i32) -> PolarsResu
     Ok(context_spans)
 }
 
-fn right_fixed_context_from_spans(
-    df_height: usize,
-    spans: &[Span],
-    window_size: i32,
-) -> PolarsResult<Vec<Span>> {
+fn right_fixed_context_from_spans(spans: &[Span], window_size: i32) -> PolarsResult<Vec<Span>> {
     let mut context_spans = Vec::with_capacity(spans.len());
     for &Span { start: _, end } in spans {
         let right_edge = end + window_size as usize;
-        if right_edge > df_height {
-            context_spans.push(Span::new(end, df_height));
-        } else {
-            context_spans.push(Span::new(end, right_edge));
-        }
-    }
-    Ok(context_spans)
-}
-
-fn left_chunk_context_from_spans(spans: &[Span], chunk_tag: &Series) -> PolarsResult<Vec<Span>> {
-    let mut context_spans = Vec::with_capacity(spans.len());
-    for &Span { start, end: _ } in spans {
-        let mut left_edge = (start as i32) - 1;
-        while left_edge > 0 && chunk_tag.get(left_edge as usize)?.extract_str().unwrap() == "I" {
-            left_edge -= 1;
-        }
-        context_spans.push(Span::new(left_edge as usize, start));
-    }
-    Ok(context_spans)
-}
-
-fn right_chunk_context_from_spans(
-    df_height: usize,
-    spans: &[Span],
-    chunk_tag: &Series,
-) -> PolarsResult<Vec<Span>> {
-    let mut context_spans = Vec::with_capacity(spans.len());
-    for &Span { start: _, end } in spans {
-        let mut right_edge = end as i32;
-        while right_edge < df_height as i32
-            && chunk_tag.get(right_edge as usize)?.extract_str().unwrap() == "I"
-        {
-            right_edge += 1;
-        }
-        context_spans.push(Span::new(end, right_edge as usize));
+        context_spans.push(Span::new(end, right_edge));
     }
     Ok(context_spans)
 }
@@ -173,7 +195,8 @@ fn implode_series_by_spans(s: &Series, spans: &[Span]) -> PolarsResult<Series> {
     let mut builder = get_list_builder(s.dtype(), spans.len(), values_cap, s.name().clone());
 
     for &Span { start, end } in spans {
-        let slice = s.slice(start as i64, ((end as isize) - (start as isize)) as usize);
+        let clipped_end = end.min(s.len());
+        let slice = s.slice(start as i64, clipped_end - start);
         builder.append_series(&slice)?;
     }
 
