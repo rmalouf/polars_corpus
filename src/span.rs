@@ -11,7 +11,7 @@ use pyo3_polars::error::PyPolarsErr;
 use pyo3_polars::{PyDataFrame, PySeries};
 
 #[pyfunction]
-pub fn _to_chunks(n: usize, spans: Vec<Span>) -> PyResult<PySeries> {
+pub fn spans_to_chunks(spans: Vec<Span>, n: usize) -> PyResult<PySeries> {
     let mut span_vec = vec!["O"; n];
     for span in spans {
         let start = span.start;

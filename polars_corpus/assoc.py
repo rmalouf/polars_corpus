@@ -5,7 +5,7 @@ from pathlib import Path
 import polars as pl
 from polars.plugins import register_plugin_function
 
-from ._typing import T_Frame, IntoExpr
+from ._typing import IntoExpr, T_Frame
 
 __all__ = [
     "crosstab",
@@ -517,7 +517,7 @@ def welchs_t(x1: IntoExpr, x2: IntoExpr, alt: str = "twosided") -> pl.Expr:
     s1 = pl.col(x1) if isinstance(x1, str) else x1
     s2 = pl.col(x2) if isinstance(x2, str) else x2
 
-    if not alt in ["twosided", "greater", "less"]:
+    if alt not in ["twosided", "greater", "less"]:
         raise ValueError(f"Unknown alternative value: {alt}")
 
     return register_plugin_function(

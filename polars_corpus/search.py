@@ -6,7 +6,7 @@ from typing import Optional
 import polars as pl
 from polars._typing import IntoExprColumn
 
-from ._internal import py_concordance, py_kwic, Span
+from ._internal import Span, py_concordance, py_kwic, spans_to_chunks
 
 __all__ = ["SearchResults", "concordance", "collocates"]
 
@@ -110,11 +110,11 @@ class SearchResults:
         """
 
         if chunk_tag is not None:
-            chunk_tag = self._df.get_column(chunk_tag)
+            chunk_tag_column = self._df.get_column(chunk_tag)
             return py_concordance(
                 self._df.select(expr),
                 self._matched_spans,
-                chunk_tag,
+                chunk_tag_column,
             )
         else:
             if window is None:
@@ -243,18 +243,13 @@ class SearchResults:
         SearchResults
             New SearchResults object with matches in random order.
 
-        Notes
-        -----
-        The random state is preserved, so this method does not affect
-        the global random state. This is equivalent to sampling all
-        matches without replacement.
-
         Examples
         --------
         >>> shuffled = results.shuffle(seed=123)
         """
-        state = random.getstate()
-        random.seed(seed)
+        if seed is not None:
+            state = random.getstate()
+            random.seed(seed)
         try:
             new_results = SearchResults(
                 self._df,
@@ -262,8 +257,43 @@ class SearchResults:
                 random.sample(self._matched_spans, len(self._matched_spans)),
             )
         finally:
-            random.setstate(state)
+            if seed is not None:
+                random.setstate(state)
         return new_results
+
+    def with_spans_as_chunks(self, name: str = "spans") -> pl.DataFrame | pl.LazyFrame:
+        """Add a column containing span information to the corpus DataFrame.
+
+        Creates a new column in the corpus DataFrame that marks which tokens
+        are part of search matches. The spans are represented as chunk tags
+        where 'B' indicates the beginning of a match and 'I' indicates
+        continuation of a match.
+
+        Parameters
+        ----------
+        name : str, default 'spans'
+            Name of the new column to add containing the span information.
+
+        Returns
+        -------
+        DataFrame | LazyFrame
+            The corpus DataFrame with the added spans column.
+
+        Notes
+        -----
+        This method is useful for post-processing or visualization when you
+        need to know which tokens in the corpus correspond to search matches.
+        The span encoding follows the standard BIO (Begin-Inside-Outside)
+        tagging scheme used in NLP.
+
+        Examples
+        --------
+        >>> df_with_spans = results.with_spans_as_chunks('match_tags')
+        >>> df_with_spans = results.with_spans_as_chunks()  # Default name 'spans'
+        """
+        return self._df.with_columns(
+            spans_to_chunks(self._matched_spans, self._df.height).alias(name)
+        )
 
 
 def concordance(

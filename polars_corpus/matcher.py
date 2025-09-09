@@ -5,8 +5,8 @@ from typing import Any, Optional
 import polars as pl
 
 from ._internal import Opcode, OpcodeMatcher, Span
-from .search import SearchResults
 from .cqp_parser import cqp
+from .search import SearchResults
 
 __all__ = ["search", "Span"]
 

@@ -8,7 +8,7 @@ import polars as pl
 from .assoc import assoc, crosstab
 from .matcher import search
 from .search import SearchResults
-from .utils import with_chunk_index, ngrams
+from .utils import ngrams, with_chunk_index
 
 LIB = Path(__file__).parent
 
