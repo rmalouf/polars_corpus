@@ -5,7 +5,7 @@ from typing import Any, Optional
 
 import polars as pl
 
-from .assoc import assoc, crosstab
+from .assoc import crosstab
 from .matcher import search
 from .search import SearchResults
 from .utils import ngrams, with_chunk_index
@@ -36,15 +36,6 @@ class CorpusDataFrame:
     def crosstab(self, x: str, y: str) -> pl.DataFrame:
         return crosstab(self._df, x, y)
 
-    def mi(self, x: str, y: str, **kwargs: Any) -> pl.DataFrame:
-        return assoc(self._df, x, y, "mi", **kwargs)
-
-    def min_sens(self, x: str, y: str, **kwargs: Any) -> pl.DataFrame:
-        return assoc(self._df, x, y, "min_sens", **kwargs)
-
-    def assoc(self, x: str, y: str, method: str, **kwargs: Any) -> pl.DataFrame:
-        return assoc(self._df, x, y, method, **kwargs)
-
     def with_chunk_index(self, chunk_col: str, **kwargs: Any) -> pl.DataFrame:
         return with_chunk_index(self, chunk_col, **kwargs)
 
@@ -59,15 +50,6 @@ class CorpusLazyFrame:
 
     def crosstab(self, x: str, y: str) -> pl.LazyFrame:
         return crosstab(self._lf, x, y)
-
-    def mi(self, x: str, y: str, **kwargs: Any) -> pl.LazyFrame:
-        return assoc(self._lf, x, y, "mi", **kwargs)
-
-    def min_sens(self, x: str, y: str, **kwargs: Any) -> pl.LazyFrame:
-        return assoc(self._lf, x, y, "min_sens", **kwargs)
-
-    def assoc(self, x: str, y: str, method: str, **kwargs: Any) -> pl.LazyFrame:
-        return assoc(self._lf, x, y, method, **kwargs)
 
     def with_chunk_index(self, chunk_col: str, **kwargs: Any) -> pl.LazyFrame:
         return with_chunk_index(self, chunk_col, **kwargs)

@@ -3,6 +3,7 @@
 // #![warn(dead_code)]
 
 mod assoc;
+mod io;
 mod matcher;
 mod span;
 

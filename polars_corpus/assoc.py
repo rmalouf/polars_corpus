@@ -3,17 +3,18 @@ from __future__ import annotations
 from pathlib import Path
 
 import polars as pl
+from polars._typing import IntoExprColumn
 from polars.plugins import register_plugin_function
 
-from ._typing import IntoExpr, T_Frame
+from ._typing import T_Frame
 
 __all__ = [
     "crosstab",
-    "compute_mi",
-    "compute_min_sens",
-    "compute_loglik",
-    "assoc",
+    "pmi",
+    "minsens",
+    "loglik",
     "welchs_t",
+    "welchs_t_from_stats",
 ]
 LIB = Path(__file__).parent
 
@@ -51,36 +52,6 @@ def crosstab(df: T_Frame, x: str, y: str) -> T_Frame:
     ------
     ColumnNotFoundError
         If either column `x` or `y` does not exist in the DataFrame.
-
-    Notes
-    -----
-    The contingency table provides the foundation for computing various
-    association measures between categorical variables. The joint frequencies
-    (f12) represent the observed counts, while marginal frequencies (f1, f2)
-    and the grand total (n) enable calculation of expected frequencies under
-    independence assumptions.
-
-    Examples
-    --------
-    >>> import polars as pl
-    >>> from polars_corpus import crosstab
-    >>> df = pl.DataFrame({
-    ...     'gender': ['M', 'F', 'M', 'F', 'M'],
-    ...     'response': ['yes', 'no', 'yes', 'yes', 'no']
-    ... })
-    >>> result = crosstab(df, 'gender', 'response')
-    >>> print(result)
-    shape: (4, 6)
-    ┌────────┬──────────┬─────┬─────┬─────┬─────┐
-    │ gender ┆ response ┆ f12 ┆ f1  ┆ f2  ┆ n   │
-    │ ---    ┆ ---      ┆ --- ┆ --- ┆ --- ┆ --- │
-    │ str    ┆ str      ┆ u32 ┆ u32 ┆ u32 ┆ u32 │
-    ╞════════╪══════════╪═════╪═════╪═════╪═════╡
-    │ F      ┆ no       ┆ 1   ┆ 2   ┆ 2   ┆ 5   │
-    │ F      ┆ yes      ┆ 1   ┆ 2   ┆ 3   ┆ 5   │
-    │ M      ┆ no       ┆ 1   ┆ 3   ┆ 2   ┆ 5   │
-    │ M      ┆ yes      ┆ 2   ┆ 3   ┆ 3   ┆ 5   │
-    └────────┴──────────┴─────┴─────┴─────┴─────┘
     """
     t = (
         df.select(x, y)
@@ -108,7 +79,9 @@ def _validated_crosstab(df: T_Frame) -> T_Frame:
     )
 
 
-def compute_mi(table: T_Frame) -> T_Frame:
+def pmi(
+    f12: IntoExprColumn, f1: IntoExprColumn, f2: IntoExprColumn, n: IntoExprColumn
+) -> pl.Expr:
     """
     Compute Pointwise Mutual Information (PMI) for contingency table data.
 
@@ -119,19 +92,23 @@ def compute_mi(table: T_Frame) -> T_Frame:
 
     Parameters
     ----------
-    table : T_Frame
-        Contingency table containing frequency data. Must include columns:
-
-        - f12 : Joint frequencies of variable pairs
-        - f1 : Marginal frequencies of first variable
-        - f2 : Marginal frequencies of second variable
-        - n : Grand total (total number of observations)
+    f12 : IntoExprColumn
+        Joint frequencies of variable pairs. Can be a column name (str) or
+        Polars expression.
+    f1 : IntoExprColumn
+        Marginal frequencies of first variable. Can be a column name (str) or
+        Polars expression.
+    f2 : IntoExprColumn
+        Marginal frequencies of second variable. Can be a column name (str) or
+        Polars expression.
+    n : IntoExprColumn
+        Grand total (total number of observations). Can be a column name (str) or
+        Polars expression.
 
     Returns
     -------
-    T_Frame
-        Input table with an additional `pmi` column containing the computed
-        PMI values for each variable pair.
+    pl.Expr
+        A Polars expression that computes the PMI values for each variable pair.
 
     Notes
     -----
@@ -139,54 +116,19 @@ def compute_mi(table: T_Frame) -> T_Frame:
 
     .. math::
         PMI(x,y) = \\log\\frac{P(x,y)}{P(x)P(y)} = \\log\\frac{f_{12} \\cdot n}{f_1 \\cdot f_2}
-
-    Positive PMI values indicate that events co-occur more frequently than
-    expected by chance, while negative values indicate they co-occur less
-    frequently than expected. PMI = 0 suggests statistical independence.
-
-    The function validates input data by filtering out invalid frequency
-    combinations (zero marginals, negative frequencies, etc.) before
-    computation.
-
-    Examples
-    --------
-    >>> import polars as pl
-    >>> from polars_corpus import compute_mi, crosstab
-    >>> df = pl.DataFrame({
-    ...     'word': ['good', 'bad', 'good', 'bad'],
-    ...     'sentiment': ['pos', 'neg', 'pos', 'neg']
-    ... })
-    >>> table = crosstab(df, 'word', 'sentiment')
-    >>> result = compute_mi(table)
-    >>> print(result.select('word', 'sentiment', 'pmi'))
-    shape: (4, 3)
-    ┌──────┬───────────┬──────────┐
-    │ word ┆ sentiment ┆ pmi      │
-    │ ---  ┆ ---       ┆ ---      │
-    │ str  ┆ str       ┆ f64      │
-    ╞══════╪═══════════╪══════════╡
-    │ bad  ┆ neg       ┆ 0.693147 │
-    │ bad  ┆ pos       ┆ -inf     │
-    │ good ┆ neg       ┆ -inf     │
-    │ good ┆ pos       ┆ 0.693147 │
-    └──────┴───────────┴──────────┘
     """
-    return _validated_crosstab(table).with_columns(
-        pmi=((pl.col("f12") * pl.col("n")) / (pl.col("f1") * pl.col("f2"))).log()
-    )
+
+    f12 = pl.col(f12) if isinstance(f12, str) else f12
+    f1 = pl.col(f1) if isinstance(f1, str) else f1
+    f2 = pl.col(f2) if isinstance(f2, str) else f2
+    n = pl.col(n) if isinstance(n, str) else n
+
+    return ((f12 * n) / (f1 * f2)).log()
 
 
-def loglik(f12: IntoExpr, f1: IntoExpr, f2: IntoExpr, n: IntoExpr) -> pl.Expr:
-    return register_plugin_function(
-        plugin_path=LIB,
-        args=[f12, f1, f2, n],
-        function_name="loglik",
-        is_elementwise=True,
-    )
-
-
-## TODO: make this work with LazyFrames
-def compute_loglik(table: pl.DataFrame) -> pl.DataFrame:
+def loglik(
+    f12: IntoExprColumn, f1: IntoExprColumn, f2: IntoExprColumn, n: IntoExprColumn
+) -> pl.Expr:
     """
     Compute log-likelihood ratio (G²) statistic for contingency table data.
 
@@ -197,23 +139,24 @@ def compute_loglik(table: pl.DataFrame) -> pl.DataFrame:
 
     Parameters
     ----------
-    table : pl.DataFrame
-        Contingency table containing frequency data. Must include columns:
-
-        - f12 : Joint frequencies of variable pairs
-        - f1 : Marginal frequencies of first variable
-        - f2 : Marginal frequencies of second variable
-        - n : Grand total (total number of observations)
-
-    Note
-    ----
-    Currently only works with DataFrames, not LazyFrames.
+    f12 : IntoExprColumn
+        Joint frequencies of variable pairs. Can be a column name (str) or
+        Polars expression.
+    f1 : IntoExprColumn
+        Marginal frequencies of first variable. Can be a column name (str) or
+        Polars expression.
+    f2 : IntoExprColumn
+        Marginal frequencies of second variable. Can be a column name (str) or
+        Polars expression.
+    n : IntoExprColumn
+        Grand total (total number of observations). Can be a column name (str) or
+        Polars expression.
 
     Returns
     -------
-    pl.DataFrame
-        Input table with an additional `LL` column containing the computed
-        log-likelihood ratio values for each variable pair.
+    pl.Expr
+        A Polars expression that computes the log-likelihood ratio values
+        for each variable pair.
 
     Notes
     -----
@@ -224,48 +167,18 @@ def compute_loglik(table: pl.DataFrame) -> pl.DataFrame:
 
     where f_{ij} are the observed frequencies and e_{ij} are the expected
     frequencies under independence: e_{ij} = (f_{i·} × f_{·j}) / n
-
-    The G² statistic follows a chi-squared distribution under the null
-    hypothesis of independence, making it useful for significance testing.
-    Higher values indicate stronger association between variables.
-
-    Unlike chi-squared, G² has additive properties and is more appropriate
-    for sparse contingency tables with small expected frequencies.
-
-    Examples
-    --------
-    >>> import polars as pl
-    >>> from polars_corpus import compute_loglik, crosstab
-    >>> df = pl.DataFrame({
-    ...     'treatment': ['A', 'B', 'A', 'B', 'A', 'B'],
-    ...     'outcome': ['success', 'fail', 'success', 'success', 'fail', 'fail']
-    ... })
-    >>> table = crosstab(df, 'treatment', 'outcome')
-    >>> result = compute_loglik(table)
-    >>> print(result.select('treatment', 'outcome', 'LL'))
-    shape: (4, 3)
-    ┌───────────┬─────────┬──────────┐
-    │ treatment ┆ outcome ┆ LL       │
-    │ ---       ┆ ---     ┆ ---      │
-    │ str       ┆ str     ┆ f64      │
-    ╞═══════════╪═════════╪══════════╡
-    │ A         ┆ fail    ┆ 0.693147 │
-    │ A         ┆ success ┆ 0.693147 │
-    │ B         ┆ fail    ┆ 0.693147 │
-    │ B         ┆ success ┆ 0.693147 │
-    └───────────┴─────────┴──────────┘
     """
-    table = _validated_crosstab(table)
-    data = loglik(
-        table.get_column("f12"),
-        table.get_column("f1"),
-        table.get_column("f2"),
-        table.get_column("n"),
-    ).alias("LL")
-    return table.with_columns(data)
+    return register_plugin_function(
+        plugin_path=LIB,
+        args=[f12, f1, f2, n],
+        function_name="py_loglik",
+        is_elementwise=True,
+    )
 
 
-def compute_min_sens(table: T_Frame) -> T_Frame:
+def minsens(
+    f12: IntoExprColumn, f1: IntoExprColumn, f2: IntoExprColumn, n: IntoExprColumn
+) -> pl.Expr:
     """
     Compute minimum sensitivity values for contingency table data.
 
@@ -275,18 +188,25 @@ def compute_min_sens(table: T_Frame) -> T_Frame:
 
     Parameters
     ----------
-    table : T_Frame
-        Contingency table containing frequency data. Must include columns:
-
-        - f12 : Joint frequencies of variable pairs
-        - f1 : Marginal frequencies of first variable
-        - f2 : Marginal frequencies of second variable
+    f12 : IntoExprColumn
+        Joint frequencies of variable pairs. Can be a column name (str) or
+        Polars expression.
+    f1 : IntoExprColumn
+        Marginal frequencies of first variable. Can be a column name (str) or
+        Polars expression.
+    f2 : IntoExprColumn
+        Marginal frequencies of second variable. Can be a column name (str) or
+        Polars expression.
+    n : IntoExprColumn
+        Grand total (total number of observations). Can be a column name (str) or
+        Polars expression. Note: This parameter is not used in the calculation
+        but is kept for consistency with other association measures.
 
     Returns
     -------
-    T_Frame
-        Input table with an additional `min_sens` column containing the computed
-        minimum sensitivity values for each variable pair.
+    pl.Expr
+        A Polars expression that computes the minimum sensitivity values
+        for each variable pair.
 
     Notes
     -----
@@ -304,145 +224,17 @@ def compute_min_sens(table: T_Frame) -> T_Frame:
 
     - f₁₂/f₁ represents the precision: P(y|x)
     - f₁₂/f₂ represents the recall: P(x|y)
-
-    Values range from 0 to 1, where higher values indicate stronger association.
-    A value of 1 indicates perfect association (complete dependence), while
-    values near 0 indicate weak association.
-
-    Examples
-    --------
-    >>> import polars as pl
-    >>> from polars_corpus import compute_min_sens, crosstab
-    >>> df = pl.DataFrame({
-    ...     'cause': ['rain', 'sun', 'rain', 'sun'],
-    ...     'effect': ['wet', 'dry', 'wet', 'dry']
-    ... })
-    >>> table = crosstab(df, 'cause', 'effect')
-    >>> result = compute_min_sens(table)
-    >>> print(result.select('cause', 'effect', 'min_sens'))
-    shape: (4, 3)
-    ┌───────┬────────┬──────────┐
-    │ cause ┆ effect ┆ min_sens │
-    │ ---   ┆ ---    ┆ ---      │
-    │ str   ┆ str    ┆ f64      │
-    ╞═══════╪════════╪══════════╡
-    │ rain  ┆ dry    ┆ 0.0      │
-    │ rain  ┆ wet    ┆ 0.5      │
-    │ sun   ┆ dry    ┆ 0.5      │
-    │ sun   ┆ wet    ┆ 0.0      │
-    └───────┴────────┴──────────┘
     """
-    return table.with_columns(
-        min_sens=pl.min_horizontal(
-            pl.col("f12") / pl.col("f1"), pl.col("f12") / pl.col("f2")
-        )
-    )
+
+    f12 = pl.col(f12) if isinstance(f12, str) else f12
+    f1 = pl.col(f1) if isinstance(f1, str) else f1
+    f2 = pl.col(f2) if isinstance(f2, str) else f2
+    n = pl.col(n) if isinstance(n, str) else n
+
+    return pl.min_horizontal(f12 / f1, f12 / f2)
 
 
-def assoc(df: T_Frame, x: str, y: str, method: str, min_freq: int = 0) -> T_Frame:
-    """
-    Calculate association metrics between two categorical variables.
-
-    Computes various statistical association measures between two categorical
-    variables using their contingency table. The function first creates a
-    crosstabulation of the variables, applies frequency filtering, then
-    calculates the specified association metric.
-
-    Parameters
-    ----------
-    df : T_Frame
-        A Polars DataFrame or LazyFrame containing the categorical variables.
-    x : str
-        Column name of the first categorical variable (independent variable).
-    y : str
-        Column name of the second categorical variable (dependent variable).
-    method : {'mi', 'min_sens', 'loglik'}
-        Association metric to compute:
-
-        - 'mi' : Pointwise Mutual Information (PMI)
-        - 'min_sens' : Minimum sensitivity (minimum of precision and recall)
-        - 'loglik' : Log-likelihood ratio statistic
-    min_freq : int, default 0
-        Minimum joint frequency threshold. Filters out variable pairs with
-        joint frequency (f12) below this value before computing associations.
-
-    Returns
-    -------
-    T_Frame
-        A DataFrame containing the contingency table with the computed
-        association metric. Always includes columns:
-
-        - x : Levels of the first variable
-        - y : Levels of the second variable
-        - f12 : Joint frequencies
-        - f1 : Row marginal sums (frequency of x)
-        - f2 : Column marginal sums (frequency of y)
-        - n : Grand total
-
-        Plus one additional column depending on method:
-
-        - 'pmi' : PMI values (for method='mi')
-        - 'min_sens' : Minimum sensitivity values (for method='min_sens')
-        - 'LL' : Log-likelihood values (for method='loglik')
-
-    Raises
-    ------
-    ValueError
-        If `method` is not one of 'mi', 'min_sens', or 'loglik'.
-    ColumnNotFoundError
-        If columns `x` or `y` do not exist in the DataFrame.
-
-    Notes
-    -----
-    The association metrics are computed as follows:
-
-    **Pointwise Mutual Information (PMI)**:
-
-    .. math::
-        PMI(x,y) = \\log\\frac{P(x,y)}{P(x)P(y)} = \\log\\frac{f_{12} \\cdot n}{f_1 \\cdot f_2}
-
-    **Minimum Sensitivity**:
-
-    .. math::
-        \\text{min_sens}(x,y) = \\min\\left(\\frac{f_{12}}{f_1}, \\frac{f_{12}}{f_2}\\right)
-
-    **Log-likelihood ratio**: Computed using the G² statistic comparing
-    observed vs. expected frequencies under independence assumption.
-
-    Examples
-    --------
-    >>> import polars as pl
-    >>> from polars_corpus import assoc
-    >>> df = pl.DataFrame({
-    ...     'word': ['the', 'cat', 'the', 'dog', 'cat'],
-    ...     'pos': ['DET', 'NOUN', 'DET', 'NOUN', 'NOUN']
-    ... })
-    >>> result = assoc(df, 'word', 'pos', 'mi')
-    >>> print(result)
-    shape: (4, 7)
-    ┌──────┬──────┬─────┬─────┬─────┬─────┬──────────┐
-    │ word ┆ pos  ┆ f12 ┆ f1  ┆ f2  ┆ n   ┆ pmi      │
-    │ ---  ┆ ---  ┆ --- ┆ --- ┆ --- ┆ --- ┆ ---      │
-    │ str  ┆ str  ┆ u32 ┆ u32 ┆ u32 ┆ u32 ┆ f64      │
-    ╞══════╪══════╪═════╪═════╪═════╪═════╪══════════╡
-    │ cat  ┆ NOUN ┆ 2   ┆ 2   ┆ 3   ┆ 5   ┆ 0.510826 │
-    │ dog  ┆ NOUN ┆ 1   ┆ 1   ┆ 3   ┆ 5   ┆ 0.510826 │
-    │ the  ┆ DET  ┆ 2   ┆ 2   ┆ 2   ┆ 5   ┆ 0.916291 │
-    └──────┴──────┴─────┴─────┴─────┴─────┴──────────┘
-    """
-    table: T_Frame = crosstab(df, x, y).filter(pl.col("f12") >= min_freq)
-    match method:
-        case "mi":
-            return compute_mi(table)
-        case "min_sens":
-            return compute_min_sens(table)
-        case "loglik":
-            return compute_loglik(table)
-        case _:
-            raise ValueError(f"Unknown method: {method}")
-
-
-def welchs_t(x1: IntoExpr, x2: IntoExpr, alt: str = "twosided") -> pl.Expr:
+def welchs_t(x1: IntoExprColumn, x2: IntoExprColumn, alt: str = "twosided") -> pl.Expr:
     """
     Perform Welch's t-test for equality of two independent samples with unequal variances.
 
@@ -452,9 +244,9 @@ def welchs_t(x1: IntoExpr, x2: IntoExpr, alt: str = "twosided") -> pl.Expr:
 
     Parameters
     ----------
-    x1 : IntoExpr
+    x1 : IntoExprColumn
         First sample data. Can be a column name (str) or Polars expression.
-    x2 : IntoExpr
+    x2 : IntoExprColumn
         Second sample data. Can be a column name (str) or Polars expression.
     alt : {'twosided', 'greater', 'less'}, default 'twosided'
         Alternative hypothesis to test:
@@ -497,22 +289,6 @@ def welchs_t(x1: IntoExpr, x2: IntoExpr, alt: str = "twosided") -> pl.Expr:
 
     .. math::
         df = \\frac{(\\frac{s_1^2}{n_1} + \\frac{s_2^2}{n_2})^2}{\\frac{(s_1^2/n_1)^2}{n_1-1} + \\frac{(s_2^2/n_2)^2}{n_2-1}}
-
-    Examples
-    --------
-    >>> import polars as pl
-    >>> from polars_corpus import welchs_t
-    >>> df = pl.DataFrame({'group1': [1, 2, 3], 'group2': [4, 5, 6]})
-    >>> result = df.select(welchs_t('group1', 'group2')).unnest('t_test')
-    >>> print(result)
-    shape: (1, 3)
-    ┌──────────┬──────────┬─────┐
-    │ stat     ┆ pval     ┆ df  │
-    │ ---      ┆ ---      ┆ --- │
-    │ f64      ┆ f64      ┆ f64 │
-    ╞══════════╪══════════╪═════╡
-    │ -3.67423 ┆ 0.021312 ┆ 4.0 │
-    └──────────┴──────────┴─────┘
     """
     s1 = pl.col(x1) if isinstance(x1, str) else x1
     s2 = pl.col(x2) if isinstance(x2, str) else x2
@@ -523,8 +299,104 @@ def welchs_t(x1: IntoExpr, x2: IntoExpr, alt: str = "twosided") -> pl.Expr:
     return register_plugin_function(
         plugin_path=LIB,
         args=[s1, s2],
-        function_name="welchs_t",
+        function_name="py_welchs_t",
         is_elementwise=False,
         returns_scalar=True,
+        kwargs={"alt": alt},
+    ).alias("t_test")
+
+
+def welchs_t_from_stats(
+    s1: IntoExprColumn,
+    ss1: IntoExprColumn,
+    n1: IntoExprColumn,
+    s2: IntoExprColumn,
+    ss2: IntoExprColumn,
+    n2: IntoExprColumn,
+    alt: str = "twosided",
+) -> pl.Expr:
+    """
+    Perform Welch's t-test using pre-computed summary statistics.
+
+    This function performs Welch's t-test for equality of two independent samples
+    using pre-computed summary statistics (means, sum of squares, and sample sizes)
+    rather than raw data.
+
+    Parameters
+    ----------
+    s1 : IntoExprColumn
+        Sum (or mean × n) of the first sample. Can be a column name (str) or
+        Polars expression.
+    ss1 : IntoExprColumn
+        Sum of squares of the first sample. Can be a column name (str) or
+        Polars expression.
+    n1 : IntoExprColumn
+        Sample size of the first sample. Can be a column name (str) or
+        Polars expression.
+    s2 : IntoExprColumn
+        Sum (or mean × n) of the second sample. Can be a column name (str) or
+        Polars expression.
+    ss2 : IntoExprColumn
+        Sum of squares of the second sample. Can be a column name (str) or
+        Polars expression.
+    n2 : IntoExprColumn
+        Sample size of the second sample. Can be a column name (str) or
+        Polars expression.
+    alt : {'twosided', 'greater', 'less'}, default 'twosided'
+        Alternative hypothesis to test:
+
+        - 'twosided' : the means are unequal (two-tailed test)
+        - 'greater' : the mean of the first sample is greater than the second (one-tailed)
+        - 'less' : the mean of the first sample is less than the second (one-tailed)
+
+    Returns
+    -------
+    pl.Expr
+        A Polars expression that returns a struct with the following fields:
+
+        - 'stat' : float
+            The t-statistic of the test
+        - 'pval' : float
+            The p-value of the test
+        - 'df' : float
+            The degrees of freedom used in the test
+
+        Returns null values for all fields if the test cannot be performed
+        (e.g., insufficient data or zero variance in both samples).
+
+    Raises
+    ------
+    ValueError
+        If `alt` is not one of 'twosided', 'greater', or 'less'.
+
+    Notes
+    -----
+    The sample means and variances are computed from the summary statistics as:
+
+    .. math::
+        \\bar{x}_i = \\frac{s_i}{n_i}
+
+    .. math::
+        \\text{var}_i = \\frac{ss_i - \\frac{s_i^2}{n_i}}{n_i - 1}
+
+    The test statistic and degrees of freedom are then calculated using the
+    same formulas as in `welchs_t`.
+    """
+    s1_s = pl.col(s1) if isinstance(s1, str) else s1
+    ss1_s = pl.col(ss1) if isinstance(ss1, str) else ss1
+    n1_s = pl.col(n1) if isinstance(n1, str) else n1
+    s2_s = pl.col(s2) if isinstance(s2, str) else s2
+    ss2_s = pl.col(ss2) if isinstance(ss2, str) else ss2
+    n2_s = pl.col(n2) if isinstance(n2, str) else n2
+
+    if alt not in ["twosided", "greater", "less"]:
+        raise ValueError(f"Unknown alternative value: {alt}")
+
+    return register_plugin_function(
+        plugin_path=LIB,
+        args=[s1_s, ss1_s, n1_s, s2_s, ss2_s, n2_s],
+        function_name="py_welchs_t_from_stats",
+        is_elementwise=True,
+        returns_scalar=False,
         kwargs={"alt": alt},
     ).alias("t_test")

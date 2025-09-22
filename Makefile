@@ -8,13 +8,13 @@ install:
 
 ## Install dev dependencies
 dev:
-	uv pip sync requirements.txt requirements-examples.txt requirements-dev.txt
+	uv pip sync requirements-examples.txt 
 
 ## Compile locked requirements
 locks:
 	uv pip compile requirements.in >requirements.txt
-	uv pip compile requirements.in requirements-examples.in >requirements-examples.txt
-	uv pip compile requirements.in requirements-examples.in requirements-dev.in >requirements-dev.txt
+	uv pip compile requirements.in requirements-dev.in >requirements-dev.txt
+	uv pip compile requirements.in requirements-examples.in requirements-dev.in >requirements-examples.txt
 
 ## Clean compiled files
 clean:

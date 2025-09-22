@@ -10,18 +10,13 @@ def py_concordance(
     matched_spans: list[Span],
     chunk_tag: pl.Series,
 ) -> pl.DataFrame: ...
-
 def py_kwic(
     df: pl.DataFrame,
     matched_spans: list[Span],
     left_window: int,
     right_window: int,
 ) -> pl.DataFrame: ...
-
-def spans_to_chunks(
-        spans: list[Span],
-        n: int
-) -> pl.Series: ...
+def spans_to_chunks(spans: list[Span], n: int) -> pl.Series: ...
 
 class Span:
     def __init__(self, start: int, end: int) -> None: ...
