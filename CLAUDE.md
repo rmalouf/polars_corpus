@@ -10,8 +10,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ### Environment Setup
 ```bash
-# Install development dependencies
-make dev
+# Create virtual environment and install example dependencies
+make venv
 
 # Compile and update dependency locks
 make locks
@@ -19,11 +19,11 @@ make locks
 
 ### Building the Rust Extension
 ```bash
-# Build release version and copy to Python package
-make compile
+# Build release version with maturin
+make develop
 
-# Build debug version for development
-make debug
+# Build wheel packages
+make build
 ```
 
 ### Testing
@@ -32,7 +32,7 @@ make debug
 pytest
 
 # Run specific test file
-pytest tests/test_assoc.py
+pytest python/tests/test_assoc.py
 
 # Run tests with coverage
 coverage run -m pytest
@@ -41,7 +41,7 @@ coverage report
 
 ### Type Checking
 ```bash
-mypy polars_corpus/
+mypy python/polars_corpus/
 ```
 
 ## Architecture

@@ -2,7 +2,7 @@
 #    uv pip compile requirements.in requirements-examples.in requirements-dev.in
 adjusttext==1.3.0
     # via -r requirements-examples.in
-anyio==4.10.0
+anyio==4.11.0
     # via
     #   httpx
     #   jupyter-server
@@ -191,9 +191,9 @@ jupyterlab-server==2.27.3
     #   notebook
 kiwisolver==1.4.9
     # via matplotlib
-lark==1.2.2
+lark==1.3.0
     # via rfc3987-syntax
-lxml==6.0.1
+lxml==6.0.2
     # via -r requirements-examples.in
 markdown==3.9
     # via
@@ -508,7 +508,7 @@ urllib3==2.5.0
     #   selenium
 watchdog==6.0.0
     # via mkdocs
-wcwidth==0.2.13
+wcwidth==0.2.14
     # via prompt-toolkit
 webcolors==24.11.1
     # via jsonschema
