@@ -10,8 +10,4 @@ from .matcher import *  # noqa: F403
 from .search import *  # noqa: F403
 from .utils import *  # noqa: F403
 
-# from .concordance import *  # noqa: F403
-#
-# # from ._internal import __version__ as __version__
-
 __version__ = "0.1.0"
