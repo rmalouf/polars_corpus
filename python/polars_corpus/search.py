@@ -130,6 +130,64 @@ class SearchResults:
                 right_window,
             )
 
+    def view(
+        self,
+        expr: IntoExprColumn = "token",
+        window: Optional[int] = 5,
+        chunk_tag: Optional[str] = None,
+        page_size: int = 25,
+    ) -> None:
+        """Display an interactive concordance viewer in Jupyter.
+
+        Creates and displays an interactive viewer for browsing concordance
+        results with KWIC formatting, pagination, sorting, and filtering.
+
+        Parameters
+        ----------
+        expr : IntoExprColumn, default "token"
+            Column name or Polars expression specifying which column(s)
+            to use for generating the concordance display.
+        window : int, optional, default 5
+            Number of tokens to include on both left and right sides of
+            each match. If None, returns matches with no context (equivalent
+            to window=0). When chunk_tag is specified, this parameter is ignored.
+        chunk_tag : str, optional
+            Column name defining chunk boundaries for context extraction.
+            When specified, context extends to chunk boundaries marked by
+            "B" (begin) and "I" (inside) tags, ignoring the window parameter.
+        page_size : int, default 25
+            Number of concordance lines to display per page.
+
+        Notes
+        -----
+        Requires ipywidgets to be installed.
+
+        Examples
+        --------
+        >>> results.view()  # Use defaults
+        >>> results.view("token", window=10, page_size=50)
+        >>> results.view("token", chunk_tag="sent_tag")
+        """
+        from .view import ConcordanceWidget
+
+        # Generate concordance
+        conc = self.concordance(expr, window=window, chunk_tag=chunk_tag)
+
+        # Determine the column name
+        if isinstance(expr, str):
+            column = expr
+        else:
+            # If expr is a list or complex expression, use first column that's not context
+            candidates = [
+                col for col in conc.columns
+                if not col.endswith('_left_context') and not col.endswith('_right_context')
+            ]
+            column = candidates[0] if candidates else None
+
+        # Create and display widget
+        widget = ConcordanceWidget(conc, column=column, page_size=page_size)
+        widget.show()
+
     def head(self, n: int) -> SearchResults:
         """Return the first n search results.
 

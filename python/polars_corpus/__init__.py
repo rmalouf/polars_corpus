@@ -9,5 +9,6 @@ from .matcher import *  # noqa: F403
 #from .productivity import *  # noqa: F403
 from .search import *  # noqa: F403
 from .utils import *  # noqa: F403
+from .view import *  # noqa: F403
 
 __version__ = "0.1.0"
