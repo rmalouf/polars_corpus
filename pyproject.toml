@@ -30,14 +30,12 @@ authors = [
 description = "Text processing plugins for polars"
 readme = "README.md"
 license = "MIT"
-#dependencies = [s
- ##"nltk>=3.9.1",
-# "polars>=1.27.1",
- #"seaborn>=0.13.2",s
- #"spacy[apple]==3.8.*",
- #"en-core-web-sm @ https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl",
- #"en-core-web-trf @ https://github.com/explosion/spacy-models/releases/download/en_core_web_trf-3.8.0/en_core_web_trf-3.8.0-py3-none-any.whl",
-#]
+dependencies = [
+    "polars==1.34.*",
+    "pyparsing>=3.2",
+    "nltk>=3.9",
+    "ipywidgets>=8.1"
+]    
 
 #[project.urls]
 #Homepage = "https://example.com"

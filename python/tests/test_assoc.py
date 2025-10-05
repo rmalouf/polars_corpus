@@ -1,7 +1,7 @@
 import polars as pl
 import pytest
 from polars_corpus import crosstab, welchs_t, loglik
-from polars.polars import ColumnNotFoundError, ComputeError
+from polars.exceptions import ColumnNotFoundError, ComputeError
 from polars.testing import assert_frame_equal
 import math
 

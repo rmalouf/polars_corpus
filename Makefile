@@ -12,11 +12,11 @@ locks:
 	uv pip compile requirements.in requirements-examples.in requirements-dev.in >requirements-examples.txt
 
 develop:
-	maturin develop --release
+	RUSTFLAGS="-C target-cpu=native" maturin develop --release
 
 build:
-	maturin build --release --target aarch64-apple-darwin
-	maturin build --release --target x86_64-unknown-linux-gnu --zig
+	RUSTFLAGS="-C target-cpu=apple-m4" maturin build --release --target aarch64-apple-darwin
+	RUSTFLAGS="-C target-cpu=icelake-server" maturin build --release --target x86_64-unknown-linux-gnu --zig
 
 #compile:
 #	#maturin build --release
