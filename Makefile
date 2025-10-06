@@ -1,9 +1,12 @@
 # Makefile for managing Python dependencies with uv
 
+VENV_DIR = ${HOME}/.local/venvs/polars-corpus
+
 .PHONY: install dev lock clean
 
 venv:
-	uv venv --allow-existing --quiet
+#	uv venv --allow-existing --quiet $(VENV_DIR)
+#	source $(VENV_DIR)/bin/activate
 	uv pip sync requirements-examples.txt
 
 locks:
