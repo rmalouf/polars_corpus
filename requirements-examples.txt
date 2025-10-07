@@ -18,7 +18,7 @@ asttokens==3.0.0
     # via stack-data
 async-lru==2.0.5
     # via jupyterlab
-attrs==25.3.0
+attrs==25.4.0
     # via
     #   jsonschema
     #   outcome
@@ -227,7 +227,7 @@ matplotlib-inline==0.1.7
     # via
     #   ipykernel
     #   ipython
-maturin==1.9.5
+maturin==1.9.6
     # via -r requirements-dev.in
 mdurl==0.1.2
     # via markdown-it-py
@@ -386,7 +386,7 @@ python-dateutil==2.9.0.post0
     #   jupyter-client
     #   matplotlib
     #   pandas
-python-json-logger==3.3.0
+python-json-logger==4.0.0
     # via jupyter-events
 pytz==2025.2
     # via pandas
