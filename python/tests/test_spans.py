@@ -20,49 +20,6 @@ class TestWithChunkIndex:
 
         assert result["chunk_idx"].to_list() == expected_indices
 
-    def test_single_token_spans(self):
-        """Test spans that are only one token long."""
-        df = pl.DataFrame(
-            {"token": ["The", "quick", "brown", "fox"], "bio": ["B", "O", "B", "O"]}
-        )
-
-        result = with_chunk_index(df, "bio")
-        expected_indices = [1, None, 2, None]
-
-        assert result["chunk_idx"].to_list() == expected_indices
-
-    def test_consecutive_spans(self):
-        """Test multiple consecutive spans."""
-        df = pl.DataFrame(
-            {
-                "token": ["A", "B", "C", "D", "E", "F"],
-                "bio": ["B", "I", "B", "I", "I", "O"],
-            }
-        )
-
-        result = with_chunk_index(df, "bio")
-        expected_indices = [1, 1, 2, 2, 2, None]
-
-        assert result["chunk_idx"].to_list() == expected_indices
-
-    def test_all_outside_spans(self):
-        """Test sequence with all O tags."""
-        df = pl.DataFrame({"token": ["The", "quick", "brown"], "bio": ["O", "O", "O"]})
-
-        result = with_chunk_index(df, "bio")
-        expected_indices = [None, None, None]
-
-        assert result["chunk_idx"].to_list() == expected_indices
-
-    def test_all_inside_one_span(self):
-        """Test sequence that is entirely one span."""
-        df = pl.DataFrame({"token": ["New", "York", "City"], "bio": ["B", "I", "I"]})
-
-        result = with_chunk_index(df, "bio")
-        expected_indices = [1, 1, 1]
-
-        assert result["chunk_idx"].to_list() == expected_indices
-
     def test_custom_column_name(self):
         """Test using custom column name for span index."""
         df = pl.DataFrame({"token": ["The", "quick"], "bio": ["B", "I"]})
@@ -98,6 +55,170 @@ class TestWithChunkIndex:
         expected_indices = [0, 0, None]  # or whatever the expected behavior is
 
         assert result["chunk_idx"].to_list() == expected_indices
+
+
+class TestChunkIdExpression:
+    """Tests for the chunk_id() expression method."""
+
+    def test_basic_expression_usage(self):
+        """Test basic usage of chunk_id() expression."""
+        df = pl.DataFrame(
+            {
+                "token": ["The", "quick", "brown", "fox", "jumps"],
+                "bio": ["B", "I", "O", "B", "I"],
+            }
+        )
+
+        result = df.with_columns(pl.col("bio").corpus.chunk_id().alias("chunk_idx"))
+        expected_indices = [1, 1, None, 2, 2]
+
+        assert result["chunk_idx"].to_list() == expected_indices
+
+    def test_in_select(self):
+        """Test using chunk_id() in select."""
+        df = pl.DataFrame(
+            {"token": ["The", "quick", "brown"], "bio": ["B", "I", "O"]}
+        )
+
+        result = df.select([pl.col("bio").corpus.chunk_id().alias("chunk_idx")])
+        expected_indices = [1, 1, None]
+
+        assert result["chunk_idx"].to_list() == expected_indices
+
+    def test_composable_with_other_expressions(self):
+        """Test that chunk_id() can be composed with other expressions."""
+        df = pl.DataFrame(
+            {
+                "token": ["The", "quick", "brown", "fox"],
+                "bio": ["B", "I", "O", "B"],
+            }
+        )
+
+        # Use chunk_id in a filter
+        result = df.filter(pl.col("bio").corpus.chunk_id().is_not_null())
+        expected_tokens = ["The", "quick", "fox"]
+
+        assert result["token"].to_list() == expected_tokens
+
+    def test_multiple_columns(self):
+        """Test applying chunk_id() to multiple columns."""
+        df = pl.DataFrame(
+            {
+                "token": ["The", "quick", "brown"],
+                "bio1": ["B", "I", "O"],
+                "bio2": ["O", "B", "I"],
+            }
+        )
+
+        result = df.with_columns(
+            [
+                pl.col("bio1").corpus.chunk_id().alias("chunk1"),
+                pl.col("bio2").corpus.chunk_id().alias("chunk2"),
+            ]
+        )
+
+        assert result["chunk1"].to_list() == [1, 1, None]
+        assert result["chunk2"].to_list() == [None, 1, 1]
+
+    def test_with_lazyframe(self):
+        """Test chunk_id() with LazyFrame."""
+        df = pl.DataFrame(
+            {"token": ["The", "quick", "brown"], "bio": ["B", "I", "O"]}
+        )
+
+        result = (
+            df.lazy()
+            .with_columns(pl.col("bio").corpus.chunk_id().alias("chunk_idx"))
+            .collect()
+        )
+        expected_indices = [1, 1, None]
+
+        assert result["chunk_idx"].to_list() == expected_indices
+
+    def test_empty_dataframe(self):
+        """Test chunk_id() with empty dataframe."""
+        df = pl.DataFrame({"bio": []}, schema={"bio": pl.Utf8})
+
+        result = df.with_columns(pl.col("bio").corpus.chunk_id().alias("chunk_idx"))
+
+        assert len(result) == 0
+        assert "chunk_idx" in result.columns
+
+    def test_all_outside_tags(self):
+        """Test chunk_id() with all O tags."""
+        df = pl.DataFrame({"bio": ["O", "O", "O"]})
+
+        result = df.with_columns(pl.col("bio").corpus.chunk_id().alias("chunk_idx"))
+        expected_indices = [None, None, None]
+
+        assert result["chunk_idx"].to_list() == expected_indices
+
+    def test_single_token_chunks(self):
+        """Test chunk_id() with single-token chunks."""
+        df = pl.DataFrame({"bio": ["B", "O", "B", "O"]})
+
+        result = df.with_columns(pl.col("bio").corpus.chunk_id().alias("chunk_idx"))
+        expected_indices = [1, None, 2, None]
+
+        assert result["chunk_idx"].to_list() == expected_indices
+
+
+class TestNgramsExpression:
+    """Tests for the ngrams() expression method."""
+
+    def test_bigrams(self):
+        """Test creating bigrams."""
+        df = pl.DataFrame({"token": ["the", "quick", "brown", "fox"]})
+
+        result = df.with_columns(pl.col("token").corpus.ngrams(2).alias("bigrams"))
+
+        # Check structure exists
+        assert "bigrams" in result.columns
+        assert result.schema["bigrams"] == pl.Struct([pl.Field("_0", pl.Utf8), pl.Field("_1", pl.Utf8)])
+
+        # Check values
+        bigrams = result["bigrams"].to_list()
+        assert bigrams[0] == {"_0": "the", "_1": "quick"}
+        assert bigrams[1] == {"_0": "quick", "_1": "brown"}
+        assert bigrams[2] == {"_0": "brown", "_1": "fox"}
+        assert bigrams[3] == {"_0": "fox", "_1": None}
+
+    def test_trigrams(self):
+        """Test creating trigrams."""
+        df = pl.DataFrame({"token": ["the", "quick", "brown", "fox", "jumps"]})
+
+        result = df.with_columns(pl.col("token").corpus.ngrams(3).alias("trigrams"))
+
+        assert "trigrams" in result.columns
+        trigrams = result["trigrams"].to_list()
+
+        assert trigrams[0] == {"_0": "the", "_1": "quick", "_2": "brown"}
+        assert trigrams[1] == {"_0": "quick", "_1": "brown", "_2": "fox"}
+        assert trigrams[2] == {"_0": "brown", "_1": "fox", "_2": "jumps"}
+        assert trigrams[3] == {"_0": "fox", "_1": "jumps", "_2": None}
+        assert trigrams[4] == {"_0": "jumps", "_1": None, "_2": None}
+
+    def test_ngrams_with_lazyframe(self):
+        """Test ngrams with LazyFrame."""
+        df = pl.DataFrame({"token": ["the", "quick", "brown"]})
+
+        result = (
+            df.lazy()
+            .with_columns(pl.col("token").corpus.ngrams(2).alias("bigrams"))
+            .collect()
+        )
+
+        assert "bigrams" in result.columns
+        assert result["bigrams"][0] == {"_0": "the", "_1": "quick"}
+
+    def test_ngrams_empty_dataframe(self):
+        """Test ngrams with empty dataframe."""
+        df = pl.DataFrame({"token": []}, schema={"token": pl.Utf8})
+
+        result = df.with_columns(pl.col("token").corpus.ngrams(2).alias("bigrams"))
+
+        assert len(result) == 0
+        assert "bigrams" in result.columns
 
 
 class TestWithSpans:
