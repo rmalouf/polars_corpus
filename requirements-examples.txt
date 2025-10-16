@@ -43,7 +43,7 @@ certifi==2025.10.5
     #   selenium
 cffi==2.0.0
     # via argon2-cffi-bindings
-charset-normalizer==3.4.3
+charset-normalizer==3.4.4
     # via requests
 click==8.3.0
     # via
@@ -103,7 +103,7 @@ httpcore==1.0.9
     # via httpx
 httpx==0.28.1
     # via jupyterlab
-idna==3.10
+idna==3.11
     # via
     #   anyio
     #   httpx
@@ -116,7 +116,7 @@ importlib-resources==6.5.2
     # via great-tables
 iniconfig==2.1.0
     # via pytest
-ipykernel==6.30.1
+ipykernel==7.0.1
     # via jupyterlab
 ipython==9.6.0
     # via
@@ -162,7 +162,7 @@ jupyter-client==8.6.3
     #   ipykernel
     #   jupyter-server
     #   nbclient
-jupyter-core==5.8.1
+jupyter-core==5.9.1
     # via
     #   ipykernel
     #   jupyter-client
@@ -218,7 +218,7 @@ markupsafe==3.0.3
     #   mkdocs-autorefs
     #   mkdocstrings
     #   nbconvert
-matplotlib==3.10.6
+matplotlib==3.10.7
     # via
     #   -r requirements-examples.in
     #   adjusttext
@@ -249,7 +249,7 @@ mkdocs-autorefs==1.4.3
     #   mkdocstrings-python
 mkdocs-get-deps==0.2.0
     # via mkdocs
-mkdocs-material==9.6.21
+mkdocs-material==9.6.22
     # via -r requirements-dev.in
 mkdocs-material-extensions==1.3.1
     # via mkdocs-material
@@ -282,7 +282,7 @@ notebook-shim==0.2.4
     # via
     #   jupyterlab
     #   notebook
-numpy==2.3.3
+numpy==2.3.4
     # via
     #   adjusttext
     #   contourpy
@@ -295,7 +295,7 @@ numpy==2.3.3
     #   seaborn
 numpy-typing-compat==20250818.2.3
     # via optype
-optype==0.13.4
+optype==0.14.0
     # via scipy-stubs
 outcome==1.3.0.post0
     # via
@@ -327,11 +327,11 @@ pathspec==0.12.1
     #   mypy
 pexpect==4.9.0
     # via ipython
-pillow==11.3.0
+pillow==12.0.0
     # via matplotlib
 pip==25.1.1
     # via -r requirements-dev.in
-platformdirs==4.4.0
+platformdirs==4.5.0
     # via
     #   jupyter-core
     #   mkdocs-get-deps
@@ -404,7 +404,7 @@ pyzmq==27.1.0
     #   ipykernel
     #   jupyter-client
     #   jupyter-server
-referencing==0.36.2
+referencing==0.37.0
     # via
     #   jsonschema
     #   jsonschema-specifications
@@ -425,7 +425,7 @@ rfc3986-validator==0.1.1
     #   jupyter-events
 rfc3987-syntax==1.1.0
     # via jsonschema
-rich==14.1.0
+rich==14.2.0
     # via joblib-progress
 rpds-py==0.27.1
     # via
@@ -435,7 +435,7 @@ scipy==1.16.2
     # via
     #   -r requirements-examples.in
     #   adjusttext
-scipy-stubs==1.16.2.0
+scipy-stubs==1.16.2.3
     # via -r requirements-examples.in
 seaborn==0.13.2
     # via
@@ -499,7 +499,7 @@ trio==0.30.0
     #   trio-websocket
 trio-websocket==0.12.2
     # via selenium
-types-python-dateutil==2.9.0.20250822
+types-python-dateutil==2.9.0.20251008
     # via arrow
 typing-extensions==4.14.1
     # via
