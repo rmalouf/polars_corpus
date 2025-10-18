@@ -1,9 +1,9 @@
-polars==1.33.*
-pyparsing==3.2.*
-nltk==3.9.*
-ipywidgets
-itables
-sentence_transformers
+polars==1.34.*
+pyparsing>=3.2
+nltk>=3.9
+ipywidgets>=8.1
+# itables
+# sentence_transformers
 
 
 # numba==0.61.*

@@ -80,20 +80,20 @@ def get_xml(filename):
                 data["mode"].append(text_mode)
                 data["text_type"].append(text_type)
                 data["file_id"].append(docid)
-                data["sent_tag"].append(sent_tag)
+                data["sentence_tag"].append(sent_tag)
                 if token.tag == "w":
                     data["token"].append(token.text.strip())
-                    data["c5"].append(token.get("c5"))
+                    data["tag"].append(token.get("c5"))
                     data["lemma"].append(token.get("hw"))
                     data["pos"].append(token.get("pos"))
                 elif token.tag == "c":
                     data["token"].append(token.text.strip())
-                    data["c5"].append(token.get("c5"))
+                    data["tag"].append(token.get("c5"))
                     data["lemma"].append(None)
                     data["pos"].append("STOP")
                 else:
                     data["token"].append(f"<{token.tag}/>")
-                    data["c5"].append(None)
+                    data["tag"].append(None)
                     data["lemma"].append(None)
                     data["pos"].append(None)
             sent_tag = "I"
@@ -104,8 +104,8 @@ def get_xml(filename):
             "token": pl.String,
             "lemma": pl.String,
             "pos": pl.String,
-            "c5": pl.String,
-            "sent_tag": pl.String,
+            "tag": pl.String,
+            "sentence_tag": pl.String,
             "mode": pl.Categorical,
             "text_type": pl.Categorical,
             "file_id": pl.Categorical,
