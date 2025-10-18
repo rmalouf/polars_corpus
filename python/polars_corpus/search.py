@@ -129,6 +129,90 @@ class SearchResults:
                 left_window,
                 right_window,
             )
+        
+    def collocates(
+        self,
+        expr: IntoExprColumn = "token",
+        window: Optional[int] = 5,
+        chunk_tag: Optional[str] = None,
+        min_freq: Optional[int] = 5
+    ) -> pl.DataFrame:
+        """Generate a collocate DataFrame.
+
+        Analyzes the tokens that appear near the search matches within a specified
+        window and computes frequency statistics useful for collocation analysis.
+        Returns a DataFrame with collocate frequencies and corpus frequencies.
+
+        Parameters
+        ----------
+        expr : IntoExprColumn
+            Column name or Polars expression specifying which column(s)
+            to use for generating the concordance display.
+        window : int, default 5
+            Number of tokens to include on both left and right sides of
+            each match. Default is 5. When chunk_tag is specified, this parameter is ignored.
+        chunk_tag : str, optional
+            Column name defining chunk boundaries for context extraction.
+            When specified, context extends to chunk boundaries marked by
+            "B" (begin) and "I" (inside) tags, ignoring the window parameter.
+            Context stops at the first non-"I" tag in each direction.
+        min_freq : int, default 5
+            Minimum frequency for collocate for inclusion in DataFrame.
+
+        Returns
+        -------
+        pl.DataFrame
+            Collocate DataFrame with columns:
+            - collocate: The collocating token
+            - e12: Expected node-collocate frequency
+            - f12: Observed node-collocate frequency
+            - f1: Total frequency of node in window (sum up values of f12)
+            - f2: Total frequency of collocate in corpus
+            - n: Total words in corpus
+        """
+
+        # generate concordance
+        conc = self.concordance(expr, window=window, chunk_tag=chunk_tag)
+
+        # determine the column name
+        if isinstance(expr, str):
+            column = expr
+        else:
+            # if expr is a list or complex expression, use first column that's not context
+            candidates = [
+                col for col in conc.columns
+                if not col.endswith('_left_context') and not col.endswith('_right_context')
+            ]
+            column = candidates[0] if candidates else None
+
+        # make initial table with collocate, node freq (f1), colloc freq (f2), node-colloc freq (f12), and corpus size (n)
+        # and remove collocates that occur < min_freq
+        colloc = (
+            conc.lazy()
+            .select(
+                collocate = pl.col(f"{expr}_left_context")
+                .list.concat(f"{expr}_right_context")
+                .explode()
+            )
+            .group_by("collocate")
+            .len(name="f12")
+            .join(self._df.lazy().group_by(expr).len(name="f2"), left_on="collocate", right_on=column, how="left")
+            .with_columns(
+                n = self._df.height
+            )
+        ).remove(
+            pl.col("f2") < min_freq
+        ).with_columns(
+            f1 = pl.col("f12").sum()
+        )
+
+        # expected node-colloc freq, just because
+        colloc = colloc.with_columns(
+            e12 = ( pl.col("f1") * pl.col("f2") ) / pl.col("n")
+        )
+
+        # reorganize columns
+        return colloc.select("collocate", "e12", "f12", "f1", "f2", "n").collect()
 
     def view(
         self,
