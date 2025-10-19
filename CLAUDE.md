@@ -76,12 +76,14 @@ mypy python/polars_corpus/
 
 **Query Languages**: The package supports two query syntaxes:
 
-1. **Simple Query Language** (default, BNCweb-style): User-friendly syntax for basic searches
+1. **Simple Query Language** (default, BNCweb-style): User-friendly syntax for corpus searches
    - Case-insensitive by default
    - Wildcards: `?` (single char), `*` (zero or more), `+` (one or more)
    - Alternatives: `[car,truck]`, `neighbo[u,]r`
    - Word sequences: `quick brown fox`
    - Gap tokens: `fox * over` (optional), `fox + over` (required)
+   - POS tags: `word_TAG` (word+POS), `_TAG` (POS only)
+   - Lemmas: `{lemma}` (all forms), `{lemma/POS}` (with POS constraint)
    - Escaping: `\?` for literal metacharacters
 
 2. **CQP Query Language**: Advanced syntax for linguistic pattern matching
@@ -144,7 +146,18 @@ r = plc.search(c, '[car,truck]')  # Find either car or truck
 # Simple query with gaps
 r = plc.search(c, 'fox + over')  # Find "fox" followed by any word, then "over"
 
-# Search in different column (e.g., POS tags)
+# POS tag searches
+r = plc.search(c, 'lights_NN2')  # Find "lights" tagged as NN2
+r = plc.search(c, '*ly_AJ0')  # Find adjectives ending in "-ly"
+r = plc.search(c, '_PNX')  # Find any reflexive pronoun
+
+# Lemma searches
+r = plc.search(c, '{light}')  # Find all forms of lemma "light"
+r = plc.search(c, '{light/V}')  # Find verbal forms of "light" (simplified POS)
+r = plc.search(c, '{walk}_VBD')  # Find lemma "walk" with exact POS tag VBD
+r = plc.search(c, '{eat} * up')  # Find lemma "eat" followed by "up"
+
+# Search in different column (for backward compatibility)
 r = plc.search(c, 'NN*', column='pos')  # Find noun tags
 
 # CQP query for advanced patterns

@@ -220,5 +220,167 @@ class TestGapTokens:
         assert matched == ["red car and"]
 
 
+class TestPOSTagSearch:
+    """Test POS tag searches using word_TAG syntax"""
+
+    def test_word_with_pos_tag(self, sample_corpus):
+        """Test word+POS pattern (e.g., lights_NN2)"""
+        query = "fox_NN"
+        matches = plc.search(sample_corpus, query)
+        assert matches is not None
+        matched = get_matched_tokens(sample_corpus, matches)
+        assert matched == ["fox"]
+
+    def test_pos_tag_only(self, sample_corpus):
+        """Test POS-only pattern (e.g., _NN)"""
+        query = "_NN"
+        matches = plc.search(sample_corpus, query)
+        assert matches is not None
+        matched = get_matched_tokens(sample_corpus, matches)
+        # Should match all NN tagged tokens: fox, student, car, truck, song, etc.
+        assert "fox" in matched
+        assert "student" in matched
+        assert "car" in matched
+
+    def test_wildcard_in_word_part(self, sample_corpus):
+        """Test wildcards in word part (e.g., *ly_RB)"""
+        query = "*ly_RB"
+        matches = plc.search(sample_corpus, query)
+        assert matches is not None
+        matched = get_matched_tokens(sample_corpus, matches)
+        # Should match "slowly" tagged as RB
+        assert "slowly" in matched
+
+    def test_wildcard_in_pos_part(self, sample_corpus):
+        """Test wildcards in POS part (e.g., sing_V*)"""
+        query = "sing_V*"
+        matches = plc.search(sample_corpus, query)
+        assert matches is not None
+        matched = get_matched_tokens(sample_corpus, matches)
+        # Should match "sing" with VBP tag
+        assert "sing" in matched
+
+    def test_pos_in_sequence(self, sample_corpus):
+        """Test POS pattern in word sequence"""
+        query = "the _JJ dog"
+        matches = plc.search(sample_corpus, query)
+        assert matches is not None
+        matched = get_matched_tokens(sample_corpus, matches)
+        # Should match "the lazy dog" (DT JJ NN sequence)
+        assert "the lazy dog" in matched
+
+    def test_multiple_pos_tags(self, sample_corpus):
+        """Test sequence of POS-only patterns"""
+        query = "_DT _JJ _NN"
+        matches = plc.search(sample_corpus, query)
+        assert matches is not None
+        matched = get_matched_tokens(sample_corpus, matches)
+        # Should match DT JJ NN sequences like "the lazy dog", "The red car", etc.
+        assert len(matched) > 0
+        # Check for known patterns in the corpus
+        assert "the lazy dog" in matched or "The red car" in matched
+
+
+class TestLemmaSearch:
+    """Test lemma searches using {lemma} and {lemma/POS} syntax"""
+
+    def test_basic_lemma_search(self, sample_corpus):
+        """Test basic lemma search {lemma}"""
+        query = "{sing}"
+        matches = plc.search(sample_corpus, query)
+        assert matches is not None
+        matched = get_matched_tokens(sample_corpus, matches)
+        # Should match "sing" and "sang" (both have lemma "sing")
+        assert set(matched) == {"sing", "sang"}
+
+    def test_lemma_with_pos(self, sample_corpus):
+        """Test lemma with POS constraint {lemma/POS}"""
+        query = "{table/N}"
+        matches = plc.search(sample_corpus, query)
+        assert matches is not None
+        matched = get_matched_tokens(sample_corpus, matches)
+        # Should match "table" tagged as NN (noun), not VB (verb)
+        assert "table" in matched
+        # Verify we got the noun "table", not verb "table"
+        # In our test corpus, there's one NN and one VB
+        assert len(matched) == 1  # One instance of "table" as noun
+
+    def test_lemma_verb_forms(self, sample_corpus):
+        """Test lemma matching different verb forms"""
+        query = "{walk}"
+        matches = plc.search(sample_corpus, query)
+        assert matches is not None
+        matched = get_matched_tokens(sample_corpus, matches)
+        # Should match "walked" (lemma is "walk")
+        assert "walked" in matched
+
+    def test_lemma_in_sequence(self, sample_corpus):
+        """Test lemma in word sequence"""
+        query = "{sing} sang"
+        matches = plc.search(sample_corpus, query)
+        assert matches is not None
+        matched = get_matched_tokens(sample_corpus, matches)
+        # Should match "sing sang" where first token has lemma "sing"
+        assert "sing sang" in matched
+
+    def test_lemma_with_gap(self, sample_corpus):
+        """Test lemma with gap tokens"""
+        query = "{be} * suitable"
+        matches = plc.search(sample_corpus, query)
+        assert matches is not None
+        matched = get_matched_tokens(sample_corpus, matches)
+        # Should match "is suitable" (lemma of "is" is "be")
+        assert "is suitable" in matched
+
+    def test_lemma_simplified_pos_verb(self, sample_corpus):
+        """Test simplified POS tag mapping (V for verbs)"""
+        query = "{be/V}"
+        matches = plc.search(sample_corpus, query)
+        assert matches is not None
+        matched = get_matched_tokens(sample_corpus, matches)
+        # Should match "are" and "is" (both lemma "be", tagged as verbs)
+        assert "are" in matched
+        assert "is" in matched
+
+    def test_lemma_simplified_pos_adjective(self, sample_corpus):
+        """Test simplified POS tag mapping (A for adjectives)"""
+        query = "{capable/A}"
+        matches = plc.search(sample_corpus, query)
+        assert matches is not None
+        matched = get_matched_tokens(sample_corpus, matches)
+        # Should match "capable" tagged as adjective (JJ)
+        assert "capable" in matched
+
+    def test_multiple_lemmas_in_sequence(self, sample_corpus):
+        """Test multiple lemma patterns in a sequence"""
+        query = "{be} {able}"
+        matches = plc.search(sample_corpus, query)
+        assert matches is not None
+        matched = get_matched_tokens(sample_corpus, matches)
+        # Should match "are able" (lemmas "be" and "able")
+        assert "are able" in matched
+
+    def test_lemma_with_exact_pos_tag(self, sample_corpus):
+        """Test lemma with exact POS tag using {lemma}_TAG syntax"""
+        query = "{sing}_VBD"
+        matches = plc.search(sample_corpus, query)
+        assert matches is not None
+        matched = get_matched_tokens(sample_corpus, matches)
+        # Should match "sang" which is lemma "sing" with POS VBD
+        assert "sang" in matched
+        # Should not match "sing" which has POS VBP
+        assert "sing" not in matched
+
+    def test_lemma_with_pos_wildcard(self, sample_corpus):
+        """Test lemma with POS wildcard using {lemma}_TAG* syntax"""
+        query = "{be}_V*"
+        matches = plc.search(sample_corpus, query)
+        assert matches is not None
+        matched = get_matched_tokens(sample_corpus, matches)
+        # Should match both "are" (VBP) and "is" (VBZ)
+        assert "are" in matched
+        assert "is" in matched
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

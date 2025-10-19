@@ -104,12 +104,19 @@ def search_cqp(df: pl.DataFrame, query: str) -> Optional[SearchResults]:
         return None
 
 
-def search(df: pl.DataFrame, query: str, column: str = "token") -> Optional[SearchResults]:
+def search(
+    df: pl.DataFrame,
+    query: str,
+    column: str = "token",
+    pos_column: str = "pos",
+    lemma_column: str = "lemma"
+) -> Optional[SearchResults]:
     """Search corpus using simple query language (BNCweb-style).
 
     This function uses the simple query syntax similar to BNCweb, which is
     more intuitive than CQP for basic searches. Queries are case-insensitive
-    by default and support wildcards, alternatives, and word sequences.
+    by default and support wildcards, alternatives, word sequences, POS tags,
+    and lemma searches.
 
     Parameters
     ----------
@@ -118,7 +125,11 @@ def search(df: pl.DataFrame, query: str, column: str = "token") -> Optional[Sear
     query : str
         Simple query string (BNCweb-style syntax)
     column : str, optional
-        Column name to search (default: "token")
+        Column name for token searches (default: "token")
+    pos_column : str, optional
+        Column name for POS tag searches (default: "pos")
+    lemma_column : str, optional
+        Column name for lemma searches (default: "lemma")
 
     Returns
     -------
@@ -146,9 +157,19 @@ def search(df: pl.DataFrame, query: str, column: str = "token") -> Optional[Sear
     - **Gaps**:
       - `*` for optional token: `eat * up` → "eat up", "eat it up"
       - `+` for required token: `eat + up` → "eat it up" (not "eat up")
+    - **POS tags**: `word_TAG` for word+POS, `_TAG` for POS only
+      - `lights_NN2` → "lights" tagged as NN2
+      - `*ly_AJ0` → adjectives ending in "-ly"
+      - `_PNX` → any reflexive pronoun
+    - **Lemmas**: `{lemma}`, `{lemma/POS}`, or `{lemma}_TAG` for lemma searches
+      - `{light}` → all forms of "light"
+      - `{light/V}` → verbal forms using simplified POS (V, N, A, etc.)
+      - `{walk}_VBD` → lemma "walk" with exact POS tag VBD
+      - `{be}_V*` → lemma "be" with any verb POS tag
+      - `{eat} * up` → lemma "eat" followed by "up"
     - **Escaping**: `\\?` for literal question mark
 
-    For more advanced queries (POS tags, lemmas, proximity), use `search_cqp()` instead.
+    For CQP queries with advanced features, use `search_cqp()` instead.
 
     Examples
     --------
@@ -159,12 +180,23 @@ def search(df: pl.DataFrame, query: str, column: str = "token") -> Optional[Sear
     >>> search(corpus, "quick brown fox")  # Find exact sequence
     >>> search(corpus, "fox + over")  # "fox" followed by any word, then "over"
 
+    >>> # POS tag searches
+    >>> search(corpus, "lights_NN2")  # "lights" as plural noun
+    >>> search(corpus, "*ly_AJ0")  # Adjectives ending in "-ly"
+    >>> search(corpus, "_PNX")  # Any reflexive pronoun
+
+    >>> # Lemma searches
+    >>> search(corpus, "{light}")  # All forms of lemma "light"
+    >>> search(corpus, "{light/V}")  # Verbal forms (simplified POS)
+    >>> search(corpus, "{walk}_VBD")  # Lemma "walk" with exact POS tag
+    >>> search(corpus, "{eat} * up")  # Lemma "eat" followed by "up"
+
     >>> # Search in a different column
     >>> search(corpus, "NN*", column="pos")  # Find noun POS tags
 
     """
     # Translate simple query to CQP
-    cqp_query = simple_to_cqp(query, column)
+    cqp_query = simple_to_cqp(query, column, pos_column, lemma_column)
 
     # Use the CQP search function
     if matched_spans := get_matches(df, cqp_query):
