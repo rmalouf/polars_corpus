@@ -12,7 +12,7 @@ argon2-cffi==25.1.0
     # via jupyter-server
 argon2-cffi-bindings==25.1.0
     # via argon2-cffi
-arrow==1.3.0
+arrow==1.4.0
     # via isoduration
 asttokens==3.0.0
     # via stack-data
@@ -114,7 +114,7 @@ importlib-metadata==8.7.0
     # via great-tables
 importlib-resources==6.5.2
     # via great-tables
-iniconfig==2.1.0
+iniconfig==2.3.0
     # via pytest
 ipykernel==7.0.1
     # via jupyterlab
@@ -435,7 +435,7 @@ scipy==1.16.2
     # via
     #   -r requirements-examples.in
     #   adjusttext
-scipy-stubs==1.16.2.3
+scipy-stubs==1.16.2.4
     # via -r requirements-examples.in
 seaborn==0.13.2
     # via
@@ -467,7 +467,7 @@ terminado==0.18.1
     #   jupyter-server-terminals
 tinycss2==1.4.0
     # via bleach
-toolz==1.0.0
+toolz==1.1.0
     # via cytoolz
 tornado==6.5.2
     # via
@@ -499,8 +499,6 @@ trio==0.30.0
     #   trio-websocket
 trio-websocket==0.12.2
     # via selenium
-types-python-dateutil==2.9.0.20251008
-    # via arrow
 typing-extensions==4.14.1
     # via
     #   beautifulsoup4
@@ -509,7 +507,9 @@ typing-extensions==4.14.1
     #   mypy
     #   selenium
 tzdata==2025.2
-    # via pandas
+    # via
+    #   arrow
+    #   pandas
 uri-template==1.3.0
     # via jsonschema
 urllib3==2.5.0
