@@ -179,8 +179,10 @@ class SearchResults:
         else:
             # If expr is a list or complex expression, use first column that's not context
             candidates = [
-                col for col in conc.columns
-                if not col.endswith('_left_context') and not col.endswith('_right_context')
+                col
+                for col in conc.columns
+                if not col.endswith("_left_context")
+                and not col.endswith("_right_context")
             ]
             column = candidates[0] if candidates else None
 

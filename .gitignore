@@ -20,3 +20,8 @@ target/
 .ipynb_checkpoints/
 
 .coverage
+.claude/
+.pytest_cache/
+stuff/
+.DS_Store
+*.parquet

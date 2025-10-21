@@ -290,7 +290,7 @@ prometheus-client==0.23.1
     # via jupyter-server
 prompt-toolkit==3.0.52
     # via ipython
-psutil==7.1.0
+psutil==7.1.1
     # via ipykernel
 ptyprocess==0.7.0
     # via
@@ -347,7 +347,7 @@ referencing==0.37.0
     #   jsonschema
     #   jsonschema-specifications
     #   jupyter-events
-regex==2025.9.18
+regex==2025.10.23
     # via nltk
 requests==2.32.5
     # via
