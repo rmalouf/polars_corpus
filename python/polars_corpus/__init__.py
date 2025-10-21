@@ -6,6 +6,7 @@ from .convert import *  # noqa: F403
 from .cqp_parser import *  # noqa: F403
 from .exprs import *  # noqa: F403
 from .io import *  # noqa: F403
+from .lexical import *  # noqa: F403
 from .matcher import *  # noqa: F403
 
 # from .productivity import *  # noqa: F403

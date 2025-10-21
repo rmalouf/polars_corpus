@@ -6,6 +6,7 @@ mod assoc;
 mod io;
 mod matcher;
 mod span;
+mod lexical;
 
 use pyo3::prelude::*;
 use pyo3_polars::PolarsAllocator;
