@@ -150,25 +150,37 @@ class SearchResults:
             to use for generating the concordance display.
         window : int, default 5
             Number of tokens to include on both left and right sides of
-            each match. Default is 5. When chunk_tag is specified, this parameter is ignored.
+            each match. If None, returns matches with no context (equivalent
+            to window=0). When chunk_tag is specified, this parameter is ignored.
         chunk_tag : str, optional
             Column name defining chunk boundaries for context extraction.
             When specified, context extends to chunk boundaries marked by
             "B" (begin) and "I" (inside) tags, ignoring the window parameter.
             Context stops at the first non-"I" tag in each direction.
         min_freq : int, default 5
-            Minimum frequency for collocate for inclusion in DataFrame.
+            Minimum frequency of each node-collocate pair within the window span.
+            Node-collocate pairs with lower frequencies are not displayed in DataFrame.
 
         Returns
         -------
         pl.DataFrame
             Collocate DataFrame with columns:
             - collocate: The collocating token
-            - e12: Expected node-collocate frequency
             - f12: Observed node-collocate frequency
-            - f1: Total frequency of node in window (sum up values of f12)
+            - f1: Total frequency of node in window (corpus freq of node * window size * 2)
             - f2: Total frequency of collocate in corpus
             - n: Total words in corpus
+
+        Notes
+        -----
+        The returned frequencies can be used to compute association measures
+        like PMI, log-likelihood ratios, or other collocation statistics.
+
+        Examples
+        --------
+        >>> results.collocates("token") # search for collocates of "token" with default values for window, chunk_tag, min_freq
+        >>> results.collocates("token", window=3, min_freq=10)
+        >>> top_collocs = results.collocates("f12", descending=True).head(20)
         """
 
         # generate concordance
@@ -185,8 +197,7 @@ class SearchResults:
             ]
             column = candidates[0] if candidates else None
 
-        # make initial table with collocate, node freq (f1), colloc freq (f2), node-colloc freq (f12), and corpus size (n)
-        # and remove collocates that occur < min_freq
+        # generate collocate table
         colloc = (
             conc.lazy()
             .select(
@@ -198,21 +209,15 @@ class SearchResults:
             .len(name="f12")
             .join(self._df.lazy().group_by(expr).len(name="f2"), left_on="collocate", right_on=column, how="left")
             .with_columns(
-                n = self._df.height
+                n = self._df.height,
+                f1 = len(self._matched_spans) * window * 2
             )
         ).remove(
-            pl.col("f2") < min_freq
-        ).with_columns(
-            f1 = pl.col("f12").sum()
-        )
-
-        # expected node-colloc freq, just because
-        colloc = colloc.with_columns(
-            e12 = ( pl.col("f1") * pl.col("f2") ) / pl.col("n")
+            pl.col("f12") < min_freq
         )
 
         # reorganize columns
-        return colloc.select("collocate", "e12", "f12", "f1", "f2", "n").collect()
+        return colloc.select("collocate", "f12", "f1", "f2", "n").collect()
 
     def view(
         self,
