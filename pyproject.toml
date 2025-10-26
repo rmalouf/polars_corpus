@@ -59,7 +59,6 @@ ignore_missing_imports = true
 module-name = "polars_corpus._internal"
 python-source = "python"
 
-
 # [dependency-groups]
 # dev = [
 #     "jupyterlab>=4.4.0",

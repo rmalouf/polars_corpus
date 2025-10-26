@@ -50,15 +50,23 @@ mypy python/polars_corpus/
 
 **Python Layer (`polars_corpus/`)**:
 - `search.py`: SearchResults class and concordance functionality
-- `matcher.py`: CQP query parsing and pattern compilation using pyparsing
+- `matcher.py`: CQP query parsing and pattern compilation
+- `cqp_parser.py`: CQP grammar and expression compilation using pyparsing
 - `assoc.py`: Statistical association measures (PMI, log-likelihood, minimum sensitivity)
 - `exprs.py`: Polars namespace extensions (`.corpus` for DataFrames/LazyFrames/Expressions)
 - `productivity.py`: Corpus productivity metrics and type-token analysis
+- `chunk.py`: BIO-tagged chunking and span indexing utilities
+- `convert.py`: NLTK corpus conversion to Polars DataFrames
+- `io.py`: Text corpus reading with Polars IO plugin integration
+- `view.py`: Interactive concordance browser widget for Jupyter notebooks
+- `utils.py`: Utility functions
+- `_typing.py`: Type definitions
 
 **Rust Layer (`src/`)**:
 - `matcher.rs`: High-performance pattern matching engine using finite automata
-- `span.rs`: Span handling and concordance generation 
+- `span.rs`: Span handling and concordance generation
 - `assoc.rs`: Performance-critical association computations
+- `io.rs`: I/O utilities (commented/placeholder code)
 - `lib.rs`: PyO3 bindings and module exports
 
 ### Key Design Patterns
@@ -87,7 +95,7 @@ Tests are organized by module functionality:
 
 ## Development Workflow
 
-1. **Rust Changes**: After modifying Rust code, run `make debug` to rebuild and copy the shared library
+1. **Rust Changes**: After modifying Rust code, run `make develop` to rebuild the extension
 2. **Python Changes**: No rebuild needed, changes are immediately available
 3. **Query Language**: Test CQP patterns in notebooks before implementing new syntax
 4. **Performance**: Use the example notebooks with large corpora (BNC) to benchmark changes
