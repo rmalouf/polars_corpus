@@ -7,8 +7,9 @@ import polars as pl
 from ._internal import Opcode, OpcodeMatcher, Span
 from .cqp_parser import cqp
 from .search import SearchResults
+from .simple_parser import simple_to_cqp
 
-__all__ = ["search", "Span"]
+__all__ = ["search", "search_cqp", "Span"]
 
 
 def col_name(i: int) -> str:
@@ -65,7 +66,7 @@ def get_matches(df: pl.DataFrame, query: str) -> Optional[list[Span]]:
     return opcode_matcher.matchall()
 
 
-def search(df: pl.DataFrame, query: str) -> Optional[SearchResults]:
+def search_cqp(df: pl.DataFrame, query: str) -> Optional[SearchResults]:
     """Search corpus using a CQP-style query.
 
     Parameters
@@ -73,7 +74,7 @@ def search(df: pl.DataFrame, query: str) -> Optional[SearchResults]:
     df : pl.DataFrame
          Corpus to be searched.
     query: str
-        Search query
+        CQP query string
 
     Returns
     -------
@@ -89,10 +90,116 @@ def search(df: pl.DataFrame, query: str) -> Optional[SearchResults]:
 
     Notes
     -----
-    Put in a link to docs about the query language
+    For CQP query syntax documentation, see the CQP documentation.
+
+    Examples
+    --------
+    >>> search_cqp(corpus, '[word="fox"]')
+    >>> search_cqp(corpus, '[pos="NN.*"]+ [pos="VB.*"]')
 
     """
     if matched_spans := get_matches(df, query):
+        return SearchResults(df, query, matched_spans)
+    else:
+        return None
+
+
+def search(
+    df: pl.DataFrame,
+    query: str,
+    column: str = "token",
+    pos_column: str = "pos",
+    lemma_column: str = "lemma"
+) -> Optional[SearchResults]:
+    """Search corpus using simple query language (BNCweb-style).
+
+    This function uses the simple query syntax similar to BNCweb, which is
+    more intuitive than CQP for basic searches. Queries are case-insensitive
+    by default and support wildcards, alternatives, word sequences, POS tags,
+    and lemma searches.
+
+    Parameters
+    ----------
+    df : pl.DataFrame
+         Corpus to be searched.
+    query : str
+        Simple query string (BNCweb-style syntax)
+    column : str, optional
+        Column name for token searches (default: "token")
+    pos_column : str, optional
+        Column name for POS tag searches (default: "pos")
+    lemma_column : str, optional
+        Column name for lemma searches (default: "lemma")
+
+    Returns
+    -------
+    SearchResults or None
+        Result of the search, or None if no matches found
+
+    Raises
+    ------
+    ParseException
+        If there's an error in the query syntax
+    RuntimeError
+        If there's an internal error in the search procedure
+
+    Notes
+    -----
+    Simple query syntax supports:
+
+    - **Basic words**: `fox` matches "fox", "Fox", "FOX" (case-insensitive)
+    - **Wildcards**:
+      - `?` for single character: `s?ng` → sing, sang, song
+      - `*` for zero or more: `*able` → able, table, capable
+      - `+` for one or more: `+able` → table, capable (not "able")
+    - **Alternatives**: `[car,truck]`, `neighbo[u,]r`
+    - **Sequences**: `quick brown fox`
+    - **Gaps**:
+      - `*` for optional token: `eat * up` → "eat up", "eat it up"
+      - `+` for required token: `eat + up` → "eat it up" (not "eat up")
+    - **POS tags**: `word_TAG` for word+POS, `_TAG` for POS only
+      - `lights_NN2` → "lights" tagged as NN2
+      - `*ly_AJ0` → adjectives ending in "-ly"
+      - `_PNX` → any reflexive pronoun
+    - **Lemmas**: `{lemma}`, `{lemma/POS}`, or `{lemma}_TAG` for lemma searches
+      - `{light}` → all forms of "light"
+      - `{light/V}` → verbal forms using simplified POS (V, N, A, etc.)
+      - `{walk}_VBD` → lemma "walk" with exact POS tag VBD
+      - `{be}_V*` → lemma "be" with any verb POS tag
+      - `{eat} * up` → lemma "eat" followed by "up"
+    - **Escaping**: `\\?` for literal question mark
+
+    For CQP queries with advanced features, use `search_cqp()` instead.
+
+    Examples
+    --------
+    >>> search(corpus, "fox")  # Find "fox" (case-insensitive)
+    >>> search(corpus, "s?ng")  # Find sing, sang, song
+    >>> search(corpus, "*able")  # Find words ending in "able"
+    >>> search(corpus, "[car,truck]")  # Find either "car" or "truck"
+    >>> search(corpus, "quick brown fox")  # Find exact sequence
+    >>> search(corpus, "fox + over")  # "fox" followed by any word, then "over"
+
+    >>> # POS tag searches
+    >>> search(corpus, "lights_NN2")  # "lights" as plural noun
+    >>> search(corpus, "*ly_AJ0")  # Adjectives ending in "-ly"
+    >>> search(corpus, "_PNX")  # Any reflexive pronoun
+
+    >>> # Lemma searches
+    >>> search(corpus, "{light}")  # All forms of lemma "light"
+    >>> search(corpus, "{light/V}")  # Verbal forms (simplified POS)
+    >>> search(corpus, "{walk}_VBD")  # Lemma "walk" with exact POS tag
+    >>> search(corpus, "{eat} * up")  # Lemma "eat" followed by "up"
+
+    >>> # Search in a different column
+    >>> search(corpus, "NN*", column="pos")  # Find noun POS tags
+
+    """
+    # Translate simple query to CQP
+    cqp_query = simple_to_cqp(query, column, pos_column, lemma_column)
+
+    # Use the CQP search function
+    if matched_spans := get_matches(df, cqp_query):
         return SearchResults(df, query, matched_spans)
     else:
         return None
