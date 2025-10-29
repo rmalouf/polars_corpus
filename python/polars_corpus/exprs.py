@@ -6,7 +6,7 @@ import polars as pl
 
 from .assoc import crosstab
 from .chunk import chunk_id, with_chunk_index
-from .matcher import search
+from .matcher import search, search_cqp
 from .search import SearchResults
 from .utils import ngrams
 from .lexical import ttr, msttr
