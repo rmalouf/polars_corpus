@@ -79,11 +79,13 @@ mypy python/polars_corpus/
 1. **Simple Query Language** (default, BNCweb-style): User-friendly syntax for corpus searches
    - Case-insensitive by default
    - Wildcards: `?` (single char), `*` (zero or more), `+` (one or more)
-   - Alternatives: `[car,truck]`, `neighbo[u,]r`
+   - Alternatives: `[car,truck]`
    - Word sequences: `quick brown fox`
    - Gap tokens: `fox * over` (optional), `fox + over` (required)
+   - Consecutive gaps: `++` (2 tokens), `***` (0-3 tokens), `+++**` (3-5 tokens)
+   - Regex groups: `(pattern)?`, `(pattern)+`, `(pattern)*`, `(pattern){n}`, `(pattern){m,n}`
    - POS tags: `word_TAG` (word+POS), `_TAG` (POS only)
-   - Lemmas: `{lemma}` (all forms), `{lemma/POS}` (with POS constraint)
+   - Lemmas: `{lemma}` (all forms), `{lemma/POS}` (with simplified POS), `{lemma}_TAG` (with exact POS), `{lemma}_{SIMPLIFIED}` (with simplified POS in braces)
    - Escaping: `\?` for literal metacharacters
 
 2. **CQP Query Language**: Advanced syntax for linguistic pattern matching
@@ -155,7 +157,22 @@ r = plc.search(c, '_PNX')  # Find any reflexive pronoun
 r = plc.search(c, '{light}')  # Find all forms of lemma "light"
 r = plc.search(c, '{light/V}')  # Find verbal forms of "light" (simplified POS)
 r = plc.search(c, '{walk}_VBD')  # Find lemma "walk" with exact POS tag VBD
+r = plc.search(c, '{walk}_{VERB}')  # Find lemma "walk" with simplified POS tag VERB
+r = plc.search(c, '{box}_{SUBST}')  # Find lemma "box" as a noun (SUBST = substantive)
 r = plc.search(c, '{eat} * up')  # Find lemma "eat" followed by "up"
+
+# Consecutive gap tokens
+r = plc.search(c, 'fox ++ dog')  # Find "fox" followed by exactly 2 tokens, then "dog"
+r = plc.search(c, 'the *** cat')  # Find "the" followed by 0-3 tokens, then "cat"
+r = plc.search(c, 'big +++** house')  # Find "big" followed by 3-5 tokens, then "house"
+
+# Regex groups with quantifiers
+r = plc.search(c, '(very)? big')  # Find "big" optionally preceded by "very"
+r = plc.search(c, '(very)+ big')  # Find "big" preceded by one or more "very"
+r = plc.search(c, '(red blue)+')  # Find one or more repetitions of "red blue"
+r = plc.search(c, '(quick){2} fox')  # Find exactly 2 "quick" followed by "fox"
+r = plc.search(c, '(brown){1,3}')  # Find 1-3 repetitions of "brown"
+r = plc.search(c, '(fox * over)?')  # Optionally match "fox", any token, "over"
 
 # Search in different column (for backward compatibility)
 r = plc.search(c, 'NN*', column='pos')  # Find noun tags
