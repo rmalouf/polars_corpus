@@ -45,10 +45,7 @@ def ttr(expr: IntoExprColumn) -> pl.Expr:
 
     """
     expr_s = pl.col(expr) if isinstance(expr, str) else expr
-    n_unique = expr_s.n_unique()
-    return (n_unique if isinstance(n_unique, pl.Expr) else pl.lit(n_unique)).cast(
-        pl.Float64
-    ) / expr_s.len()
+    return expr_s.n_unique() / expr_s.len()
 
 
 def msttr(expr: IntoExprColumn, n: int = 1000) -> pl.Expr:
