@@ -355,7 +355,6 @@ class ConcordanceWidget:
     def _format_concordance_html(self) -> str:
         """Format current page as HTML with KWIC or Line layout."""
         start = self.current_page * self.page_size
-        end = start + self.page_size
         page_df = self.df.slice(start, self.page_size)
 
         if len(page_df) == 0:

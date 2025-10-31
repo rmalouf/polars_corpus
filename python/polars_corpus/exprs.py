@@ -84,7 +84,6 @@ class CorpusDataFrame:
         return search_cqp(self._df, query, **kwargs)
 
 
-
 @pl.api.register_lazyframe_namespace("corpus")
 class CorpusLazyFrame:
     def __init__(self, lf: pl.LazyFrame) -> None:

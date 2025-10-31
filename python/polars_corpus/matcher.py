@@ -109,7 +109,7 @@ def search(
     query: str,
     column: str = "token",
     pos_column: str = "pos",
-    lemma_column: str = "lemma"
+    lemma_column: str = "lemma",
 ) -> Optional[SearchResults]:
     """Search corpus using simple query language (BNCweb-style).
 

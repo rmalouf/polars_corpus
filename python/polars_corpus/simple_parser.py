@@ -197,22 +197,45 @@ def _build_grammar(column: str, pos_column: str, lemma_column: str) -> pp.Parser
 
     lemma_pos_tag_pattern.set_parse_action(make_lemma_pos_tag)
 
-    # POS tag pattern: word_TAG or _TAG
+    # POS tag pattern: word_TAG, _TAG, word_{TAG}, or _{TAG}
     # Word part is optional (for _TAG pattern), POS part after underscore
+    # POS part can optionally be wrapped in braces for simplified tags
     # Important: Use Combine to prevent consuming whitespace between elements
     pos_word_char = pp.Char(pp.alphas + pp.nums + "!@#$%^&=\\-")
     pos_word_part_item = escaped_char | wildcard_char | pos_word_char
     pos_word_part_content = pp.ZeroOrMore(pos_word_part_item)
-    pos_tag_part_content = pp.OneOrMore(pos_word_part_item)
+
+    # POS tag can be: {TAG} (simplified, in braces) or TAG (exact/wildcard)
+    braced_pos_tag = (
+        pp.Suppress("{")
+        + pp.Combine(pp.OneOrMore(pp.Char(pp.alphas)))
+        + pp.Suppress("}")
+    )
+    unbraced_pos_tag = pp.Combine(pp.OneOrMore(pos_word_part_item))
 
     # Combine the entire pattern so it doesn't consume whitespace
-    pos_pattern = pp.Combine(
-        pos_word_part_content + pp.Literal("_") + pos_tag_part_content
+    pos_pattern = pp.Combine(pos_word_part_content + pp.Literal("_")) + (
+        braced_pos_tag | unbraced_pos_tag
     )
 
     def make_pos_tag(t: pp.ParseResults) -> str:
-        word_part, pos_part = t[0].split("_")
-        pos_pattern = wildcard_to_regex(pos_part)
+        # t[0] contains "word_" (with trailing underscore)
+        # t[1] contains the POS tag (with or without braces)
+        word_with_underscore = t[0]
+        word_part = word_with_underscore[:-1]  # Remove trailing underscore
+        pos_part = t[1]
+
+        # Check if this was a braced tag by seeing if it's all alpha and in mapping
+        # (braced_pos_tag only matches alpha characters)
+        is_braced = pos_part.isalpha() and pos_part.upper() in _POS_MAPPING
+
+        if is_braced:
+            # Simplified tag in braces - expand using mapping
+            pos_pattern = _POS_MAPPING[pos_part.upper()]
+        else:
+            # Exact tag or wildcard pattern
+            pos_pattern = wildcard_to_regex(pos_part)
+
         constraints = [_make_constraint(pos_column, pos_pattern, case_sensitive=True)]
         if word_part:
             word_pattern = wildcard_to_regex(word_part)
@@ -277,25 +300,41 @@ def _build_grammar(column: str, pos_column: str, lemma_column: str) -> pp.Parser
         | pp.Regex(r"\{\d+\}")
     )
 
-    # Group: (sequence) with optional quantifier
-    # The group contains a sequence of items (not just a single item)
-    group_content = pp.Group(pp.OneOrMore(sequence_item))
+    # Group: (sequence) or (alternative1 | alternative2 | ...) with optional quantifier
+    # Each alternative is a sequence of items
+    # Disjunction (pipe-separated alternatives) is supported
+    group_sequence = pp.Group(pp.OneOrMore(sequence_item))
+    group_content = group_sequence + pp.ZeroOrMore(pp.Suppress("|") + group_sequence)
     group_pattern = (
-        pp.Suppress("(") + group_content + pp.Suppress(")") + pp.Optional(quantifier)
+        pp.Suppress("(")
+        + pp.Group(group_content)
+        + pp.Suppress(")")
+        + pp.Optional(quantifier)
     )
 
     def make_group(t: pp.ParseResults) -> str:
-        items = t[0]  # The grouped sequence items
+        content = t[0]  # The group content (may contain multiple alternatives)
         quant = t[1] if len(t) > 1 else None
 
-        # Join the sequence items with spaces
-        sequence_cqp = " ".join(items)
+        # Check if we have disjunction (multiple alternatives)
+        # content is a list of sequences (each sequence is a list of items)
+        if len(content) > 1:
+            # Multiple alternatives - join each sequence and then join with |
+            alternatives = []
+            for sequence in content:
+                sequence_cqp = " ".join(sequence)
+                alternatives.append(sequence_cqp)
+            result_cqp = "|".join(alternatives)
+        else:
+            # Single sequence - just join the items
+            sequence_cqp = " ".join(content[0])
+            result_cqp = sequence_cqp
 
         # Wrap in parentheses and add quantifier if present
         if quant:
-            return f"({sequence_cqp}){quant}"
+            return f"({result_cqp}){quant}"
         else:
-            return f"({sequence_cqp})"
+            return f"({result_cqp})"
 
     group_pattern.set_parse_action(make_group)
 
