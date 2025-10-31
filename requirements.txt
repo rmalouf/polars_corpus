@@ -22,7 +22,7 @@ joblib==1.5.2
     # via nltk
 jupyterlab-widgets==3.0.15
     # via ipywidgets
-matplotlib-inline==0.1.7
+matplotlib-inline==0.2.1
     # via ipython
 nltk==3.9.2
     # via -r requirements.in
@@ -30,9 +30,9 @@ parso==0.8.5
     # via jedi
 pexpect==4.9.0
     # via ipython
-polars==1.34.0
+polars==1.35.1
     # via -r requirements.in
-polars-runtime-32==1.34.0
+polars-runtime-32==1.35.1
     # via polars
 prompt-toolkit==3.0.52
     # via ipython
