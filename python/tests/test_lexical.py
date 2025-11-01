@@ -35,6 +35,14 @@ class TestTTR:
         # 0/0 = NaN
         assert result != result  # NaN != NaN
 
+    def test_ttr_with_nulls(self):
+        """Test TTR treats null as a distinct type (Polars default)."""
+        # Nulls should count as a unique type
+        df = pl.DataFrame({"words": ["a", "b", None, "a", "b", None]})
+        result = df.select(plc.ttr("words")).item()
+        # 3 unique values (a, b, None) out of 6 total = 0.5
+        assert result == pytest.approx(0.5)
+
 
 class TestMSTTR:
     """Test mean segmental type-token ratio calculation."""
@@ -138,12 +146,81 @@ class TestMSTTR:
 
     def test_msttr_invalid_n(self):
         """Test MSTTR raises error for invalid n values."""
-        df = pl.DataFrame({"tokens": ["a", "b", "c"]})
-
-        # n = 0 should raise ValueError
         with pytest.raises(ValueError, match="must be greater than 0"):
             plc.msttr("tokens", n=0)
 
-        # n < 0 should raise ValueError
         with pytest.raises(ValueError, match="must be greater than 0"):
             plc.msttr("tokens", n=-10)
+
+        with pytest.raises(TypeError, match="must be an integer"):
+            plc.msttr("tokens", n=10.5)
+
+
+class TestMTLD:
+    """Test Measure of Textual Lexical Diversity calculation."""
+
+    def test_mtld_basic(self):
+        """Test MTLD with varying diversity levels."""
+        # High diversity (all unique) = high MTLD
+        df_high = pl.DataFrame({"tokens": [f"word{i}" for i in range(100)]})
+        assert df_high.select(plc.mtld("tokens")).item() > 50
+
+        # Low diversity (repetitive) = low MTLD
+        df_low = pl.DataFrame({"tokens": ["the"] * 100})
+        assert df_low.select(plc.mtld("tokens")).item() < 10
+
+    def test_mtld_minimum_tokens(self):
+        """Test MTLD requires at least 10 tokens."""
+        df_valid = pl.DataFrame({"tokens": [f"w{i}" for i in range(10)]})
+        assert df_valid.select(plc.mtld("tokens")).item() is not None
+
+        df_invalid = pl.DataFrame({"tokens": [f"w{i}" for i in range(9)]})
+        assert df_invalid.select(plc.mtld("tokens")).item() is None
+
+    def test_mtld_with_nulls(self):
+        """Test MTLD treats null as a distinct token (Polars default)."""
+        tokens = [f"word{i}" for i in range(10)] + [None, None]
+        df = pl.DataFrame({"tokens": tokens})
+        result = df.select(plc.mtld("tokens")).item()
+        assert result is not None and result > 0
+
+    def test_mtld_custom_threshold(self):
+        """Test MTLD accepts custom threshold parameter."""
+        df = pl.DataFrame({"tokens": ["the"] * 100})
+        result_default = df.select(plc.mtld("tokens")).item()
+        result_custom = df.select(plc.mtld("tokens", threshold=0.800)).item()
+        assert result_default > 0
+        assert result_custom > 0
+
+    def test_mtld_invalid_threshold(self):
+        """Test MTLD raises error for invalid threshold values."""
+        with pytest.raises(ValueError, match="strictly between 0 and 1"):
+            plc.mtld("tokens", threshold=0.0)
+
+        with pytest.raises(ValueError, match="strictly between 0 and 1"):
+            plc.mtld("tokens", threshold=1.0)
+
+        with pytest.raises(ValueError, match="strictly between 0 and 1"):
+            plc.mtld("tokens", threshold=-0.5)
+
+        with pytest.raises(ValueError, match="strictly between 0 and 1"):
+            plc.mtld("tokens", threshold=1.5)
+
+
+class TestYulesK:
+    """Test Yule's K characteristic calculation."""
+
+    def test_yules_k_basic(self):
+        """Test Yule's K with varying diversity levels."""
+        # All unique = K = 0
+        df_unique = pl.DataFrame({"tokens": list("abcdefghij")})
+        assert df_unique.select(plc.yules_k("tokens")).item() == pytest.approx(0.0)
+
+        # Repetitive = high K (low diversity)
+        df_repetitive = pl.DataFrame({"tokens": ["the"] * 50 + ["cat"] * 30})
+        assert df_repetitive.select(plc.yules_k("tokens")).item() > 100
+
+    def test_yules_k_with_nulls(self):
+        """Test Yule's K treats null as a distinct type (Polars default)."""
+        df = pl.DataFrame({"tokens": ["a", "b", None, "a", "b", None]})
+        assert df.select(plc.yules_k("tokens")).item() > 0

@@ -36,15 +36,14 @@ where
     I: Iterator<Item = Option<&'a str>>,
 {
     let mut factors = 0.0;
-    let mut types: PlHashSet<&'a str> = PlHashSet::new();
-    let mut token_count = 0;
+    let mut types: PlHashSet<Option<&'a str>> = PlHashSet::new();
+    let mut token_count: usize = 0;
 
-    for token in tokens.flatten() {
+    for token in tokens {
         types.insert(token);
         token_count += 1;
 
         let ttr = types.len() as f64 / token_count as f64;
-
         if ttr <= threshold {
             factors += 1.0;
             types.clear();
@@ -62,27 +61,23 @@ where
     factors
 }
 
+#[derive(Deserialize)]
+struct MTLDKwargs {
+    threshold: f64,
+}
+
 #[polars_expr(output_type=Float64)]
-fn py_mtld(inputs: &[Series]) -> PolarsResult<Series> {
+fn py_mtld(inputs: &[Series], kwargs: MTLDKwargs) -> PolarsResult<Series> {
     let ca = inputs[0].str()?;
-    let threshold = 0.720;
+    let threshold = kwargs.threshold;
 
-    // Count non-null tokens
-    let n_tokens = ca.len() - ca.null_count();
-
+    let n_tokens = ca.len();
     if n_tokens < 10 {
         return Ok(Series::new("mtld".into(), &[None::<f64>]));
     }
 
-    // Count factors forward
-    let forward_factors = count_factors(ca.iter(), threshold);
-
-    // Count factors backward (iterate in reverse without collecting)
-    let backward_factors = count_factors(ca.iter().rev(), threshold);
-
-    // MTLD is the average of forward and backward
-    let forward_mtld = n_tokens as f64 / forward_factors;
-    let backward_mtld = n_tokens as f64 / backward_factors;
+    let forward_mtld = n_tokens as f64 / count_factors(ca.iter(), threshold);
+    let backward_mtld = n_tokens as f64 / count_factors(ca.iter().rev(), threshold);
     let mtld = (forward_mtld + backward_mtld) / 2.0;
 
     Ok(Series::new("mtld".into(), &[mtld]))
