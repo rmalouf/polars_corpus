@@ -9,7 +9,7 @@ from .chunk import chunk_id, with_chunk_index
 from .matcher import search, search_cqp
 from .search import SearchResults
 from .utils import ngrams
-from .lexical import ttr, msttr
+from .lexical import ttr, msttr, yules_k, mtld
 
 
 @pl.api.register_expr_namespace("corpus")
@@ -22,6 +22,12 @@ class CorpusExpr:
 
     def msttr(self, **kwargs: Any) -> pl.Expr:
         return msttr(self._expr, **kwargs)
+
+    def yules_k(self, **kwargs: Any) -> pl.Expr:
+        return yules_k(self._expr, **kwargs)
+
+    def mtld(self, **kwargs: Any) -> pl.Expr:
+        return mtld(self._expr, **kwargs)
 
     def chunk_index(self, format: str = "IOB2") -> pl.Expr:
         if format == "IOB2":
