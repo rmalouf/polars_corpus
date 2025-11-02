@@ -105,13 +105,13 @@ def test_compute_loglik() -> None:
         "f12": [6, 20, 0],
         "f1": [12, 30, 10],
         "f2": [10, 25, 20],
-        "n": [20, 50, 50]
+        "n": [20, 50, 50],
     }
 
     # Test with both i64 and u32 data types
     for dtype in [pl.Int64, pl.UInt32]:
         table = pl.DataFrame(test_data).cast(dtype)
-        result = table.with_columns(LL=loglik("f12","f1","f2","n"))
+        result = table.with_columns(LL=loglik("f12", "f1", "f2", "n"))
 
         # Check structure
         assert "LL" in result.columns
@@ -126,8 +126,12 @@ def test_compute_loglik() -> None:
         # Manual verification for known case (f12=20)
         # o11=20, o12=10, o21=5, o22=15; e11=15, e12=15, e21=10, e22=10
         known_ll = result.filter(pl.col("f12") == 20)["LL"].item()
-        expected = 2 * (20*math.log(20/15) + 10*math.log(10/15) +
-                       5*math.log(5/10) + 15*math.log(15/10))
+        expected = 2 * (
+            20 * math.log(20 / 15)
+            + 10 * math.log(10 / 15)
+            + 5 * math.log(5 / 10)
+            + 15 * math.log(15 / 10)
+        )
         assert abs(known_ll - expected) < 1e-10
 
         # All values should be finite and non-negative

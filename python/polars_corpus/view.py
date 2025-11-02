@@ -20,6 +20,7 @@ class WidgetChange(TypedDict, total=False):
     name: str
     type: str
 
+
 __all__ = ["ConcordanceWidget"]
 
 
@@ -158,22 +159,30 @@ class ConcordanceWidget:
 
         # Navigation buttons - compact and subtle
         self.first_button = self._widgets_module.Button(
-            description="⏮", layout=self._layout_class(width="32px"), tooltip="First page"
+            description="⏮",
+            layout=self._layout_class(width="32px"),
+            tooltip="First page",
         )
         self.first_button.on_click(self._on_first)
 
         self.prev_button = self._widgets_module.Button(
-            description="◀", layout=self._layout_class(width="32px"), tooltip="Previous page"
+            description="◀",
+            layout=self._layout_class(width="32px"),
+            tooltip="Previous page",
         )
         self.prev_button.on_click(self._on_prev)
 
         self.next_button = self._widgets_module.Button(
-            description="▶", layout=self._layout_class(width="32px"), tooltip="Next page"
+            description="▶",
+            layout=self._layout_class(width="32px"),
+            tooltip="Next page",
         )
         self.next_button.on_click(self._on_next)
 
         self.last_button = self._widgets_module.Button(
-            description="⏭", layout=self._layout_class(width="32px"), tooltip="Last page"
+            description="⏭",
+            layout=self._layout_class(width="32px"),
+            tooltip="Last page",
         )
         self.last_button.on_click(self._on_last)
 
@@ -237,13 +246,17 @@ class ConcordanceWidget:
 
         # Clear filter button
         self.clear_filter_button = self._widgets_module.Button(
-            description="✕", layout=self._layout_class(width="32px"), tooltip="Clear filter"
+            description="✕",
+            layout=self._layout_class(width="32px"),
+            tooltip="Clear filter",
         )
         self.clear_filter_button.on_click(self._on_clear_filter)
 
         # Random sample button
         self.sample_button = self._widgets_module.Button(
-            description="↻", layout=self._layout_class(width="32px"), tooltip="Random shuffle"
+            description="↻",
+            layout=self._layout_class(width="32px"),
+            tooltip="Random shuffle",
         )
         self.sample_button.on_click(self._on_random)
 
@@ -342,7 +355,6 @@ class ConcordanceWidget:
     def _format_concordance_html(self) -> str:
         """Format current page as HTML with KWIC or Line layout."""
         start = self.current_page * self.page_size
-        end = start + self.page_size
         page_df = self.df.slice(start, self.page_size)
 
         if len(page_df) == 0:

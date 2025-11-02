@@ -4,10 +4,10 @@ build-backend = "maturin"
 
 [project]
 name = "polars-corpus"
-version = "0.1.0"
+version = "0.1.4-pre"
 requires-python = ">=3.10"
 classifiers = [
-    "Development Status :: 2 - Pre-Alpha",
+    "Development Status :: 3 - Alpha",
     "Intended Audience :: Science/Research",
     "License :: OSI Approved :: MIT License",
     "Programming Language :: Rust",
@@ -31,7 +31,7 @@ description = "Text processing plugins for polars"
 readme = "README.md"
 license = "MIT"
 dependencies = [
-    "polars==1.34.*",
+    "polars>=1.34",
     "pyparsing>=3.2",
     "nltk>=3.9",
     "ipywidgets>=8.1"

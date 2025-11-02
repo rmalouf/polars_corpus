@@ -57,7 +57,7 @@ def crosstab(df: T_Frame, x: str, y: str) -> T_Frame:
         df.select(x, y)
         .drop_nulls([x, y])
         .group_by(x, y)
-        .agg(pl.len().alias("f12"))
+        .agg(pl.len().cast(pl.UInt64).alias("f12"))
         .with_columns(
             [
                 pl.col("f12").sum().over(x).alias("f1"),

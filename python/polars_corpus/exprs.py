@@ -1,23 +1,33 @@
 from __future__ import annotations
 
-from pathlib import Path
 from typing import Any, Optional
 
 import polars as pl
 
 from .assoc import crosstab
 from .chunk import chunk_id, with_chunk_index
-from .matcher import search
+from .matcher import search, search_cqp
 from .search import SearchResults
 from .utils import ngrams
-
-LIB = Path(__file__).parent
+from .lexical import ttr, msttr, yules_k, mtld
 
 
 @pl.api.register_expr_namespace("corpus")
 class CorpusExpr:
     def __init__(self, expr: pl.Expr) -> None:
         self._expr = expr
+
+    def ttr(self, **kwargs: Any) -> pl.Expr:
+        return ttr(self._expr, **kwargs)
+
+    def msttr(self, **kwargs: Any) -> pl.Expr:
+        return msttr(self._expr, **kwargs)
+
+    def yules_k(self, **kwargs: Any) -> pl.Expr:
+        return yules_k(self._expr, **kwargs)
+
+    def mtld(self, **kwargs: Any) -> pl.Expr:
+        return mtld(self._expr, **kwargs)
 
     def chunk_index(self, format: str = "IOB2") -> pl.Expr:
         if format == "IOB2":
@@ -73,8 +83,11 @@ class CorpusDataFrame:
     def with_chunk_index(self, chunk_col: str, **kwargs: Any) -> pl.DataFrame:
         return with_chunk_index(self._df, chunk_col, **kwargs)
 
-    def search(self, query: str) -> Optional[SearchResults]:
-        return search(self._df, query)
+    def search(self, query: str, **kwargs: Any) -> Optional[SearchResults]:
+        return search(self._df, query, **kwargs)
+
+    def search_cqp(self, query: str, **kwargs: Any) -> Optional[SearchResults]:
+        return search_cqp(self._df, query, **kwargs)
 
 
 @pl.api.register_lazyframe_namespace("corpus")

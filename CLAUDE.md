@@ -50,7 +50,8 @@ mypy python/polars_corpus/
 
 **Python Layer (`polars_corpus/`)**:
 - `search.py`: SearchResults class and concordance functionality
-- `matcher.py`: CQP query parsing and pattern compilation
+- `matcher.py`: Search interface with both simple and CQP query support
+- `simple_parser.py`: Simple query language parser (BNCweb-style) that translates to CQP
 - `cqp_parser.py`: CQP grammar and expression compilation using pyparsing
 - `assoc.py`: Statistical association measures (PMI, log-likelihood, minimum sensitivity)
 - `exprs.py`: Polars namespace extensions (`.corpus` for DataFrames/LazyFrames/Expressions)
@@ -73,12 +74,28 @@ mypy python/polars_corpus/
 
 **Polars Integration**: Uses `@pl.api.register_*_namespace` decorators to extend Polars with `.corpus` methods on DataFrames, LazyFrames, and Expressions.
 
-**CQP Query Language**: Implements a subset of CQP syntax for linguistic pattern matching:
-- Token constraints: `[token="word"]`, `[pos="NOUN"]`
-- Regex patterns: `[c5="AJ.*"]` (adjective patterns)
-- Repetition operators: `+`, `*`, `?`, `{n}`, `{m,n}`
-- Disjunction: `|`
-- Grouping with parentheses
+**Query Languages**: The package supports two query syntaxes:
+
+1. **Simple Query Language** (default, BNCweb-style): User-friendly syntax for corpus searches
+   - Case-insensitive by default
+   - Wildcards: `?` (single char), `*` (zero or more), `+` (one or more)
+   - Alternatives: `[car,truck]`
+   - Word sequences: `quick brown fox`
+   - Gap tokens: `fox * over` (optional), `fox + over` (required)
+   - Consecutive gaps: `++` (2 tokens), `***` (0-3 tokens), `+++**` (3-5 tokens)
+   - Regex groups: `(pattern)?`, `(pattern)+`, `(pattern)*`, `(pattern){n}`, `(pattern){m,n}`
+   - POS tags: `word_TAG` (word+POS), `_TAG` (POS only)
+   - Lemmas: `{lemma}` (all forms), `{lemma/POS}` (with simplified POS), `{lemma}_TAG` (with exact POS), `{lemma}_{SIMPLIFIED}` (with simplified POS in braces)
+   - Escaping: `\?` for literal metacharacters
+
+2. **CQP Query Language**: Advanced syntax for linguistic pattern matching
+   - Token constraints: `[token="word"]`, `[pos="NOUN"]`
+   - Regex patterns: `[c5="AJ.*"]` (adjective patterns)
+   - Repetition operators: `+`, `*`, `?`, `{n}`, `{m,n}`
+   - Disjunction: `|`
+   - Grouping with parentheses
+
+**Translation Architecture**: Simple queries are translated to CQP internally, allowing both syntaxes to share the same matching infrastructure and ensuring consistent behavior.
 
 **Rust-Python Bridge**: Uses `pyo3-polars` for zero-copy data exchange between Python Polars DataFrames and Rust processing.
 
@@ -89,6 +106,7 @@ mypy python/polars_corpus/
 Tests are organized by module functionality:
 - `test_assoc.py`: Statistical association measures and crosstab functionality
 - `test_matcher.py`: CQP query parsing and pattern matching
+- `test_simple_query.py`: Simple query language parsing and translation
 - `test_spans.py`: Span operations and concordance generation
 - `test_convert.py`: Data format conversions
 - `test_text_corpus_reader.py`: Corpus reading utilities
@@ -109,7 +127,7 @@ The package expects Polars DataFrames with linguistic annotation columns:
 - `fileid`: Source file identifier
 - Additional annotation columns as needed
 
-Example data loading pattern from notebooks:
+Example usage patterns from notebooks:
 ```python
 import polars as pl
 import polars_corpus as plc
@@ -117,8 +135,50 @@ import polars_corpus as plc
 # Load corpus
 c = pl.read_parquet('bnc.parquet')
 
-# Search with CQP query
-r = plc.search(c, '[c5="AJ.*"]+ [c5="NN.*"]+')  
+# Simple query (default, case-insensitive)
+r = plc.search(c, 'quick brown fox')
+
+# Simple query with wildcards
+r = plc.search(c, '*able')  # Find words ending in "able"
+r = plc.search(c, 's?ng')   # Find sing, sang, song, etc.
+
+# Simple query with alternatives
+r = plc.search(c, '[car,truck]')  # Find either car or truck
+
+# Simple query with gaps
+r = plc.search(c, 'fox + over')  # Find "fox" followed by any word, then "over"
+
+# POS tag searches
+r = plc.search(c, 'lights_NN2')  # Find "lights" tagged as NN2
+r = plc.search(c, '*ly_AJ0')  # Find adjectives ending in "-ly"
+r = plc.search(c, '_PNX')  # Find any reflexive pronoun
+
+# Lemma searches
+r = plc.search(c, '{light}')  # Find all forms of lemma "light"
+r = plc.search(c, '{light/V}')  # Find verbal forms of "light" (simplified POS)
+r = plc.search(c, '{walk}_VBD')  # Find lemma "walk" with exact POS tag VBD
+r = plc.search(c, '{walk}_{VERB}')  # Find lemma "walk" with simplified POS tag VERB
+r = plc.search(c, '{box}_{SUBST}')  # Find lemma "box" as a noun (SUBST = substantive)
+r = plc.search(c, '{eat} * up')  # Find lemma "eat" followed by "up"
+
+# Consecutive gap tokens
+r = plc.search(c, 'fox ++ dog')  # Find "fox" followed by exactly 2 tokens, then "dog"
+r = plc.search(c, 'the *** cat')  # Find "the" followed by 0-3 tokens, then "cat"
+r = plc.search(c, 'big +++** house')  # Find "big" followed by 3-5 tokens, then "house"
+
+# Regex groups with quantifiers
+r = plc.search(c, '(very)? big')  # Find "big" optionally preceded by "very"
+r = plc.search(c, '(very)+ big')  # Find "big" preceded by one or more "very"
+r = plc.search(c, '(red blue)+')  # Find one or more repetitions of "red blue"
+r = plc.search(c, '(quick){2} fox')  # Find exactly 2 "quick" followed by "fox"
+r = plc.search(c, '(brown){1,3}')  # Find 1-3 repetitions of "brown"
+r = plc.search(c, '(fox * over)?')  # Optionally match "fox", any token, "over"
+
+# Search in different column (for backward compatibility)
+r = plc.search(c, 'NN*', column='pos')  # Find noun tags
+
+# CQP query for advanced patterns
+r = plc.search_cqp(c, '[c5="AJ.*"]+ [c5="NN.*"]+')
 
 # Generate concordance
 conc = r.concordance('token', 5)

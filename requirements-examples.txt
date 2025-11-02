@@ -33,7 +33,7 @@ backrefs==5.9
     # via mkdocs-material
 beautifulsoup4==4.14.2
     # via nbconvert
-bleach==6.2.0
+bleach==6.3.0
     # via nbconvert
 certifi==2025.10.5
     # via
@@ -116,7 +116,7 @@ importlib-resources==6.5.2
     # via great-tables
 iniconfig==2.3.0
     # via pytest
-ipykernel==7.0.1
+ipykernel==7.1.0
     # via jupyterlab
 ipython==9.6.0
     # via
@@ -184,13 +184,13 @@ jupyter-server==2.17.0
     #   notebook-shim
 jupyter-server-terminals==0.5.3
     # via jupyter-server
-jupyterlab==4.4.9
+jupyterlab==4.4.10
     # via
     #   -r requirements-dev.in
     #   notebook
 jupyterlab-pygments==0.3.0
     # via nbconvert
-jupyterlab-server==2.27.3
+jupyterlab-server==2.28.0
     # via
     #   jupyterlab
     #   notebook
@@ -198,7 +198,7 @@ jupyterlab-widgets==3.0.15
     # via ipywidgets
 kiwisolver==1.4.9
     # via matplotlib
-lark==1.3.0
+lark==1.3.1
     # via rfc3987-syntax
 lxml==6.0.2
     # via -r requirements-examples.in
@@ -223,7 +223,7 @@ matplotlib==3.10.7
     #   -r requirements-examples.in
     #   adjusttext
     #   seaborn
-matplotlib-inline==0.1.7
+matplotlib-inline==0.2.1
     # via
     #   ipykernel
     #   ipython
@@ -249,7 +249,7 @@ mkdocs-autorefs==1.4.3
     #   mkdocstrings-python
 mkdocs-get-deps==0.2.0
     # via mkdocs
-mkdocs-material==9.6.22
+mkdocs-material==9.6.23
     # via -r requirements-dev.in
 mkdocs-material-extensions==1.3.1
     # via mkdocs-material
@@ -337,15 +337,15 @@ platformdirs==4.5.0
     #   mkdocs-get-deps
 pluggy==1.6.0
     # via pytest
-polars==1.34.0
+polars==1.35.1
     # via -r requirements.in
-polars-runtime-32==1.34.0
+polars-runtime-32==1.35.1
     # via polars
 prometheus-client==0.23.1
     # via jupyter-server
 prompt-toolkit==3.0.52
     # via ipython
-psutil==7.1.1
+psutil==7.1.2
     # via ipykernel
 ptyprocess==0.7.0
     # via
@@ -427,15 +427,15 @@ rfc3987-syntax==1.1.0
     # via jsonschema
 rich==14.2.0
     # via joblib-progress
-rpds-py==0.27.1
+rpds-py==0.28.0
     # via
     #   jsonschema
     #   referencing
-scipy==1.16.2
+scipy==1.16.3
     # via
     #   -r requirements-examples.in
     #   adjusttext
-scipy-stubs==1.16.2.4
+scipy-stubs==1.16.3.0
     # via -r requirements-examples.in
 seaborn==0.13.2
     # via
@@ -520,7 +520,7 @@ watchdog==6.0.0
     # via mkdocs
 wcwidth==0.2.14
     # via prompt-toolkit
-webcolors==24.11.1
+webcolors==25.10.0
     # via jsonschema
 webencodings==0.5.1
     # via

@@ -4,6 +4,7 @@
 
 mod assoc;
 mod io;
+mod lexical;
 mod matcher;
 mod span;
 

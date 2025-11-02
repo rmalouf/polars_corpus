@@ -76,9 +76,7 @@ class TestChunkIdExpression:
 
     def test_in_select(self):
         """Test using chunk_id() in select."""
-        df = pl.DataFrame(
-            {"token": ["The", "quick", "brown"], "bio": ["B", "I", "O"]}
-        )
+        df = pl.DataFrame({"token": ["The", "quick", "brown"], "bio": ["B", "I", "O"]})
 
         result = df.select([pl.col("bio").corpus.chunk_id().alias("chunk_idx")])
         expected_indices = [1, 1, None]
@@ -122,9 +120,7 @@ class TestChunkIdExpression:
 
     def test_with_lazyframe(self):
         """Test chunk_id() with LazyFrame."""
-        df = pl.DataFrame(
-            {"token": ["The", "quick", "brown"], "bio": ["B", "I", "O"]}
-        )
+        df = pl.DataFrame({"token": ["The", "quick", "brown"], "bio": ["B", "I", "O"]})
 
         result = (
             df.lazy()
@@ -174,7 +170,9 @@ class TestNgramsExpression:
 
         # Check structure exists
         assert "bigrams" in result.columns
-        assert result.schema["bigrams"] == pl.Struct([pl.Field("_0", pl.Utf8), pl.Field("_1", pl.Utf8)])
+        assert result.schema["bigrams"] == pl.Struct(
+            [pl.Field("_0", pl.Utf8), pl.Field("_1", pl.Utf8)]
+        )
 
         # Check values
         bigrams = result["bigrams"].to_list()

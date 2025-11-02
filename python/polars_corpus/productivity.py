@@ -2,9 +2,7 @@
 
 import polars as pl
 from polars._typing import IntoExprColumn
-from polars.plugins import register_plugin_function
 
-from ._typing import T_Frame
 
 __all__ = [
     "frequency_spectrum",
