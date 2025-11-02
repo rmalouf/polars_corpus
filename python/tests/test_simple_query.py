@@ -692,7 +692,9 @@ class TestSimplifiedPOSTag:
         # Should match "walked" at index 14 (tagged as VBD, which is a verb)
         assert_matches(sample_corpus, matches, [(14, 15, "walked")])
 
-    def test_wildcard_with_simplified_pos_tag(self, sample_corpus: pl.DataFrame) -> None:
+    def test_wildcard_with_simplified_pos_tag(
+        self, sample_corpus: pl.DataFrame
+    ) -> None:
         """Test *ly_{ADV} pattern"""
         query = "*ly_{ADV}"
         matches = plc.search(sample_corpus, query)
@@ -756,7 +758,9 @@ class TestGroupDisjunction:
         # "red" is at index 20, followed by "car" not "fox", so no match
         assert_matches(sample_corpus, matches, [(1, 4, "quick brown fox")])
 
-    def test_disjunction_with_quantifier_optional(self, sample_corpus: pl.DataFrame) -> None:
+    def test_disjunction_with_quantifier_optional(
+        self, sample_corpus: pl.DataFrame
+    ) -> None:
         """Test disjunction with ? quantifier: (very)? capable"""
         query = "(very)? capable"
         matches = plc.search(sample_corpus, query)
@@ -769,7 +773,9 @@ class TestGroupDisjunction:
             [(11, 13, "very capable"), (40, 41, "capable")],
         )
 
-    def test_disjunction_with_quantifier_plus(self, sample_corpus: pl.DataFrame) -> None:
+    def test_disjunction_with_quantifier_plus(
+        self, sample_corpus: pl.DataFrame
+    ) -> None:
         """Test disjunction with + quantifier"""
         query = "(and)+ (schoolroom | mysteries)"
         matches = plc.search(sample_corpus, query)
