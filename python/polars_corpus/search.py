@@ -129,13 +129,12 @@ class SearchResults:
                 left_window,
                 right_window,
             )
-        
+
     def collocates(
         self,
-        expr: IntoExprColumn = "token",
-        window: Optional[int] = 5,
-        chunk_tag: Optional[str] = None,
-        min_freq: Optional[int] = 5
+        column: str = "token",
+        window: int = 5,
+        min_freq: Optional[int] = 5,
     ) -> pl.DataFrame:
         """Generate a collocate DataFrame.
 
@@ -180,43 +179,28 @@ class SearchResults:
         --------
         >>> results.collocates("token") # search for collocates of "token" with default values for window, chunk_tag, min_freq
         >>> results.collocates("token", window=3, min_freq=10)
-        >>> top_collocs = results.collocates("f12", descending=True).head(20)
+        >>> most_frequent_collocs = results.collocates("f12", descending=True).head(20)
         """
 
-        # generate concordance
-        conc = self.concordance(expr, window=window, chunk_tag=chunk_tag)
-
-        # determine the column name
-        if isinstance(expr, str):
-            column = expr
-        else:
-            # if expr is a list or complex expression, use first column that's not context
-            candidates = [
-                col for col in conc.columns
-                if not col.endswith('_left_context') and not col.endswith('_right_context')
-            ]
-            column = candidates[0] if candidates else None
-
-        # generate collocate table
+        conc = self.concordance(column, window=window)
         colloc = (
             conc.lazy()
             .select(
-                collocate = pl.col(f"{expr}_left_context")
-                .list.concat(f"{expr}_right_context")
+                collocate=pl.col(f"{column}_left_context")
+                .list.concat(f"{column}_right_context")
                 .explode()
             )
             .group_by("collocate")
             .len(name="f12")
-            .join(self._df.lazy().group_by(expr).len(name="f2"), left_on="collocate", right_on=column, how="left")
-            .with_columns(
-                n = self._df.height,
-                f1 = len(self._matched_spans) * window * 2
+            .join(
+                self._df.lazy().group_by(column).len(name="f2"),
+                left_on="collocate",
+                right_on=column,
+                how="left",
             )
-        ).remove(
-            pl.col("f12") < min_freq
-        )
+            .with_columns(n=self._df.height, f1=len(self._matched_spans) * window * 2)
+        ).remove(pl.col("f12") < min_freq)
 
-        # reorganize columns
         return colloc.select("collocate", "f12", "f1", "f2", "n").collect()
 
     def view(
@@ -246,10 +230,6 @@ class SearchResults:
             "B" (begin) and "I" (inside) tags, ignoring the window parameter.
         page_size : int, default 25
             Number of concordance lines to display per page.
-
-        Notes
-        -----
-        Requires ipywidgets to be installed.
 
         Examples
         --------
