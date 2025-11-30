@@ -2,7 +2,7 @@
 #    uv pip compile requirements.in requirements-examples.in requirements-dev.in
 adjusttext==1.3.0
     # via -r requirements-examples.in
-anyio==4.11.0
+anyio==4.12.0
     # via
     #   httpx
     #   jupyter-server
@@ -14,7 +14,7 @@ argon2-cffi-bindings==25.1.0
     # via argon2-cffi
 arrow==1.4.0
     # via isoduration
-asttokens==3.0.0
+asttokens==3.0.1
     # via stack-data
 async-lru==2.0.5
     # via jupyterlab
@@ -35,7 +35,7 @@ beautifulsoup4==4.14.2
     # via nbconvert
 bleach==6.3.0
     # via nbconvert
-certifi==2025.10.5
+certifi==2025.11.12
     # via
     #   httpcore
     #   httpx
@@ -45,7 +45,7 @@ cffi==2.0.0
     # via argon2-cffi-bindings
 charset-normalizer==3.4.4
     # via requests
-click==8.3.0
+click==8.3.1
     # via
     #   mkdocs
     #   nltk
@@ -81,7 +81,7 @@ fastexcel==0.14.0
     # via -r requirements-examples.in
 fastjsonschema==2.21.2
     # via nbformat
-fonttools==4.60.1
+fonttools==4.61.0
     # via matplotlib
 fqdn==1.5.1
     # via jsonschema
@@ -89,7 +89,7 @@ ghp-import==2.1.0
     # via mkdocs
 great-tables==0.18.0
     # via -r requirements-examples.in
-griffe==1.14.0
+griffe==1.15.0
     # via mkdocstrings-python
 h11==0.16.0
     # via
@@ -118,13 +118,13 @@ iniconfig==2.3.0
     # via pytest
 ipykernel==7.1.0
     # via jupyterlab
-ipython==9.6.0
+ipython==9.7.0
     # via
     #   ipykernel
     #   ipywidgets
 ipython-pygments-lexers==1.1.1
     # via ipython
-ipywidgets==8.1.7
+ipywidgets==8.1.8
     # via -r requirements.in
 isoduration==20.11.0
     # via jsonschema
@@ -194,7 +194,7 @@ jupyterlab-server==2.28.0
     # via
     #   jupyterlab
     #   notebook
-jupyterlab-widgets==3.0.15
+jupyterlab-widgets==3.0.16
     # via ipywidgets
 kiwisolver==1.4.9
     # via matplotlib
@@ -202,7 +202,7 @@ lark==1.3.1
     # via rfc3987-syntax
 lxml==6.0.2
     # via -r requirements-examples.in
-markdown==3.9
+markdown==3.10
     # via
     #   mkdocs
     #   mkdocs-autorefs
@@ -282,7 +282,7 @@ notebook-shim==0.2.4
     # via
     #   jupyterlab
     #   notebook
-numpy==2.3.4
+numpy==2.3.5
     # via
     #   adjusttext
     #   contourpy
@@ -337,15 +337,15 @@ platformdirs==4.5.0
     #   mkdocs-get-deps
 pluggy==1.6.0
     # via pytest
-polars==1.35.1
+polars==1.35.2
     # via -r requirements.in
-polars-runtime-32==1.35.1
+polars-runtime-32==1.35.2
     # via polars
 prometheus-client==0.23.1
     # via jupyter-server
 prompt-toolkit==3.0.52
     # via ipython
-psutil==7.1.2
+psutil==7.1.3
     # via ipykernel
 ptyprocess==0.7.0
     # via
@@ -367,7 +367,7 @@ pygments==2.19.2
     #   nbconvert
     #   pytest
     #   rich
-pymdown-extensions==10.16.1
+pymdown-extensions==10.17.2
     # via
     #   mkdocs-material
     #   mkdocstrings
@@ -409,7 +409,7 @@ referencing==0.37.0
     #   jsonschema
     #   jsonschema-specifications
     #   jupyter-events
-regex==2025.10.23
+regex==2025.11.3
     # via nltk
 requests==2.32.5
     # via
@@ -427,7 +427,7 @@ rfc3987-syntax==1.1.0
     # via jsonschema
 rich==14.2.0
     # via joblib-progress
-rpds-py==0.28.0
+rpds-py==0.29.0
     # via
     #   jsonschema
     #   referencing
@@ -435,7 +435,7 @@ scipy==1.16.3
     # via
     #   -r requirements-examples.in
     #   adjusttext
-scipy-stubs==1.16.3.0
+scipy-stubs==1.16.3.1
     # via -r requirements-examples.in
 seaborn==0.13.2
     # via
@@ -452,9 +452,7 @@ six==1.17.0
     #   python-dateutil
     #   rfc3339-validator
 sniffio==1.3.1
-    # via
-    #   anyio
-    #   trio
+    # via trio
 sortedcontainers==2.4.0
     # via trio
 soupsieve==2.8
@@ -530,9 +528,9 @@ websocket-client==1.8.0
     # via
     #   jupyter-server
     #   selenium
-widgetsnbextension==4.0.14
+widgetsnbextension==4.0.15
     # via ipywidgets
-wsproto==1.2.0
+wsproto==1.3.2
     # via trio-websocket
 zipp==3.23.0
     # via importlib-metadata
