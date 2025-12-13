@@ -4,7 +4,7 @@ from typing import Any, Optional
 
 import polars as pl
 
-from .assoc import crosstab
+from .assoc import crosstab, loglik, pmi, minsens
 from .chunk import chunk_id, with_chunk_index
 from .matcher import search, search_cqp
 from .search import SearchResults
@@ -71,14 +71,41 @@ class CorpusExpr:
         """
         return chunk_id(self._expr)
 
+    def loglik(self) -> pl.Expr:
+        """Compute log-likelihood ratio from a freqs struct column."""
+        return loglik(
+            self._expr.struct.field("f12"),
+            self._expr.struct.field("f1"),
+            self._expr.struct.field("f2"),
+            self._expr.struct.field("n"),
+        )
+
+    def pmi(self) -> pl.Expr:
+        """Compute pointwise mutual information from a freqs struct column."""
+        return pmi(
+            self._expr.struct.field("f12"),
+            self._expr.struct.field("f1"),
+            self._expr.struct.field("f2"),
+            self._expr.struct.field("n"),
+        )
+
+    def minsens(self) -> pl.Expr:
+        """Compute minimum sensitivity from a freqs struct column."""
+        return minsens(
+            self._expr.struct.field("f12"),
+            self._expr.struct.field("f1"),
+            self._expr.struct.field("f2"),
+            self._expr.struct.field("n"),
+        )
+
 
 @pl.api.register_dataframe_namespace("corpus")
 class CorpusDataFrame:
     def __init__(self, df: pl.DataFrame) -> None:
         self._df = df
 
-    def crosstab(self, x: str, y: str) -> pl.DataFrame:
-        return crosstab(self._df, x, y)
+    def crosstab(self, x: str, y: str, freqs_name: str = "freqs") -> pl.DataFrame:
+        return crosstab(self._df, x, y, freqs_name)
 
     def with_chunk_index(self, chunk_col: str, **kwargs: Any) -> pl.DataFrame:
         return with_chunk_index(self._df, chunk_col, **kwargs)
@@ -95,8 +122,8 @@ class CorpusLazyFrame:
     def __init__(self, lf: pl.LazyFrame) -> None:
         self._lf = lf
 
-    def crosstab(self, x: str, y: str) -> pl.LazyFrame:
-        return crosstab(self._lf, x, y)
+    def crosstab(self, x: str, y: str, freqs_name: str = "freqs") -> pl.LazyFrame:
+        return crosstab(self._lf, x, y, freqs_name)
 
     def with_chunk_index(self, chunk_col: str, **kwargs: Any) -> pl.LazyFrame:
         return with_chunk_index(self._lf, chunk_col, **kwargs)

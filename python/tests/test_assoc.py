@@ -12,10 +12,16 @@ def test_crosstab_basic() -> None:
 
     assert "x" in result.columns
     assert "y" in result.columns
-    assert "f12" in result.columns
-    assert "f1" in result.columns
-    assert "f2" in result.columns
-    assert "n" in result.columns
+    assert "freqs" in result.columns
+
+    # Verify struct fields
+    freqs_dtype = result.schema["freqs"]
+    assert isinstance(freqs_dtype, pl.Struct)
+    field_names = [f.name for f in freqs_dtype.fields]
+    assert "f12" in field_names
+    assert "f1" in field_names
+    assert "f2" in field_names
+    assert "n" in field_names
 
 
 def test_crosstab_missing_columns() -> None:
@@ -44,18 +50,21 @@ def test_crosstab_correct_counts() -> None:
     )
     result = crosstab(df, "x", "y")
 
+    # Access f12 from the freqs struct
+    f12 = pl.col("freqs").struct.field("f12")
+
     row_a = result.filter(pl.col("x") == "A")
     row_b = result.filter(pl.col("x") == "B")
     row_c = result.filter(pl.col("x") == "C")
 
-    assert row_a.filter(pl.col("y") == 1)["f12"].to_list() == [1]
-    assert row_a.filter(pl.col("y") == 2)["f12"].to_list() == [1]
+    assert row_a.filter(pl.col("y") == 1).select(f12).to_series().to_list() == [1]
+    assert row_a.filter(pl.col("y") == 2).select(f12).to_series().to_list() == [1]
 
-    assert row_b.filter(pl.col("y") == 1)["f12"].to_list() == [1]
-    assert row_b.filter(pl.col("y") == 2)["f12"].to_list() == [1]
+    assert row_b.filter(pl.col("y") == 1).select(f12).to_series().to_list() == [1]
+    assert row_b.filter(pl.col("y") == 2).select(f12).to_series().to_list() == [1]
 
-    assert row_c.filter(pl.col("y") == 1)["f12"].to_list() == [2]
-    assert row_c.filter(pl.col("y") == 2)["f12"].to_list() == [1]
+    assert row_c.filter(pl.col("y") == 1).select(f12).to_series().to_list() == [2]
+    assert row_c.filter(pl.col("y") == 2).select(f12).to_series().to_list() == [1]
 
     assert_frame_equal(
         result, crosstab(df.lazy(), "x", "y").collect(), check_row_order=False
@@ -125,8 +134,9 @@ def test_compute_loglik() -> None:
 
         # Manual verification for known case (f12=20)
         # o11=20, o12=10, o21=5, o22=15; e11=15, e12=15, e21=10, e22=10
+        # o12 < e12 (10 < 15), so loglik is negative (negative association)
         known_ll = result.filter(pl.col("f12") == 20)["LL"].item()
-        expected = 2 * (
+        expected = -2 * (
             20 * math.log(20 / 15)
             + 10 * math.log(10 / 15)
             + 5 * math.log(5 / 10)
@@ -134,5 +144,33 @@ def test_compute_loglik() -> None:
         )
         assert abs(known_ll - expected) < 1e-10
 
-        # All values should be finite and non-negative
-        assert all(math.isfinite(v) and v >= 0 for v in ll_values)
+        # All values should be finite (can be positive or negative)
+        assert all(math.isfinite(v) for v in ll_values)
+
+
+# Tests for struct-based expression namespace API
+
+
+def test_struct_assoc_measures() -> None:
+    """Test association measures via pl.col('freqs').corpus.* on crosstab output."""
+    df = pl.DataFrame(
+        {"x": ["A", "A", "B", "B", "C", "C", "C"], "y": [1, 2, 1, 2, 1, 1, 2]}
+    )
+    ct = crosstab(df, "x", "y")
+    result = ct.with_columns(
+        pl.col("freqs").corpus.loglik().alias("ll"),
+        pl.col("freqs").corpus.pmi().alias("pmi"),
+        pl.col("freqs").corpus.minsens().alias("minsens"),
+    )
+
+    # Verify row C, y=1: f12=2, f1=3, f2=4, n=7
+    row = result.filter((pl.col("x") == "C") & (pl.col("y") == 1))
+    f12, f1, f2, n = 2, 3, 4, 7
+
+    # PMI = log(f12 * n / (f1 * f2))
+    expected_pmi = math.log(f12 * n / (f1 * f2))
+    assert row["pmi"].item() == pytest.approx(expected_pmi)
+
+    # minsens = min(f12/f1, f12/f2)
+    expected_minsens = min(f12 / f1, f12 / f2)
+    assert row["minsens"].item() == pytest.approx(expected_minsens)

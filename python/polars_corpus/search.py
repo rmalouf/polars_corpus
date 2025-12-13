@@ -135,6 +135,7 @@ class SearchResults:
         column: str = "token",
         window: int = 5,
         min_freq: Optional[int] = 5,
+        freqs_name: str = "freqs",
     ) -> pl.DataFrame:
         """Generate a collocate DataFrame.
 
@@ -144,31 +145,27 @@ class SearchResults:
 
         Parameters
         ----------
-        expr : IntoExprColumn
-            Column name or Polars expression specifying which column(s)
-            to use for generating the concordance display.
+        column : str, default "token"
+            Column name specifying which column to use for collocate analysis.
         window : int, default 5
             Number of tokens to include on both left and right sides of
-            each match. If None, returns matches with no context (equivalent
-            to window=0). When chunk_tag is specified, this parameter is ignored.
-        chunk_tag : str, optional
-            Column name defining chunk boundaries for context extraction.
-            When specified, context extends to chunk boundaries marked by
-            "B" (begin) and "I" (inside) tags, ignoring the window parameter.
-            Context stops at the first non-"I" tag in each direction.
+            each match.
         min_freq : int, default 5
             Minimum frequency of each node-collocate pair within the window span.
             Node-collocate pairs with lower frequencies are not displayed in DataFrame.
+        freqs_name : str, default "freqs"
+            Name for the output frequencies struct column.
 
         Returns
         -------
         pl.DataFrame
             Collocate DataFrame with columns:
             - collocate: The collocating token
-            - f12: Observed node-collocate frequency
-            - f1: Total frequency of node in window (corpus freq of node * window size * 2)
-            - f2: Total frequency of collocate in corpus
-            - n: Total words in corpus
+            - freqs: Struct with fields {f12, f1, f2, n} where:
+                - f12: observed node-collocate frequency
+                - f1: total frequency of node in window (corpus freq of node * window size * 2)
+                - f2: total frequency of collocate in corpus
+                - n: total words in corpus
 
         Notes
         -----
@@ -177,9 +174,9 @@ class SearchResults:
 
         Examples
         --------
-        >>> results.collocates("token") # search for collocates of "token" with default values for window, chunk_tag, min_freq
+        >>> results.collocates("token")
         >>> results.collocates("token", window=3, min_freq=10)
-        >>> most_frequent_collocs = results.collocates("f12", descending=True).head(20)
+        >>> collocs.with_columns(ll=pl.col("freqs").corpus.loglik())
         """
 
         conc = self.concordance(column, window=window)
@@ -201,7 +198,13 @@ class SearchResults:
             .with_columns(n=self._df.height, f1=len(self._matched_spans) * window * 2)
         ).remove(pl.col("f12") < min_freq)
 
-        return colloc.select("collocate", "f12", "f1", "f2", "n").collect()
+        return (
+            colloc.with_columns(
+                pl.struct("f12", "f1", "f2", "n").alias(freqs_name),
+            )
+            .drop("f12", "f1", "f2", "n")
+            .collect()
+        )
 
     def view(
         self,
@@ -469,7 +472,10 @@ def concordance(
 
 
 def collocates(
-    search_results: SearchResults, column: str, window_size: int = 5
+    search_results: SearchResults,
+    column: str,
+    window_size: int = 5,
+    freqs_name: str = "freqs",
 ) -> pl.DataFrame:
     """Extract collocate frequency information from search results.
 
@@ -486,16 +492,19 @@ def collocates(
     window_size : int, default 5
         Size of the context window on each side of the match
         (total window = 2 * window_size).
+    freqs_name : str, default "freqs"
+        Name for the output frequencies struct column.
 
     Returns
     -------
     pl.DataFrame
         DataFrame with columns:
         - collocate: The collocating token
-        - f12: Frequency of collocate within the search context windows
-        - f1: Total frequency of collocate in the corpus
-        - f2: Number of search matches (constant for all rows)
-        - n: Total number of context positions analyzed
+        - freqs: Struct with fields {f12, f1, f2, n} where:
+            - f12: frequency of collocate within the search context windows
+            - f1: total frequency of collocate in the corpus
+            - f2: number of search matches (constant for all rows)
+            - n: total number of context positions analyzed
 
     Notes
     -----
@@ -506,7 +515,7 @@ def collocates(
     --------
     >>> collocs = collocates(results, "token", window_size=3)
     >>> # Find top collocates by raw frequency
-    >>> top_collocs = collocs.sort("f12", descending=True).head(20)
+    >>> top_collocs = collocs.sort(pl.col("freqs").struct.field("f12"), descending=True).head(20)
     """
     f1 = search_results._df.lazy().group_by(column).len(name="f1")
     conc = concordance(search_results, column, window_size)
@@ -523,5 +532,9 @@ def collocates(
         .with_columns(
             f2=pl.lit(conc.height), n=search_results._df.height * window_size * 2
         )
+        .with_columns(
+            pl.struct("f12", "f1", "f2", "n").alias(freqs_name),
+        )
+        .drop("f12", "f1", "f2", "n")
     )
     return tbl.collect()

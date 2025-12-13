@@ -31,7 +31,7 @@ fn loglik_row(f12: f64, f1: f64, f2: f64, n: f64) -> Option<f64> {
     if !f12.is_finite() || !f1.is_finite() || !f2.is_finite() || !n.is_finite() {
         return None;
     }
-    if f12 < 0.0 || f1 < 0.0 || f2 < 0.0 || n < 0.0 {
+    if f12 < 0.0 || f1 <= 0.0 || f2 <= 0.0 || n <= 0.0 {
         return None;
     }
 
@@ -50,7 +50,11 @@ fn loglik_row(f12: f64, f1: f64, f2: f64, n: f64) -> Option<f64> {
     }
 
     let ll = term(o11, e11) + term(o12, e12) + term(o21, e21) + term(o22, e22);
-    Some(ll * 2.0)
+    if o12 < e12 {
+        Some(-ll * 2.0)
+    } else {
+        Some(ll * 2.0)
+    }
 }
 
 fn get_f64_chunked_array(series: &Series) -> PolarsResult<Float64Chunked> {

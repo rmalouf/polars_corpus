@@ -19,7 +19,9 @@ __all__ = [
 LIB = Path(__file__).parent
 
 
-def crosstab(df: T_Frame, x: str, y: str) -> T_Frame:
+def crosstab(
+    df: T_Frame, x: str, y: str, freqs_name: str = "freqs"
+) -> T_Frame:
     """
     Create a crosstabulation (contingency table) from two categorical variables.
 
@@ -35,6 +37,8 @@ def crosstab(df: T_Frame, x: str, y: str) -> T_Frame:
         Column name of the first categorical variable (row variable).
     y : str
         Column name of the second categorical variable (column variable).
+    freqs_name : str, default "freqs"
+        Name for the output frequencies struct column.
 
     Returns
     -------
@@ -43,31 +47,33 @@ def crosstab(df: T_Frame, x: str, y: str) -> T_Frame:
 
         - x : Levels/categories of the first variable
         - y : Levels/categories of the second variable
-        - f12 : Joint frequencies (count of observations for each x,y pair)
-        - f1 : Row marginal sums (total frequency of each x level)
-        - f2 : Column marginal sums (total frequency of each y level)
-        - n : Grand total (total number of observations)
+        - freqs : Struct with fields {f12, f1, f2, n} where:
+            - f12: joint frequency (count of x,y pairs)
+            - f1: row marginal (total count for this x value)
+            - f2: column marginal (total count for this y value)
+            - n: grand total
 
     Raises
     ------
     ColumnNotFoundError
         If either column `x` or `y` does not exist in the DataFrame.
     """
-    t = (
+    f12 = pl.len().cast(pl.UInt64)
+    return (
         df.select(x, y)
         .drop_nulls([x, y])
         .group_by(x, y)
-        .agg(pl.len().cast(pl.UInt64).alias("f12"))
+        .agg(f12.alias("f12"))
         .with_columns(
-            [
+            pl.struct(
+                pl.col("f12"),
                 pl.col("f12").sum().over(x).alias("f1"),
                 pl.col("f12").sum().over(y).alias("f2"),
                 pl.col("f12").sum().alias("n"),
-            ]
+            ).alias(freqs_name)
         )
+        .drop("f12")
     )
-
-    return t
 
 
 def _validated_crosstab(df: T_Frame) -> T_Frame:
