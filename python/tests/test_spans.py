@@ -1,6 +1,6 @@
 import polars as pl
 import pytest
-from polars_corpus import Span, SearchResults, with_chunk_index
+from polars_corpus import SearchResults, Span, with_chunk_index
 
 
 class TestWithChunkIndex:

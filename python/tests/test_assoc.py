@@ -1,9 +1,10 @@
+import math
+
 import polars as pl
 import pytest
-from polars_corpus import crosstab, welchs_t, loglik
-from polars.exceptions import ColumnNotFoundError, ComputeError
+from polars.exceptions import ColumnNotFoundError
 from polars.testing import assert_frame_equal
-import math
+from polars_corpus import crosstab, loglik, welchs_t
 
 
 def test_crosstab_basic() -> None:
@@ -95,7 +96,7 @@ def test_t_test_errors() -> None:
     assert e2[("df")].item() is None
 
     with pytest.raises(ValueError):
-        e3 = df1.select(welchs_t("x", "y", alt="xyz")).unnest("t_test")
+        _ = df1.select(welchs_t("x", "y", alt="xyz")).unnest("t_test")
 
 
 def test_compute_loglik() -> None:

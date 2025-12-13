@@ -1,9 +1,8 @@
 from typing import Any, Optional
 
 import polars as pl
-import pytest
-
 import polars_corpus as plc
+import pytest
 
 
 def get_matched_tokens(
