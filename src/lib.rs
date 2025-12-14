@@ -23,6 +23,7 @@ fn _internal(py: Python, m: &Bound<PyModule>) -> PyResult<()> {
     )?;
     m.add_class::<matcher::Opcode>()?;
     m.add_class::<matcher::OpcodeMatcher>()?;
+    m.add_class::<matcher::Match>()?;
     m.add_class::<span::Span>()?;
     m.add_function(wrap_pyfunction!(span::spans_to_chunks, m)?)?;
     m.add_function(wrap_pyfunction!(span::py_concordance, m)?)?;

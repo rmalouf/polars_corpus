@@ -1,6 +1,6 @@
 import polars as pl
 import pytest
-from polars_corpus import SearchResults, Span, with_chunk_index
+from polars_corpus import Match, SearchResults, Span, with_chunk_index
 
 
 class TestWithChunkIndex:
@@ -231,7 +231,7 @@ class TestWithSpans:
             }
         )
 
-        concordance = SearchResults(df, "", [Span(1, 3)])  # "quick brown"
+        concordance = SearchResults(df, "", [Match(Span(1, 3), {})])  # "quick brown"
         result = concordance.with_spans_as_chunks()
         expected_spans = ["O", "B", "I", "O", "O"]
 
@@ -247,7 +247,7 @@ class TestWithSpans:
         )
 
         concordance = SearchResults(
-            df, "", [Span(1, 3), Span(4, 6)]
+            df, "", [Match(Span(1, 3), {}), Match(Span(4, 6), {})]
         )  # "quick brown" and "jumps high"
         result = concordance.with_spans_as_chunks()
         expected_spans = ["O", "B", "I", "O", "B", "I"]
@@ -263,7 +263,7 @@ class TestWithSpans:
             }
         )
 
-        concordance = SearchResults(df, "", [Span(0, 1), Span(3, 4)])  # "The" and "fox"
+        concordance = SearchResults(df, "", [Match(Span(0, 1), {}), Match(Span(3, 4), {})])  # "The" and "fox"
         result = concordance.with_spans_as_chunks()
         expected_spans = ["B", "O", "O", "B"]
 
@@ -279,7 +279,7 @@ class TestWithSpans:
         )
 
         concordance = SearchResults(
-            df, "", [Span(0, 2), Span(2, 4)]
+            df, "", [Match(Span(0, 2), {}), Match(Span(2, 4), {})]
         )  # "New York" and "City Mayor"
         result = concordance.with_spans_as_chunks()
         expected_spans = ["B", "I", "B", "I"]
@@ -304,7 +304,7 @@ class TestWithSpans:
             {"token": ["All", "tokens", "covered"], "pos": ["DET", "NOUN", "VERB"]}
         )
 
-        concordance = SearchResults(df, "", [Span(0, 3)])
+        concordance = SearchResults(df, "", [Match(Span(0, 3), {})])
         result = concordance.with_spans_as_chunks()
         expected_spans = ["B", "I", "I"]
 
@@ -314,7 +314,7 @@ class TestWithSpans:
         """Test using custom column name for spans."""
         df = pl.DataFrame({"token": ["The", "quick"], "pos": ["DET", "ADJ"]})
 
-        concordance = SearchResults(df, "", [Span(0, 2)])
+        concordance = SearchResults(df, "", [Match(Span(0, 2), {})])
         result = concordance.with_spans_as_chunks(name="my_spans")
 
         assert "my_spans" in result.columns
@@ -324,7 +324,7 @@ class TestWithSpans:
         """Test spans that extend beyond dataframe boundaries."""
         df = pl.DataFrame({"token": ["The", "quick"], "pos": ["DET", "ADJ"]})
 
-        concordance = SearchResults(df, "", [Span(0, 5)])  # Extends beyond dataframe
+        concordance = SearchResults(df, "", [Match(Span(0, 5), {})])  # Extends beyond dataframe
 
         with pytest.raises(ValueError):
             concordance.with_spans_as_chunks()
@@ -334,7 +334,7 @@ class TestWithSpans:
         df = pl.DataFrame({"token": ["The", "quick"], "pos": ["DET", "ADJ"]})
 
         with pytest.raises(OverflowError):
-            SearchResults(df, "", [Span(-1, 1)])  # Negative start
+            SearchResults(df, "", [Match(Span(-1, 1), {})])  # Negative start
 
     def test_empty_dataframe(self):
         """Test with empty dataframe."""

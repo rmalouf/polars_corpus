@@ -12,8 +12,8 @@ def get_matched_tokens(
     if search_results is None:
         return []
     tokens = []
-    for span in search_results._matched_spans:
-        matched_tokens = corpus["token"][span.start : span.end]  # type: ignore[attr-defined]
+    for match in search_results._matches:
+        matched_tokens = corpus["token"][match.span.start : match.span.end]  # type: ignore[attr-defined]
         tokens.append(" ".join(matched_tokens))
     return tokens
 
@@ -25,9 +25,9 @@ def get_matched_spans(
     if search_results is None:
         return []
     spans = []
-    for span in search_results._matched_spans:
-        matched_tokens = corpus["token"][span.start : span.end]  # type: ignore[attr-defined]
-        spans.append((span.start, span.end, " ".join(matched_tokens)))  # type: ignore[attr-defined]
+    for match in search_results._matches:
+        matched_tokens = corpus["token"][match.span.start : match.span.end]  # type: ignore[attr-defined]
+        spans.append((match.span.start, match.span.end, " ".join(matched_tokens)))  # type: ignore[attr-defined]
     return spans
 
 
@@ -51,9 +51,9 @@ def assert_matches(
         actual: list[tuple[int, int, str]] = []
     else:
         actual = []
-        for span in search_results._matched_spans:
-            tokens = corpus["token"][span.start : span.end]  # type: ignore[attr-defined]
-            actual.append((span.start, span.end, " ".join(tokens)))  # type: ignore[attr-defined]
+        for match in search_results._matches:
+            tokens = corpus["token"][match.span.start : match.span.end]  # type: ignore[attr-defined]
+            actual.append((match.span.start, match.span.end, " ".join(tokens)))  # type: ignore[attr-defined]
 
     # Normalize expected spans to include text
     expected: list[tuple[int, int, str]] = []

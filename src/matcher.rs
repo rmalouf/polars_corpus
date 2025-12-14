@@ -1,5 +1,7 @@
 #![allow(clippy::upper_case_acronyms)]
 
+use std::collections::HashMap;
+
 use polars::prelude::*;
 use pyo3::exceptions::PyRuntimeError;
 use pyo3::prelude::*;
@@ -8,22 +10,42 @@ use pyo3_polars::PySeries;
 
 use crate::span::Span;
 
-#[pyclass]
 enum Operation {
     Advance(),
     Jump(isize),
     Split(isize, isize),
     Match(),
+    PushVar(String),
+    BindVar(String),
 }
 
 #[pyclass(module = "polars_corpus")]
-#[derive(Copy, Clone)]
+#[derive(Clone)]
 pub enum Opcode {
     TOKEN,
     JUMP,
     SPLIT,
     SKIP,
     MATCH,
+    PUSHVAR,
+    BINDVAR,
+}
+
+#[pyclass(module = "polars_corpus")]
+#[derive(Clone)]
+pub struct Match {
+    #[pyo3(get)]
+    pub span: Span,
+    #[pyo3(get)]
+    pub bindings: HashMap<String, Span>,
+}
+
+#[pymethods]
+impl Match {
+    #[new]
+    fn new(span: Span, bindings: HashMap<String, Span>) -> Self {
+        Match { span, bindings }
+    }
 }
 
 fn compile_operations(opcodes: &Bound<PyList>) -> PyResult<Vec<Operation>> {
@@ -54,6 +76,8 @@ fn compile_operations(opcodes: &Bound<PyList>) -> PyResult<Vec<Operation>> {
                     }
                     Operation::Split(offset1, offset2)
                 },
+                Opcode::PUSHVAR => Operation::PushVar(tuple.get_item(1)?.extract()?),
+                Opcode::BINDVAR => Operation::BindVar(tuple.get_item(1)?.extract()?),
             }
         };
         operations.push(operation);
@@ -87,72 +111,86 @@ impl OpcodeMatcher {
         })
     }
 
-    fn matchall(&self) -> PyResult<Option<Vec<Span>>> {
+    fn matchall(&self) -> PyResult<Option<Vec<Match>>> {
         let mut cursor: usize = 0;
         let starts = &self.mask_vec[0];
-        let mut spans: Vec<Span> = Vec::with_capacity(1000);
+        let mut matches = Vec::with_capacity(1000);
         while cursor < starts.len() {
-            if unsafe { starts.value_unchecked(cursor) }
-                && let Some(match_end) = self._match_opcodes(cursor)?
+            if starts.get(cursor).unwrap()
+                && let Some(m) = self._match_opcodes(cursor)?
             {
-                spans.push(Span::new(cursor, match_end));
-                cursor = match_end;
+                matches.push(m.clone());
+                cursor = m.span.end;
             } else {
                 cursor += 1;
             };
         }
 
-        if spans.is_empty() {
+        if matches.is_empty() {
             Ok(None)
         } else {
-            Ok(Some(spans))
+            Ok(Some(matches))
         }
     }
 
-    fn _match_opcodes(&self, cursor: usize) -> PyResult<Option<usize>> {
+    fn _match_opcodes(&self, cursor: usize) -> PyResult<Option<Match>> {
+        let match_start = cursor;
         let mut match_end = cursor;
         let mut stack = Vec::with_capacity(64);
+        let mut bindings = HashMap::new();
         let n = self.mask_vec[0].len();
         let last_pc = self.operations.len() - 1;
-        stack.push((cursor, 0));
+        stack.push((cursor, 0, HashMap::new()));
         while let Some(task) = stack.pop() {
-            let (mut sp, mut pc) = task;
+            let (mut cursor, mut pc, mut starts) = task;
             loop {
                 if pc >= last_pc {
                     // Success!
-                    if sp > match_end {
-                        match_end = sp;
+                    if cursor > match_end {
+                        match_end = cursor;
                     };
                     break;
                 };
-                // if sp >= n || unsafe { !self.mask_vec[pc].value_unchecked(sp) } {
-                if sp >= n || !self.mask_vec[pc].get(sp).unwrap() {
+                if cursor >= n || !self.mask_vec[pc].get(cursor).unwrap() {
                     // Failure!
                     break;
                 };
-                match self.operations[pc] {
+                match &self.operations[pc] {
                     Operation::Advance() => {
-                        sp += 1;
+                        cursor += 1;
                         pc += 1;
                     },
                     Operation::Split(offset1, offset2) => {
                         let pc2 = (pc as isize + offset2) as usize;
-                        stack.push((sp, pc2));
+                        stack.push((cursor, pc2, starts.clone()));
                         pc = (pc as isize + offset1) as usize;
                     },
                     Operation::Jump(offset) => {
                         pc = (pc as isize + offset) as usize;
                     },
+                    Operation::PushVar(var_name) => {
+                        starts.insert(var_name, cursor);
+                        pc += 1;
+                    },
+                    Operation::BindVar(var_name) => {
+                        // this goes with last binding -- do we want first binding instead?
+                        let start = starts.remove(var_name).unwrap();
+                        bindings.insert(var_name.clone(), Span::new(start, cursor));
+                        pc += 1;
+                    },
                     Operation::Match() => {
-                        // we should never get here!!!
+                        // if last_pc is right, then we should never get here
                         // match_end = cmp::max(match_end, sp);
-                        break;
+                        unreachable!();
                     },
                 }
             }
         }
         if match_end > cursor {
-            Ok(Some(match_end))
+            Ok(Some(Match {
+                span: Span::new(match_start, match_end),
+                bindings,
+            }))
         } else {
             Ok(None)
         }

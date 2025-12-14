@@ -4,12 +4,12 @@ from typing import Any, Optional
 
 import polars as pl
 
-from ._internal import Opcode, OpcodeMatcher, Span
+from ._internal import Match, Opcode, OpcodeMatcher, Span
 from .cqp_parser import cqp
 from .search import SearchResults
 from .simple_parser import simple_to_cqp
 
-__all__ = ["search", "search_cqp", "Span"]
+__all__ = ["search", "search_cqp", "Match", "Span"]
 
 
 def col_name(i: int) -> str:
@@ -30,7 +30,7 @@ def propagate_masks(df: pl.DataFrame, opcodes: list[Any], pc: int) -> pl.DataFra
         match opcodes[pc]:
             case (Opcode.TOKEN, expr):
                 df = df.with_columns(expr.fill_null(False).alias(col_name(pc)))
-            case (Opcode.MATCH,) | (Opcode.SKIP,):
+            case (Opcode.MATCH,) | (Opcode.SKIP,) | (Opcode.PUSHVAR, _) | (Opcode.BINDVAR, _):
                 df = df.with_columns(pl.lit(True).alias(col_name(pc)))
             case (Opcode.JUMP, offset):
                 if col_name(pc + offset) not in df.columns:
@@ -51,7 +51,7 @@ def propagate_masks(df: pl.DataFrame, opcodes: list[Any], pc: int) -> pl.DataFra
     return df
 
 
-def get_matches(df: pl.DataFrame, query: str) -> Optional[list[Span]]:
+def get_matches(df: pl.DataFrame, query: str) -> Optional[list[Match]]:
     """Parse query and retrieve matching spans"""
     if df.is_empty():
         return None
