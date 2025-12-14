@@ -9,6 +9,11 @@ def match_spans(matches):
     return [m.span for m in matches]
 
 
+def match_bindings(matches, var_name):
+    """Extract spans for a specific variable from matches."""
+    return [m.bindings.get(var_name) for m in matches if var_name in m.bindings]
+
+
 @pytest.fixture
 def sample_corpus():
     """Sample corpus with typical linguistic annotations"""
@@ -517,6 +522,154 @@ class TestSpanUtilities:
         spans = [Span(1, 3), Span(5, 7), Span(10, 12)]
         assert Span(1, 3) in spans
         assert Span(1, 4) not in spans
+
+
+class TestVariableBindings:
+    """Test CQP variable binding functionality ($var: pattern syntax)"""
+
+    @pytest.mark.parametrize(
+        "query,var,expected_span,description",
+        [
+            ('$n: [pos="NN"]', "n", Span(3, 4), "single token"),
+            (
+                '$det: [pos="DT"] $adj: [pos="JJ"] $noun: [pos="NN"]',
+                "det",
+                Span(6, 7),
+                "multiple vars - first",
+            ),
+            (
+                '[pos="DT"] $adj: [pos="JJ"] [pos="NN"]',
+                "adj",
+                Span(7, 8),
+                "mixed bound/unbound",
+            ),
+        ],
+    )
+    def test_basic_bindings(self, sample_corpus, query, var, expected_span, description):
+        """Test basic variable binding patterns"""
+        matches = get_matches(sample_corpus, query)
+        assert matches is not None, f"No matches for: {description}"
+        assert len(matches) > 0, f"Empty matches for: {description}"
+        assert var in matches[0].bindings, f"Variable '{var}' not in bindings for: {description}"
+        assert matches[0].bindings[var] == expected_span, f"Wrong span for {description}"
+
+    def test_multiple_variables_in_sequence(self, sample_corpus):
+        """Test that multiple variables are all captured simultaneously"""
+        query = '$det: [pos="DT"] $adj: [pos="JJ"] $noun: [pos="NN"]'
+        matches = get_matches(sample_corpus, query)
+        assert matches is not None
+        assert len(matches) == 1
+
+        # Verify all three variables are captured
+        assert "det" in matches[0].bindings
+        assert "adj" in matches[0].bindings
+        assert "noun" in matches[0].bindings
+
+        # Verify their spans
+        assert matches[0].bindings["det"] == Span(6, 7)  # "the"
+        assert matches[0].bindings["adj"] == Span(7, 8)  # "lazy"
+        assert matches[0].bindings["noun"] == Span(8, 9)  # "dog"
+
+        # Verify overall match span
+        assert matches[0].span == Span(6, 9)
+
+    @pytest.mark.parametrize(
+        "query,var,expected_match_idx,expected_span,description",
+        [
+            (
+                '$adjs: [pos="JJ"]+ [pos="NN"]',
+                "adjs",
+                0,
+                Span(5, 7),
+                "plus: all consecutive adjectives",
+            ),
+            (
+                '$adjs: [pos="JJ"]* [pos="NN"]',
+                "adjs",
+                -1,
+                Span(18, 18),
+                "star: zero-match empty span",
+            ),
+            (
+                '$det: [pos="DT"]? [pos="JJ"] [pos="NN"]',
+                "det",
+                1,
+                Span(6, 7),
+                "optional: present",
+            ),
+            (
+                '$det: [pos="DT"]? [pos="JJ"] [pos="NN"]',
+                "det",
+                0,
+                Span(2, 2),
+                "optional: absent empty span",
+            ),
+            (
+                '$two: [pos="JJ"]{2} [pos="NN"]',
+                "two",
+                0,
+                Span(5, 7),
+                "exact count: 2 adjectives",
+            ),
+        ],
+    )
+    def test_quantifier_bindings(
+        self, complex_corpus, query, var, expected_match_idx, expected_span, description
+    ):
+        """Test that quantifiers bind entire matched sequence, not just last token"""
+        matches = get_matches(complex_corpus, query)
+        assert matches is not None, f"No matches for: {description}"
+        assert len(matches) > 0, f"Empty matches for: {description}"
+
+        match = matches[expected_match_idx]
+        assert var in match.bindings, f"Variable '{var}' not in bindings for: {description}"
+        assert match.bindings[var] == expected_span, f"Wrong span for {description}"
+
+    def test_nested_bindings(self, sample_corpus):
+        """Test that nested variable bindings capture both outer and inner variables"""
+        query = '$phrase: ($det: [pos="DT"]) [pos="JJ"] [pos="NN"]'
+        matches = get_matches(sample_corpus, query)
+        assert matches is not None
+        assert len(matches) == 1
+
+        # Both variables should be captured
+        assert "phrase" in matches[0].bindings
+        assert "det" in matches[0].bindings
+
+        # Verify spans
+        assert matches[0].bindings["det"] == Span(6, 7)  # "the"
+        assert matches[0].bindings["phrase"] == Span(6, 9)  # "the lazy dog"
+
+        # Overall match should equal phrase binding
+        assert matches[0].span == matches[0].bindings["phrase"]
+
+    def test_binding_in_alternation(self, sample_corpus):
+        """Test that variable bindings work correctly with alternation (disjunction)"""
+        query = '$target: ([pos="JJ"] | [pos="NN"])'
+        matches = get_matches(sample_corpus, query)
+        assert matches is not None
+
+        # Should match all JJ and NN: quick, brown, fox, lazy, dog
+        assert len(matches) == 5
+
+        # Each match should have the "target" binding
+        for match in matches:
+            assert "target" in match.bindings
+            # Binding should match the overall span for single-variable queries
+            assert match.bindings["target"] == match.span
+
+    @pytest.mark.parametrize(
+        "query",
+        [
+            '$x: [pos="JJ"] $x: [pos="NN"]',  # Sequential reuse
+            '$x: [pos="JJ"]+ $x: [pos="NN"]+',  # With quantifiers
+            '($x: [pos="JJ"]) ($x: [pos="NN"])',  # In groups
+        ],
+    )
+    def test_variable_reuse_error(self, sample_corpus, query):
+        """Variable names cannot be reused in same query - should raise error"""
+        with pytest.raises((ValueError, RuntimeError, pp.ParseException)):
+            get_matches(sample_corpus, query)
 
 
 if __name__ == "__main__":
