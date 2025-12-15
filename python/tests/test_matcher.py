@@ -547,7 +547,13 @@ class TestVariableBindings:
                 '$v: ([pos="JJ"] | [pos="NN"])',
                 "v",
                 Span(1, 2),
-                "disjunction binding",
+                "disjunction - first alternative matches",
+            ),
+            (
+                '$v: ([pos="VB"] | [pos="NN"])',
+                "v",
+                Span(3, 4),
+                "disjunction - second alternative matches (backtracking)",
             ),
         ],
     )
