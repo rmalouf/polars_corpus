@@ -530,18 +530,24 @@ class TestVariableBindings:
     @pytest.mark.parametrize(
         "query,var,expected_span,description",
         [
-            ('$n: [pos="NN"]', "n", Span(3, 4), "single token"),
+            ('$n: ([pos="NN"])', "n", Span(3, 4), "single token"),
             (
-                '$det: [pos="DT"] $adj: [pos="JJ"] $noun: [pos="NN"]',
+                '$det: ([pos="DT"]) $adj: ([pos="JJ"]) $noun: ([pos="NN"])',
                 "det",
                 Span(6, 7),
                 "multiple vars - first",
             ),
             (
-                '[pos="DT"] $adj: [pos="JJ"] [pos="NN"]',
+                '[pos="DT"] $adj: ([pos="JJ"]) [pos="NN"]',
                 "adj",
                 Span(7, 8),
                 "mixed bound/unbound",
+            ),
+            (
+                '$v: ([pos="JJ"] | [pos="NN"])',
+                "v",
+                Span(1, 2),
+                "disjunction binding",
             ),
         ],
     )
@@ -555,7 +561,7 @@ class TestVariableBindings:
 
     def test_multiple_variables_in_sequence(self, sample_corpus):
         """Test that multiple variables are all captured simultaneously"""
-        query = '$det: [pos="DT"] $adj: [pos="JJ"] $noun: [pos="NN"]'
+        query = '$det: ([pos="DT"]) $adj: ([pos="JJ"]) $noun: ([pos="NN"])'
         matches = get_matches(sample_corpus, query)
         assert matches is not None
         assert len(matches) == 1
@@ -577,35 +583,35 @@ class TestVariableBindings:
         "query,var,expected_match_idx,expected_span,description",
         [
             (
-                '$adjs: [pos="JJ"]+ [pos="NN"]',
+                '$adjs: ([pos="JJ"]+) [pos="NN"]',
                 "adjs",
                 0,
                 Span(5, 7),
                 "plus: all consecutive adjectives",
             ),
             (
-                '$adjs: [pos="JJ"]* [pos="NN"]',
+                '$adjs: ([pos="JJ"]*) [pos="NN"]',
                 "adjs",
                 -1,
                 Span(18, 18),
                 "star: zero-match empty span",
             ),
             (
-                '$det: [pos="DT"]? [pos="JJ"] [pos="NN"]',
+                '$det: ([pos="DT"]?) [pos="JJ"] [pos="NN"]',
                 "det",
                 1,
                 Span(6, 7),
                 "optional: present",
             ),
             (
-                '$det: [pos="DT"]? [pos="JJ"] [pos="NN"]',
+                '$det: ([pos="DT"]?) [pos="JJ"] [pos="NN"]',
                 "det",
                 0,
                 Span(2, 2),
                 "optional: absent empty span",
             ),
             (
-                '$two: [pos="JJ"]{2} [pos="NN"]',
+                '$two: ([pos="JJ"]{2}) [pos="NN"]',
                 "two",
                 0,
                 Span(5, 7),
@@ -627,7 +633,7 @@ class TestVariableBindings:
 
     def test_nested_bindings(self, sample_corpus):
         """Test that nested variable bindings capture both outer and inner variables"""
-        query = '$phrase: ($det: [pos="DT"]) [pos="JJ"] [pos="NN"]'
+        query = '$phrase: (($det: ([pos="DT"])) [pos="JJ"] [pos="NN"])'
         matches = get_matches(sample_corpus, query)
         assert matches is not None
         assert len(matches) == 1
@@ -661,9 +667,9 @@ class TestVariableBindings:
     @pytest.mark.parametrize(
         "query",
         [
-            '$x: [pos="JJ"] $x: [pos="NN"]',  # Sequential reuse
-            '$x: [pos="JJ"]+ $x: [pos="NN"]+',  # With quantifiers
-            '($x: [pos="JJ"]) ($x: [pos="NN"])',  # In groups
+            '$x: ([pos="JJ"]) $x: ([pos="NN"])',  # Sequential reuse
+            '$x: ([pos="JJ"]+) $x: ([pos="NN"]+)',  # With quantifiers
+            '($x: ([pos="JJ"])) ($x: ([pos="NN"]))',  # In groups
         ],
     )
     def test_variable_reuse_error(self, sample_corpus, query):

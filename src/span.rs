@@ -10,6 +10,8 @@ use pyo3::prelude::*;
 use pyo3_polars::error::PyPolarsErr;
 use pyo3_polars::{PyDataFrame, PySeries};
 
+use crate::matcher::Match;
+
 #[pyfunction]
 pub fn spans_to_chunks(spans: Vec<Span>, n: usize) -> PyResult<PySeries> {
     let mut span_vec = vec!["O"; n];
@@ -127,10 +129,11 @@ fn right_chunk_context_from_spans(spans: &[Span], chunk_tag: &Series) -> PolarsR
 pub fn py_kwic(
     // polars <-> pyo3 shim
     py_df: PyDataFrame,
-    matched_spans: Vec<Span>,
+    matches: Vec<Match>,
     left_window: i32,
     right_window: i32,
 ) -> PyResult<PyDataFrame> {
+    let matched_spans: Vec<Span> = matches.into_iter().map(|m| m.span).collect();
     let df: DataFrame = py_df.0;
     let out_df =
         kwic_df(&df, &matched_spans, left_window, right_window).map_err(PyPolarsErr::from)?;

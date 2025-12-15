@@ -10,6 +10,7 @@ use pyo3_polars::PySeries;
 
 use crate::span::Span;
 
+#[derive(Debug)]
 enum Operation {
     Advance(),
     Jump(isize),
@@ -139,26 +140,27 @@ impl OpcodeMatcher {
         let mut stack = Vec::with_capacity(64);
         let mut bindings = HashMap::new();
         let n = self.mask_vec[0].len();
-        let last_pc = self.operations.len() - 1;
+        let last_pc = self.operations.len();
         stack.push((cursor, 0, HashMap::new()));
         while let Some(task) = stack.pop() {
             let (mut cursor, mut pc, mut starts) = task;
             loop {
+                //eprintln!();
+                //dbg!(cursor, pc, last_pc);
                 if pc >= last_pc {
-                    // Success!
-                    if cursor > match_end {
-                        match_end = cursor;
-                    };
+                    //dbg!("break");
                     break;
                 };
-                if cursor >= n || !self.mask_vec[pc].get(cursor).unwrap() {
-                    // Failure!
-                    break;
-                };
+                //dbg!(&self.operations[pc]);
                 match &self.operations[pc] {
                     Operation::Advance() => {
-                        cursor += 1;
-                        pc += 1;
+                        if cursor < n && self.mask_vec[pc].get(cursor).unwrap() {
+                            cursor += 1;
+                            pc += 1;
+                        } else {
+                            // Failure!
+                            break;
+                        };
                     },
                     Operation::Split(offset1, offset2) => {
                         let pc2 = (pc as isize + offset2) as usize;
@@ -180,13 +182,16 @@ impl OpcodeMatcher {
                     },
                     Operation::Match() => {
                         // if last_pc is right, then we should never get here
-                        // match_end = cmp::max(match_end, sp);
-                        unreachable!();
+                        if cursor > match_end {
+                            match_end = cursor;
+                        }
+                        pc += 1;
+                        // unreachable!();
                     },
                 }
             }
         }
-        if match_end > cursor {
+        if match_end > match_start {
             Ok(Some(Match {
                 span: Span::new(match_start, match_end),
                 bindings,

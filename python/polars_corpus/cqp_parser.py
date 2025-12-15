@@ -10,23 +10,20 @@ from ._internal import Opcode
 __all__ = ["cqp"]
 
 
-## compile token-level constraints into polars expressions
 
 
 feature = pp.Word(pp.alphas + pp.nums + "_")
 number = pp.Word(pp.nums)
 value = pp.QuotedString('"')
 case_modifier = pp.Optional(pp.Literal("%c"))
+variable = pp.Suppress("$") + pp.Word(pp.alphas + pp.nums + "_")
 
 constraint_formula = pp.Forward()
 
 
 def compile_atomic_constraint(args: pp.ParseResults) -> pl.Expr:
-    # Check if case-insensitive modifier is present (will be at position 3 if present)
-    case_insensitive = len(args) > 3 and args[3] == "%c"
-
-    # Build regex pattern with optional case-insensitive flag
     pattern = "^(" + args[2] + ")$"
+    case_insensitive = len(args) > 3 and args[3] == "%c"
     if case_insensitive:
         pattern = "(?i)" + pattern
 
@@ -73,13 +70,15 @@ node = (
 
 cqp = pp.Forward()
 
-simple_primary = node | (pp.Suppress("(") + cqp + pp.Suppress(")"))
-# binding = (feature + pp.Suppress(":") + simple_primary).set_parse_action(
-#     lambda toks: Bind(toks[0], toks[1])
-# )
-# primary = simple_primary | binding
-primary = simple_primary
+def compile_binding(args: pp.ParseResults) -> list[Any]:
+    operations: list[Any] = [(Opcode.PUSHVAR, args[0])]
+    operations.extend(args[1:])
+    operations.append((Opcode.BINDVAR, args[0]))
+    return operations
 
+simple_primary = node | (pp.Suppress("(") + cqp + pp.Suppress(")"))
+binding = (variable + pp.Suppress(":") + pp.Suppress("(") + cqp + pp.Suppress(")")).set_parse_action(compile_binding)
+primary = simple_primary | binding
 
 def compile_star(args: pp.ParseResults) -> list[Any]:
     operations: list[Any] = [(Opcode.SPLIT, 1, len(args) + 2)]
