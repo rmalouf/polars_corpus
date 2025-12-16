@@ -57,7 +57,7 @@ coverage==7.10.7
     # via -r requirements-dev.in
 cycler==0.12.1
     # via matplotlib
-debugpy==1.8.18
+debugpy==1.8.19
     # via ipykernel
 decorator==5.2.1
     # via ipython
@@ -112,7 +112,7 @@ jinja2==3.1.6
     #   mkdocs-material
     #   mkdocstrings
     #   nbconvert
-joblib==1.5.2
+joblib==1.5.3
     # via nltk
 json5==0.12.1
     # via jupyterlab-server
@@ -307,7 +307,7 @@ pygments==2.19.2
     #   mkdocs-material
     #   nbconvert
     #   pytest
-pymdown-extensions==10.19
+pymdown-extensions==10.19.1
     # via
     #   mkdocs-material
     #   mkdocstrings
@@ -387,7 +387,7 @@ terminado==0.18.1
     #   jupyter-server-terminals
 tinycss2==1.4.0
     # via bleach
-tornado==6.5.3
+tornado==6.5.4
     # via
     #   ipykernel
     #   jupyter-client
@@ -415,7 +415,7 @@ typing-extensions==4.15.0
     # via
     #   beautifulsoup4
     #   mypy
-tzdata==2025.2
+tzdata==2025.3
     # via
     #   arrow
     #   pandas

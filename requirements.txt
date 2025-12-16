@@ -18,7 +18,7 @@ ipywidgets==8.1.8
     # via -r requirements.in
 jedi==0.19.2
     # via ipython
-joblib==1.5.2
+joblib==1.5.3
     # via nltk
 jupyterlab-widgets==3.0.16
     # via ipywidgets
