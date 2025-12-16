@@ -199,7 +199,9 @@ impl OpcodeMatcher {
                     Operation::Match() => {
                         if cursor > match_end {
                             match_end = cursor;
-                            match_bindings = bindings_stack.clone();
+                            match_bindings.clear();
+                            match_bindings.extend_from_slice(&bindings_stack);
+                            // match_bindings = bindings_stack.clone();
                         }
                         pc += 1;
                     },
