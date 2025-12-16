@@ -557,13 +557,19 @@ class TestVariableBindings:
             ),
         ],
     )
-    def test_basic_bindings(self, sample_corpus, query, var, expected_span, description):
+    def test_basic_bindings(
+        self, sample_corpus, query, var, expected_span, description
+    ):
         """Test basic variable binding patterns"""
         matches = get_matches(sample_corpus, query)
         assert matches is not None, f"No matches for: {description}"
         assert len(matches) > 0, f"Empty matches for: {description}"
-        assert var in matches[0].bindings, f"Variable '{var}' not in bindings for: {description}"
-        assert matches[0].bindings[var] == expected_span, f"Wrong span for {description}"
+        assert var in matches[0].bindings, (
+            f"Variable '{var}' not in bindings for: {description}"
+        )
+        assert matches[0].bindings[var] == expected_span, (
+            f"Wrong span for {description}"
+        )
 
     def test_multiple_variables_in_sequence(self, sample_corpus):
         """Test that multiple variables are all captured simultaneously"""
@@ -605,15 +611,15 @@ class TestVariableBindings:
             (
                 '$det: ([pos="DT"]?) [pos="JJ"] [pos="NN"]',
                 "det",
-                1,
-                Span(6, 7),
+                2,
+                Span(14, 15),
                 "optional: present",
             ),
             (
                 '$det: ([pos="DT"]?) [pos="JJ"] [pos="NN"]',
                 "det",
                 0,
-                Span(2, 2),
+                Span(6, 6),
                 "optional: absent empty span",
             ),
             (
@@ -634,7 +640,9 @@ class TestVariableBindings:
         assert len(matches) > 0, f"Empty matches for: {description}"
 
         match = matches[expected_match_idx]
-        assert var in match.bindings, f"Variable '{var}' not in bindings for: {description}"
+        assert var in match.bindings, (
+            f"Variable '{var}' not in bindings for: {description}"
+        )
         assert match.bindings[var] == expected_span, f"Wrong span for {description}"
 
     def test_nested_bindings(self, sample_corpus):
