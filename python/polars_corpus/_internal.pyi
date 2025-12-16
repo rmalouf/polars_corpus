@@ -26,21 +26,6 @@ class Match:
     bindings: Dict[str, Span]
     def __init__(self, span: Span, bindings: Dict[str, Span]) -> None: ...
 
-# TODO: get this from rust instead of redefining it
-class Opcode(Enum):
-    TOKEN = 0
-    JUMP = 1
-    SPLIT = 2
-    SKIP = 3
-    MATCH = 4
-    PUSHVAR = 5
-    POPVAR = 6
-    BINDVAR = 7
-    UNBINDVAR = 8
-    FAIL = 9
-
-    def __init__(self) -> None: ...
-
 class OpcodeMatcher:
     def __init__(self, opcodes: list[Any], masks: list[Any]) -> None: ...
     def matchall(self) -> Optional[list[Match]]: ...

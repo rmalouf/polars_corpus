@@ -1,10 +1,11 @@
-import polars as pl
-import polars_corpus as plc
-import seaborn as sns
 import matplotlib.pyplot as plt
+import polars as pl
+import seaborn as sns
 from matplotlib.axes import Axes
 
-from ._typing import T_Frame, IntoExpr
+import polars_corpus as plc
+
+from ._typing import IntoExpr, T_Frame
 
 __all__ = ["distribution_plot"]
 

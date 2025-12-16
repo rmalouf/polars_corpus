@@ -5,14 +5,16 @@ use std::collections::HashMap;
 use polars::prelude::*;
 use pyo3::exceptions::PyRuntimeError;
 use pyo3::prelude::*;
-use pyo3::types::{PyList, PyTuple};
+use pyo3::types::PyList;
 use pyo3_polars::PySeries;
 
 use crate::span::Span;
 
-#[derive(Debug)]
-enum Operation {
-    Advance(),
+#[pyclass(module = "polars_corpus")]
+#[derive(Clone, Debug)]
+pub enum Opcode {
+    Token(Vec<u8>),
+    Skip(),
     Jump(isize),
     Split(isize, isize),
     Match(),
@@ -21,21 +23,6 @@ enum Operation {
     BindVar(String),
     UnBindVar(),
     Fail(),
-}
-
-#[pyclass(module = "polars_corpus")]
-#[derive(Clone)]
-pub enum Opcode {
-    TOKEN,
-    JUMP,
-    SPLIT,
-    SKIP,
-    MATCH,
-    PUSHVAR,
-    POPVAR,
-    BINDVAR,
-    UNBINDVAR,
-    FAIL,
 }
 
 #[pyclass(module = "polars_corpus")]
@@ -55,70 +42,29 @@ impl Match {
     }
 }
 
-fn compile_operations(opcodes: &Bound<PyList>) -> PyResult<Vec<Operation>> {
-    let mut operations = Vec::new();
-    for (pc, item) in opcodes.iter().enumerate() {
-        let tuple = item.downcast::<PyTuple>()?;
-        let py_opcode = tuple.get_item(0)?;
-        let opcode = py_opcode.extract::<Opcode>()?;
-        let operation = {
-            match opcode {
-                Opcode::TOKEN | Opcode::SKIP => Operation::Advance(),
-                Opcode::MATCH => Operation::Match(),
-                Opcode::JUMP => {
-                    let offset: isize = tuple.get_item(1)?.extract()?;
-                    let target = pc.strict_add_signed(offset);
-                    if target >= opcodes.len() {
-                        return Err(PyRuntimeError::new_err("JMP target out of bounds"));
-                    }
-                    Operation::Jump(offset)
-                },
-                Opcode::SPLIT => {
-                    let offset1: isize = tuple.get_item(1)?.extract()?;
-                    let offset2: isize = tuple.get_item(2)?.extract()?;
-                    let target1 = pc.strict_add_signed(offset1);
-                    let target2 = pc.strict_add_signed(offset2);
-                    if target1 >= opcodes.len() || target2 >= opcodes.len() {
-                        return Err(PyRuntimeError::new_err("SPLIT target out of bounds"));
-                    }
-                    Operation::Split(offset1, offset2)
-                },
-                Opcode::PUSHVAR => Operation::PushVar(),
-                Opcode::POPVAR => Operation::PopVar(),
-                Opcode::BINDVAR => Operation::BindVar(tuple.get_item(1)?.extract()?),
-                Opcode::UNBINDVAR => Operation::UnBindVar(),
-                Opcode::FAIL => Operation::Fail(),
-            }
-        };
-        operations.push(operation);
-    }
-    Ok(operations)
-}
-
 #[pyclass(module = "polars_corpus")]
 pub struct OpcodeMatcher {
-    operations: Vec<Operation>,
+    opcodes: Vec<Opcode>,
     mask_vec: Vec<BooleanChunked>,
 }
 
 #[pymethods]
 impl OpcodeMatcher {
     #[new]
-    fn new<'py>(opcodes: &Bound<'py, PyList>, py_masks: &Bound<'py, PyList>) -> PyResult<Self> {
-        let operations = compile_operations(opcodes)?;
-        let mut mask_vec = Vec::with_capacity(py_masks.len());
-        for m in py_masks.iter() {
-            let series: PySeries = m.extract()?;
-            let data = series
-                .as_ref()
-                .bool()
-                .map_err(|_| PyRuntimeError::new_err("all masks must be boolean"))?;
-            mask_vec.push(data.clone());
-        }
-        Ok(OpcodeMatcher {
-            operations,
-            mask_vec,
-        })
+    fn new<'py>(opcodes: Vec<Opcode>, py_masks: &Bound<'py, PyList>) -> PyResult<Self> {
+        let mask_vec = py_masks
+            .iter()
+            .map(|item| -> PyResult<_> {
+                let series: PySeries = item.extract()?;
+                series
+                    .as_ref()
+                    .bool()
+                    .cloned()
+                    .map_err(|_| PyRuntimeError::new_err("all masks must be boolean"))
+            })
+            .collect::<PyResult<Vec<_>>>()?;
+
+        Ok(Self { opcodes, mask_vec })
     }
 
     fn matchall(&self) -> PyResult<Option<Vec<Match>>> {
@@ -155,11 +101,11 @@ impl OpcodeMatcher {
         while let Some(task) = stack.pop() {
             let (mut cursor, mut pc) = task;
             loop {
-                if pc >= self.operations.len() {
+                if pc >= self.opcodes.len() {
                     break;
                 };
-                match &self.operations[pc] {
-                    Operation::Advance() => {
+                match &self.opcodes[pc] {
+                    Opcode::Token(_) | Opcode::Skip() => {
                         if cursor < n && self.mask_vec[pc].get(cursor).unwrap() {
                             cursor += 1;
                             pc += 1;
@@ -168,44 +114,43 @@ impl OpcodeMatcher {
                             break;
                         };
                     },
-                    Operation::Split(offset1, offset2) => {
+                    Opcode::Split(offset1, offset2) => {
                         let pc2 = (pc as isize + offset2) as usize;
                         stack.push((cursor, pc2));
                         pc = (pc as isize + offset1) as usize;
                     },
-                    Operation::Jump(offset) => {
+                    Opcode::Jump(offset) => {
                         pc = (pc as isize + offset) as usize;
                     },
-                    Operation::PushVar() => {
+                    Opcode::PushVar() => {
                         var_stack.push(Some(cursor));
                         pc += 1;
                     },
-                    Operation::PopVar() => {
+                    Opcode::PopVar() => {
                         var_stack.pop();
                         pc += 1;
                     },
-                    Operation::BindVar(var_name) => {
+                    Opcode::BindVar(var_name) => {
                         let start = var_stack.pop().unwrap();
                         if let Some(start) = start {
                             bindings_stack.push((var_name.clone(), Span::new(start, cursor)));
                         }
                         pc += 1;
                     },
-                    Operation::UnBindVar() => {
+                    Opcode::UnBindVar() => {
                         bindings_stack.pop();
                         var_stack.push(None);
                         pc += 1;
                     },
-                    Operation::Match() => {
+                    Opcode::Match() => {
                         if cursor > match_end {
                             match_end = cursor;
                             match_bindings.clear();
                             match_bindings.extend_from_slice(&bindings_stack);
-                            // match_bindings = bindings_stack.clone();
                         }
                         pc += 1;
                     },
-                    Operation::Fail() => {
+                    Opcode::Fail() => {
                         break;
                     },
                 }

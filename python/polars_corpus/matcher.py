@@ -16,7 +16,7 @@ def col_name(i: int) -> str:
     return f"_{i}"
 
 
-def compute_masks(df: pl.DataFrame, opcodes: list[Any]) -> pl.DataFrame:
+def compute_masks(df: pl.DataFrame, opcodes: list[Opcode]) -> pl.DataFrame:
     """Find token positions where a (sub-)query might potentially match"""
     for pc in range(len(opcodes)):
         df = propagate_masks(df, opcodes, pc)
@@ -24,27 +24,28 @@ def compute_masks(df: pl.DataFrame, opcodes: list[Any]) -> pl.DataFrame:
     return df.rechunk()
 
 
-def propagate_masks(df: pl.DataFrame, opcodes: list[Any], pc: int) -> pl.DataFrame:
+def propagate_masks(df: pl.DataFrame, opcodes: list[Opcode], pc: int) -> pl.DataFrame:
     """Propagate token masks backwards through the NFA"""
     if col_name(pc) not in df:
         match opcodes[pc]:
-            case (Opcode.TOKEN, expr):
+            case Opcode.Token(expr):
+                expr = pl.Expr.deserialize(expr)
                 df = df.with_columns(expr.fill_null(False).alias(col_name(pc)))
-            case (Opcode.MATCH,) | (Opcode.SKIP,) | (Opcode.FAIL,):
+            case Opcode.Match() | Opcode.Skip() | Opcode.Fail():
                 df = df.with_columns(pl.lit(True).alias(col_name(pc)))
             case (
-                (Opcode.PUSHVAR,)
-                | (Opcode.POPVAR,)
-                | (Opcode.BINDVAR, _)
-                | (Opcode.UNBINDVAR,)
+                Opcode.PushVar()
+                | Opcode.PopVar()
+                | Opcode.BindVar(_)
+                | Opcode.UnBindVar()
             ):
                 df = propagate_masks(df, opcodes, pc + 1)
                 df = df.with_columns(pl.col(col_name(pc + 1)).alias(col_name(pc)))
-            case (Opcode.JUMP, offset):
+            case Opcode.Jump(offset):
                 if col_name(pc + offset) not in df.columns:
                     df = propagate_masks(df, opcodes, pc + offset)
                 df = df.with_columns(pl.col(col_name(pc + offset)).alias(col_name(pc)))
-            case (Opcode.SPLIT, offset1, offset2):
+            case Opcode.Split(offset1, offset2):
                 if col_name(pc + offset1) not in df.columns:
                     df = propagate_masks(df, opcodes, pc + offset1)
                 if col_name(pc + offset2) not in df.columns:
@@ -65,7 +66,7 @@ def get_matches(df: pl.DataFrame, query: str) -> Optional[list[Match]]:
         return None
 
     opcodes = list(cqp.parse_string(query, parse_all=True))
-    opcodes.append((Opcode.MATCH,))
+    opcodes.append(Opcode.Match())
 
     mask_df = compute_masks(df, opcodes)
     masks = [mask_df.get_column(col) for col in mask_df.columns]

@@ -210,7 +210,7 @@ fn implode_series_by_spans(s: &Series, spans: &[Span]) -> PolarsResult<Series> {
 // Span
 
 #[pyclass(eq, module = "polars_corpus")]
-#[derive(Clone, PartialEq)]
+#[derive(Clone, PartialEq, Debug)]
 pub struct Span {
     #[pyo3(get)]
     pub start: usize,
