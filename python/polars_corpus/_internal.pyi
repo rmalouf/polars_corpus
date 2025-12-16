@@ -34,7 +34,10 @@ class Opcode(Enum):
     SKIP = 3
     MATCH = 4
     PUSHVAR = 5
-    BINDVAR = 6
+    POPVAR = 6
+    BINDVAR = 7
+    UNBINDVAR = 8
+    FAIL = 9
 
     def __init__(self) -> None: ...
 

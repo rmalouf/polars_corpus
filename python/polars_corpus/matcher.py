@@ -30,9 +30,14 @@ def propagate_masks(df: pl.DataFrame, opcodes: list[Any], pc: int) -> pl.DataFra
         match opcodes[pc]:
             case (Opcode.TOKEN, expr):
                 df = df.with_columns(expr.fill_null(False).alias(col_name(pc)))
-            case (Opcode.MATCH,) | (Opcode.SKIP,):
+            case (Opcode.MATCH,) | (Opcode.SKIP,) | (Opcode.FAIL,):
                 df = df.with_columns(pl.lit(True).alias(col_name(pc)))
-            case (Opcode.PUSHVAR, _) | (Opcode.BINDVAR, _):
+            case (
+                (Opcode.PUSHVAR,)
+                | (Opcode.POPVAR,)
+                | (Opcode.BINDVAR, _)
+                | (Opcode.UNBINDVAR,)
+            ):
                 df = propagate_masks(df, opcodes, pc + 1)
                 df = df.with_columns(pl.col(col_name(pc + 1)).alias(col_name(pc)))
             case (Opcode.JUMP, offset):

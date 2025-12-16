@@ -16,8 +16,11 @@ enum Operation {
     Jump(isize),
     Split(isize, isize),
     Match(),
-    PushVar(String),
+    PushVar(),
+    PopVar(),
     BindVar(String),
+    UnBindVar(),
+    Fail(),
 }
 
 #[pyclass(module = "polars_corpus")]
@@ -29,7 +32,10 @@ pub enum Opcode {
     SKIP,
     MATCH,
     PUSHVAR,
+    POPVAR,
     BINDVAR,
+    UNBINDVAR,
+    FAIL,
 }
 
 #[pyclass(module = "polars_corpus")]
@@ -77,8 +83,11 @@ fn compile_operations(opcodes: &Bound<PyList>) -> PyResult<Vec<Operation>> {
                     }
                     Operation::Split(offset1, offset2)
                 },
-                Opcode::PUSHVAR => Operation::PushVar(tuple.get_item(1)?.extract()?),
+                Opcode::PUSHVAR => Operation::PushVar(),
+                Opcode::POPVAR => Operation::PopVar(),
                 Opcode::BINDVAR => Operation::BindVar(tuple.get_item(1)?.extract()?),
+                Opcode::UNBINDVAR => Operation::UnBindVar(),
+                Opcode::FAIL => Operation::Fail(),
             }
         };
         operations.push(operation);
@@ -137,21 +146,18 @@ impl OpcodeMatcher {
     fn _match_opcodes(&self, cursor: usize) -> PyResult<Option<Match>> {
         let match_start = cursor;
         let mut match_end = cursor;
+        let mut match_bindings = Vec::new();
         let mut stack = Vec::with_capacity(64);
-        let mut bindings = HashMap::new();
+        let mut var_stack: Vec<Option<usize>> = Vec::new();
+        let mut bindings_stack = Vec::new();
         let n = self.mask_vec[0].len();
-        let last_pc = self.operations.len();
-        stack.push((cursor, 0, HashMap::new()));
+        stack.push((cursor, 0));
         while let Some(task) = stack.pop() {
-            let (mut cursor, mut pc, mut starts) = task;
+            let (mut cursor, mut pc) = task;
             loop {
-                //eprintln!();
-                //dbg!(cursor, pc, last_pc);
-                if pc >= last_pc {
-                    //dbg!("break");
+                if pc >= self.operations.len() {
                     break;
                 };
-                //dbg!(&self.operations[pc]);
                 match &self.operations[pc] {
                     Operation::Advance() => {
                         if cursor < n && self.mask_vec[pc].get(cursor).unwrap() {
@@ -164,37 +170,50 @@ impl OpcodeMatcher {
                     },
                     Operation::Split(offset1, offset2) => {
                         let pc2 = (pc as isize + offset2) as usize;
-                        stack.push((cursor, pc2, starts.clone()));
+                        stack.push((cursor, pc2));
                         pc = (pc as isize + offset1) as usize;
                     },
                     Operation::Jump(offset) => {
                         pc = (pc as isize + offset) as usize;
                     },
-                    Operation::PushVar(var_name) => {
-                        starts.insert(var_name, cursor);
+                    Operation::PushVar() => {
+                        var_stack.push(Some(cursor));
+                        pc += 1;
+                    },
+                    Operation::PopVar() => {
+                        var_stack.pop();
                         pc += 1;
                     },
                     Operation::BindVar(var_name) => {
-                        // this goes with last binding -- do we want first binding instead?
-                        let start = starts.remove(var_name).unwrap();
-                        bindings.insert(var_name.clone(), Span::new(start, cursor));
+                        let start = var_stack.pop().unwrap();
+                        if let Some(start) = start {
+                            bindings_stack.push((var_name.clone(), Span::new(start, cursor)));
+                        }
+                        pc += 1;
+                    },
+                    Operation::UnBindVar() => {
+                        bindings_stack.pop();
+                        var_stack.push(None);
                         pc += 1;
                     },
                     Operation::Match() => {
-                        // if last_pc is right, then we should never get here
                         if cursor > match_end {
                             match_end = cursor;
+                            match_bindings = bindings_stack.clone();
                         }
                         pc += 1;
-                        // unreachable!();
+                    },
+                    Operation::Fail() => {
+                        break;
                     },
                 }
             }
         }
         if match_end > match_start {
+            let bindings_map: HashMap<_, _> = match_bindings.into_iter().collect();
             Ok(Some(Match {
                 span: Span::new(match_start, match_end),
-                bindings,
+                bindings: bindings_map,
             }))
         } else {
             Ok(None)

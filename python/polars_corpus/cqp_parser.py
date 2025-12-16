@@ -10,8 +10,6 @@ from ._internal import Opcode
 __all__ = ["cqp"]
 
 
-
-
 feature = pp.Word(pp.alphas + pp.nums + "_")
 number = pp.Word(pp.nums)
 value = pp.QuotedString('"')
@@ -70,15 +68,32 @@ node = (
 
 cqp = pp.Forward()
 
+
+## See: Gimpel, James F. "A theory of discrete patterns and their implementation
+##      in SNOBOL4." Communications of the ACM 16, no. 2 (1973): 91-100.
+
+
 def compile_binding(args: pp.ParseResults) -> list[Any]:
-    operations: list[Any] = [(Opcode.PUSHVAR, args[0])]
+    operations: list[Any] = []
+    operations.append((Opcode.PUSHVAR,))
+    operations.append((Opcode.SPLIT, 1, len(args[1]) + 2))
     operations.extend(args[1:])
+    operations.append((Opcode.JUMP, 3))
+    operations.append((Opcode.POPVAR,))
+    operations.append((Opcode.FAIL,))
     operations.append((Opcode.BINDVAR, args[0]))
+    operations.append((Opcode.SPLIT, 3, 1))
+    operations.append((Opcode.UNBINDVAR,))
+    operations.append((Opcode.FAIL,))
     return operations
 
+
 simple_primary = node | (pp.Suppress("(") + cqp + pp.Suppress(")"))
-binding = (variable + pp.Suppress(":") + pp.Suppress("(") + cqp + pp.Suppress(")")).set_parse_action(compile_binding)
+binding = (
+    variable + pp.Suppress(":") + pp.Suppress("(") + cqp + pp.Suppress(")")
+).set_parse_action(compile_binding)
 primary = simple_primary | binding
+
 
 def compile_star(args: pp.ParseResults) -> list[Any]:
     operations: list[Any] = [(Opcode.SPLIT, 1, len(args) + 2)]

@@ -263,7 +263,9 @@ class TestWithSpans:
             }
         )
 
-        concordance = SearchResults(df, "", [Match(Span(0, 1), {}), Match(Span(3, 4), {})])  # "The" and "fox"
+        concordance = SearchResults(
+            df, "", [Match(Span(0, 1), {}), Match(Span(3, 4), {})]
+        )  # "The" and "fox"
         result = concordance.with_spans_as_chunks()
         expected_spans = ["B", "O", "O", "B"]
 
@@ -324,7 +326,9 @@ class TestWithSpans:
         """Test spans that extend beyond dataframe boundaries."""
         df = pl.DataFrame({"token": ["The", "quick"], "pos": ["DET", "ADJ"]})
 
-        concordance = SearchResults(df, "", [Match(Span(0, 5), {})])  # Extends beyond dataframe
+        concordance = SearchResults(
+            df, "", [Match(Span(0, 5), {})]
+        )  # Extends beyond dataframe
 
         with pytest.raises(ValueError):
             concordance.with_spans_as_chunks()
