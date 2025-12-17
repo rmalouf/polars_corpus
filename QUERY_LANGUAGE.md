@@ -27,6 +27,46 @@ plc.search(c, '(very)+ big')          # One or more
 plc.search(c, '(red){2,3}')           # 2-3 repetitions
 ```
 
+### Variable Bindings (Capturing Subpatterns)
+Capture parts of matches using `$varname: pattern` syntax:
+```python
+# Basic binding - capture single word
+plc.search(c, '$target: fox')         # Capture "fox"
+results._matches[0].bindings['target']  # → Span(3, 4)
+
+# Multiple variables
+plc.search(c, '$det: the $noun: fox')  # Capture both "the" and "fox"
+
+# Bind patterns with wildcards
+plc.search(c, '$suffix: *able')        # Capture words ending in 'able'
+
+# Bind linguistic features
+plc.search(c, '$verb: _VBD')           # Capture past tense verbs
+plc.search(c, '$lemma: {walk}')        # Capture any form of "walk"
+
+# Bind groups for multi-token spans
+plc.search(c, '$phrase: (quick brown) fox')  # Captures "quick brown"
+plc.search(c, '($mods: very)+ big')          # Captures "very" or "very very"
+
+# Bind alternatives
+plc.search(c, '$vehicle: [car,truck]')       # Captures whichever matches
+```
+
+**Accessing bindings:**
+```python
+results = plc.search(corpus, '$det: the $noun: fox')
+for match in results._matches:
+    det_span = match.bindings['det']
+    noun_span = match.bindings['noun']
+    det_text = corpus['token'][det_span.start:det_span.end]
+    noun_text = corpus['token'][noun_span.start:noun_span.end]
+```
+
+**Notes:**
+- Variable names must start with a letter, contain only letters/numbers/underscores
+- Parentheses are optional: `$x: fox` and `$x: (fox)` both work
+- Same syntax as CQP queries for easy transition
+
 ## CQP Query Language
 Advanced linguistic patterns:
 ```python

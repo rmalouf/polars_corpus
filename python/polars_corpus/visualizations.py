@@ -1,9 +1,7 @@
-import matplotlib.pyplot as plt
 import polars as pl
 import seaborn as sns
 from matplotlib.axes import Axes
 
-import polars_corpus as plc
 
 from ._typing import IntoExpr, T_Frame
 

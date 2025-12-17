@@ -4,6 +4,9 @@ This module implements a parser for the simple query syntax used in BNCweb,
 which provides an alternative to CQP syntax for corpus searches. The parser
 translates simple queries directly to CQP expressions.
 
+Supports variable bindings using $varname: pattern syntax, which translates
+to CQP's $varname: (pattern) format with automatic parenthesis wrapping.
+
 See simple_grammar.md for the full grammar specification.
 """
 
@@ -72,7 +75,7 @@ _POS_MAPPING = {
 
 
 # Define metacharacters that can be escaped
-metacharacters = "?*+,:@/()[]{}_ -<>"
+metacharacters = "?*+,:@$/()[]{}_ -<>"
 
 # Escaped character: backslash followed by metacharacter
 escaped_char = pp.Combine(pp.Literal("\\") + pp.Char(metacharacters)).set_parse_action(
@@ -88,6 +91,9 @@ wildcard_char = pp.Char("?*+")
 
 # Character parts that can appear in words or alternatives
 word_part = escaped_char | wildcard_char | word_char
+
+# Variable name pattern for bindings: letter followed by alphanumeric + underscore
+variable_name = pp.Combine(pp.Word(pp.alphas, pp.alphas + pp.nums + "_"))
 
 
 def _build_grammar(column: str, pos_column: str, lemma_column: str) -> pp.ParserElement:
@@ -289,6 +295,8 @@ def _build_grammar(column: str, pos_column: str, lemma_column: str) -> pp.Parser
 
     # Forward declaration for recursive grammar (groups can contain sequences)
     sequence_item = pp.Forward()
+    # Forward declaration for variable bindings
+    binding = pp.Forward()
 
     # Quantifiers for groups: ?, +, *, {n}, {m,n}
     # Note: The simple literals must come before the regex to avoid ambiguity
@@ -338,9 +346,27 @@ def _build_grammar(column: str, pos_column: str, lemma_column: str) -> pp.Parser
 
     group_pattern.set_parse_action(make_group)
 
-    # A sequence item is: group or base_item
-    # Groups must come before base items to be matched first
-    sequence_item <<= group_pattern | base_item
+    # Variable binding: $varname: pattern (parentheses optional)
+    # The binding target can be a base_item or group_pattern
+    binding_target = group_pattern | base_item
+
+    binding_pattern = (
+        pp.Suppress("$") + variable_name + pp.Suppress(":") + binding_target
+    )
+
+    def make_binding(t: pp.ParseResults) -> str:
+        """Convert simple query binding to CQP binding syntax."""
+        var_name = t[0]
+        pattern = t[1]  # CQP pattern from nested parse action
+        # Wrap in parentheses for CQP binding syntax
+        return f"${var_name}: ({pattern})"
+
+    binding_pattern.set_parse_action(make_binding)
+    binding <<= binding_pattern
+
+    # A sequence item is: binding, group, or base_item
+    # Bindings and groups must come before base items to be matched first
+    sequence_item <<= binding | group_pattern | base_item
 
     # A query is a sequence of items
     return pp.OneOrMore(sequence_item)
@@ -415,6 +441,15 @@ def simple_to_cqp(
 
     >>> simple_to_cqp("{box}_{SUBST}")
     '[lemma="box"%c & pos="N.*"]'
+
+    >>> simple_to_cqp("$x: fox")
+    '$x: ([token="fox"%c])'
+
+    >>> simple_to_cqp("$det: the $noun: fox")
+    '$det: ([token="the"%c]) $noun: ([token="fox"%c])'
+
+    >>> simple_to_cqp("$phrase: (quick brown)")
+    '$phrase: ([token="quick"%c] [token="brown"%c])'
     """
     # Build grammar with parse actions for the specified columns
     grammar = _build_grammar(column, pos_column, lemma_column)

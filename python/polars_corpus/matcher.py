@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Optional
 
 import polars as pl
 
@@ -176,6 +176,10 @@ def search(
       - `{walk}_VBD` → lemma "walk" with exact POS tag VBD
       - `{be}_V*` → lemma "be" with any verb POS tag
       - `{eat} * up` → lemma "eat" followed by "up"
+    - **Variable bindings**: `$varname: pattern` to capture subpatterns
+      - `$target: fox` → capture "fox" position
+      - `$phrase: (quick brown)` → capture multi-token span
+      - Access via `match.bindings[varname]`
     - **Escaping**: `\\?` for literal question mark
 
     For CQP queries with advanced features, use `search_cqp()` instead.
@@ -199,6 +203,12 @@ def search(
     >>> search(corpus, "{light/V}")  # Verbal forms (simplified POS)
     >>> search(corpus, "{walk}_VBD")  # Lemma "walk" with exact POS tag
     >>> search(corpus, "{eat} * up")  # Lemma "eat" followed by "up"
+
+    >>> # Variable bindings
+    >>> results = search(corpus, "$verb: {walk}")
+    >>> match = results._matches[0]
+    >>> verb_span = match.bindings["verb"]
+    >>> verb_text = corpus["token"][verb_span.start:verb_span.end]
 
     >>> # Search in a different column
     >>> search(corpus, "NN*", column="pos")  # Find noun POS tags

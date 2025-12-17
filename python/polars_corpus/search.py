@@ -6,7 +6,7 @@ from typing import Optional
 import polars as pl
 from polars._typing import IntoExprColumn
 
-from ._internal import Match, Span, py_concordance, py_kwic, spans_to_chunks
+from ._internal import Match, py_concordance, py_kwic, spans_to_chunks
 
 __all__ = ["SearchResults", "concordance", "collocates"]
 

@@ -1,7 +1,7 @@
 import polars as pl
 import pyparsing as pp
 import pytest
-from polars_corpus.matcher import Match, Span, get_matches
+from polars_corpus.matcher import Span, get_matches
 
 
 def match_spans(matches):
