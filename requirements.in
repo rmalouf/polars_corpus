@@ -1,7 +1,7 @@
 polars>=1.35
 pyparsing>=3.2
 nltk>=3.9
-ipywidgets>=8.1
+anywidget>=0.9.0
 # itables
 # sentence_transformers
 
