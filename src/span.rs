@@ -35,11 +35,12 @@ pub fn spans_to_chunks(spans: Vec<Span>, n: usize) -> PyResult<PySeries> {
 pub fn py_concordance(
     // polars <-> pyo3 shim
     py_df: PyDataFrame,
-    matched_spans: Vec<Span>,
+    matches: Vec<Match>,
     py_chunk_tag: PySeries,
 ) -> PyResult<PyDataFrame> {
     let df: DataFrame = py_df.0;
     let chunk_tag = py_chunk_tag.0;
+    let matched_spans: Vec<Span> = matches.into_iter().map(|m| m.span).collect();
     let out_df = concordance_df(&df, &matched_spans, &chunk_tag).map_err(PyPolarsErr::from)?;
     Ok(PyDataFrame(out_df))
 }

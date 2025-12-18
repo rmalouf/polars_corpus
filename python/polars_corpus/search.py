@@ -109,14 +109,11 @@ class SearchResults:
         >>> results.concordance(["token", "pos"], window=5)  # Multiple columns
         """
 
-        # Extract spans from matches for Rust functions
-        spans = [match.span for match in self._matches]
-
         if chunk_tag is not None:
             chunk_tag_column = self._df.get_column(chunk_tag)
             return py_concordance(
                 self._df.select(expr),
-                spans,
+                self._matches,
                 chunk_tag_column,
             )
         else:
@@ -128,7 +125,7 @@ class SearchResults:
                 right_window = window
             return py_kwic(
                 self._df.select(expr),
-                spans,
+                self._matches,
                 left_window,
                 right_window,
             )
