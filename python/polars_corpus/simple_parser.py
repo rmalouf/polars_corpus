@@ -298,31 +298,29 @@ def _build_grammar(column: str, pos_column: str, lemma_column: str) -> pp.Parser
     # Forward declaration for variable bindings
     binding = pp.Forward()
 
-    # Quantifiers for groups: ?, +, *, {n}, {m,n}
-    # Note: The simple literals must come before the regex to avoid ambiguity
-    quantifier = (
-        pp.Literal("?")
-        | pp.Literal("+")
-        | pp.Literal("*")
-        | pp.Regex(r"\{\d+,\d+\}")
-        | pp.Regex(r"\{\d+\}")
-    )
-
     # Group: (sequence) or (alternative1 | alternative2 | ...) with optional quantifier
     # Each alternative is a sequence of items
     # Disjunction (pipe-separated alternatives) is supported
+    # IMPORTANT: Quantifier must immediately follow ) with NO whitespace
+    # to disambiguate from gap tokens (e.g., "(x | y)+" vs "(x | y) +")
     group_sequence = pp.Group(pp.OneOrMore(sequence_item))
     group_content = group_sequence + pp.ZeroOrMore(pp.Suppress("|") + group_sequence)
+
+    # Match closing paren optionally followed immediately by quantifier (no whitespace)
+    # This regex captures ) and optional quantifier as a single token
+    closing_with_optional_quant = pp.Regex(r'\)(?:[?+*]|\{\d+(?:,\d+)?\})?')
+
     group_pattern = (
         pp.Suppress("(")
         + pp.Group(group_content)
-        + pp.Suppress(")")
-        + pp.Optional(quantifier)
+        + closing_with_optional_quant
     )
 
     def make_group(t: pp.ParseResults) -> str:
         content = t[0]  # The group content (may contain multiple alternatives)
-        quant = t[1] if len(t) > 1 else None
+        closing = t[1]  # The closing paren + optional quantifier (e.g., ")", ")+", ")?", etc.)
+        # Extract quantifier if present (everything after the ')')
+        quant = closing[1:] if len(closing) > 1 else None
 
         # Check if we have disjunction (multiple alternatives)
         # content is a list of sequences (each sequence is a list of items)

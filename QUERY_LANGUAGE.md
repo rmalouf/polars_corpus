@@ -23,8 +23,12 @@ plc.search(c, 'fox *** over')         # 0-3 tokens
 
 # Repetition groups
 plc.search(c, '(very)? big')          # Optional
-plc.search(c, '(very)+ big')          # One or more
+plc.search(c, '(very)+ big')          # One or more (no space before +)
+plc.search(c, '(very) + big')         # (very) followed by gap token, then big
 plc.search(c, '(red){2,3}')           # 2-3 repetitions
+
+**Note:** Whitespace matters! `(pattern)+` (no space) is a quantifier meaning "one or more repetitions",
+while `(pattern) +` (with space) means "pattern followed by exactly one mandatory token".
 ```
 
 ### Variable Bindings (Capturing Subpatterns)

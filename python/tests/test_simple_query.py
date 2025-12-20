@@ -782,6 +782,26 @@ class TestGroupDisjunction:
         # Should match "and schoolroom" at indices 44-46
         assert_matches(sample_corpus, matches, [(44, 46, "and schoolroom")])
 
+    def test_quantifier_vs_gap_whitespace_sensitivity(
+        self, sample_corpus: pl.DataFrame
+    ) -> None:
+        """Test that whitespace disambiguates quantifier from gap token.
+
+        - (pattern)+ (no space) = quantifier: one or more repetitions
+        - (pattern) + (with space) = gap token: pattern followed by mandatory token
+        """
+        # Without space: quantifier (one or more)
+        query_quantifier = "(red)+ car"
+        # Should match "red car" where "red" appears one or more times
+        matches = plc.search(sample_corpus, query_quantifier)
+        assert_matches(sample_corpus, matches, [(20, 22, "red car")])
+
+        # With space: gap token (followed by exactly one token)
+        query_gap = "(red) + and"
+        # Should match "red <any-token> and" = "red car and"
+        matches = plc.search(sample_corpus, query_gap)
+        assert_matches(sample_corpus, matches, [(20, 23, "red car and")])
+
     def test_three_way_disjunction(self, sample_corpus: pl.DataFrame) -> None:
         """Test three-way disjunction: (car | truck | dog)"""
         query = "(car | truck | dog)"
