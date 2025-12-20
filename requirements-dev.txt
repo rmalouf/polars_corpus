@@ -224,7 +224,7 @@ mypy==1.17.1
     # via -r requirements-dev.in
 mypy-extensions==1.1.0
     # via mypy
-nbclient==0.10.2
+nbclient==0.10.3
     # via nbconvert
 nbconvert==7.16.6
     # via jupyter-server
@@ -243,7 +243,7 @@ notebook-shim==0.2.4
     # via
     #   jupyterlab
     #   notebook
-numpy==2.3.5
+numpy==2.4.0
     # via
     #   contourpy
     #   matplotlib
@@ -381,7 +381,7 @@ six==1.17.0
     # via
     #   python-dateutil
     #   rfc3339-validator
-soupsieve==2.8
+soupsieve==2.8.1
     # via beautifulsoup4
 stack-data==0.6.3
     # via ipython
