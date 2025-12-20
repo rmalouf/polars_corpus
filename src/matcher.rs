@@ -1,7 +1,6 @@
 #![allow(clippy::upper_case_acronyms)]
 
 use std::collections::HashMap;
-use std::sync::Arc;
 
 use polars::prelude::*;
 use pyo3::exceptions::PyRuntimeError;
@@ -43,11 +42,36 @@ impl Match {
     }
 }
 
+/// Reusable buffers for matching to avoid repeated allocations
+struct MatchBuffers {
+    stack: Vec<(usize, usize)>,
+    var_stack: Vec<Option<usize>>,
+    bindings_stack: Vec<(usize, Span)>,
+    match_bindings: Vec<(usize, Span)>,
+}
+
+impl MatchBuffers {
+    fn new() -> Self {
+        Self {
+            stack: Vec::with_capacity(64),
+            var_stack: Vec::new(),
+            bindings_stack: Vec::new(),
+            match_bindings: Vec::new(),
+        }
+    }
+
+    fn clear(&mut self) {
+        self.stack.clear();
+        self.var_stack.clear();
+        self.bindings_stack.clear();
+        self.match_bindings.clear();
+    }
+}
+
 #[pyclass(module = "polars_corpus")]
 pub struct OpcodeMatcher {
     opcodes: Vec<Opcode>,
     mask_vec: Vec<BooleanChunked>,
-    var_name_cache: Vec<Option<Arc<str>>>,
 }
 
 #[pymethods]
@@ -66,29 +90,17 @@ impl OpcodeMatcher {
             })
             .collect::<PyResult<Vec<_>>>()?;
 
-        // Build var name cache aligned with opcodes for O(1) lookup by pc
-        let var_name_cache: Vec<Option<Arc<str>>> = opcodes
-            .iter()
-            .map(|op| match op {
-                Opcode::BindVar(name) => Some(Arc::from(name.as_str())),
-                _ => None,
-            })
-            .collect();
-
-        Ok(Self {
-            opcodes,
-            mask_vec,
-            var_name_cache,
-        })
+        Ok(Self { opcodes, mask_vec })
     }
 
     fn matchall(&self) -> PyResult<Option<Vec<Match>>> {
         let mut cursor: usize = 0;
         let starts = &self.mask_vec[0];
         let mut matches = Vec::with_capacity(1000);
+        let mut buffers = MatchBuffers::new();
         while cursor < starts.len() {
             if starts.get(cursor).unwrap()
-                && let Some(m) = self._match_opcodes(cursor)?
+                && let Some(m) = self._match_opcodes(cursor, &mut buffers)?
             {
                 cursor = m.span.end;
                 matches.push(m);
@@ -103,17 +115,19 @@ impl OpcodeMatcher {
             Ok(Some(matches))
         }
     }
+}
 
-    fn _match_opcodes(&self, cursor: usize) -> PyResult<Option<Match>> {
+// Private helper methods
+impl OpcodeMatcher {
+    fn _match_opcodes(&self, cursor: usize, buffers: &mut MatchBuffers) -> PyResult<Option<Match>> {
         let match_start = cursor;
         let mut match_end = cursor;
-        let mut match_bindings: Vec<(Arc<str>, Span)> = Vec::new();
-        let mut stack = Vec::with_capacity(64);
-        let mut var_stack: Vec<Option<usize>> = Vec::new();
-        let mut bindings_stack: Vec<(Arc<str>, Span)> = Vec::new();
+
+        buffers.clear();
+
         let n = self.mask_vec[0].len();
-        stack.push((cursor, 0));
-        while let Some(task) = stack.pop() {
+        buffers.stack.push((cursor, 0));
+        while let Some(task) = buffers.stack.pop() {
             let (mut cursor, mut pc) = task;
             loop {
                 if pc >= self.opcodes.len() {
@@ -131,38 +145,39 @@ impl OpcodeMatcher {
                     },
                     Opcode::Split(offset1, offset2) => {
                         let pc2 = (pc as isize + offset2) as usize;
-                        stack.push((cursor, pc2));
+                        buffers.stack.push((cursor, pc2));
                         pc = (pc as isize + offset1) as usize;
                     },
                     Opcode::Jump(offset) => {
                         pc = (pc as isize + offset) as usize;
                     },
                     Opcode::PushVar() => {
-                        var_stack.push(Some(cursor));
+                        buffers.var_stack.push(Some(cursor));
                         pc += 1;
                     },
                     Opcode::PopVar() => {
-                        var_stack.pop();
+                        buffers.var_stack.pop();
                         pc += 1;
                     },
                     Opcode::BindVar(_) => {
-                        let start = var_stack.pop().unwrap();
+                        let start = buffers.var_stack.pop().unwrap();
                         if let Some(start) = start {
-                            let name_rc = self.var_name_cache[pc].as_ref().unwrap().clone();
-                            bindings_stack.push((name_rc, Span::new(start, cursor)));
+                            buffers.bindings_stack.push((pc, Span::new(start, cursor)));
                         }
                         pc += 1;
                     },
                     Opcode::UnBindVar() => {
-                        bindings_stack.pop();
-                        var_stack.push(None);
+                        buffers.bindings_stack.pop();
+                        buffers.var_stack.push(None);
                         pc += 1;
                     },
                     Opcode::Match() => {
                         if cursor > match_end {
                             match_end = cursor;
-                            match_bindings.clear();
-                            match_bindings.extend_from_slice(&bindings_stack);
+                            // Collect bindings to avoid simultaneous borrows
+                            let current_bindings = buffers.bindings_stack.to_vec();
+                            buffers.match_bindings.clear();
+                            buffers.match_bindings.extend(current_bindings);
                         }
                         pc += 1;
                     },
@@ -173,9 +188,17 @@ impl OpcodeMatcher {
             }
         }
         if match_end > match_start {
-            let bindings_map: HashMap<String, Span> = match_bindings
-                .into_iter()
-                .map(|(name, span)| (name.to_string(), span))
+            let bindings_map: HashMap<String, Span> = buffers
+                .match_bindings
+                .iter()
+                .map(|(pc, span)| {
+                    // Look up variable name from the opcode
+                    let name = match &self.opcodes[*pc] {
+                        Opcode::BindVar(name) => name.clone(),
+                        _ => unreachable!(),
+                    };
+                    (name, span.clone())
+                })
                 .collect();
             Ok(Some(Match {
                 span: Span::new(match_start, match_end),
