@@ -15,5 +15,6 @@ from .matcher import *  # noqa: F403
 from .search import *  # noqa: F403
 from .utils import *  # noqa: F403
 from .view import *  # noqa: F403
+from .visualizations import *  # noqa: F403
 
 __version__ = importlib.metadata.version("polars-corpus")

@@ -1,8 +1,17 @@
 import polars as pl
 import pyparsing as pp
 import pytest
+from polars_corpus.matcher import Span, get_matches
 
-from polars_corpus.matcher import get_matches, Span
+
+def match_spans(matches):
+    """Extract spans from matches for easier testing."""
+    return [m.span for m in matches]
+
+
+def match_bindings(matches, var_name):
+    """Extract spans for a specific variable from matches."""
+    return [m.bindings.get(var_name) for m in matches if var_name in m.bindings]
 
 
 @pytest.fixture
@@ -117,14 +126,14 @@ class TestBasicTokenMatching:
         query = '[word="fox"]'
         matches = get_matches(sample_corpus, query)
         assert len(matches) == 1
-        assert matches[0] == Span(3, 4)
+        assert matches[0].span == Span(3, 4)
 
     def test_single_word_negative_match(self, sample_corpus):
         """Test inequality constrain on a single specific word"""
         query = '[word!="fox"]'
         matches = get_matches(sample_corpus, query)
         assert len(matches) == 8
-        assert Span(3, 4) not in matches
+        assert Span(3, 4) not in match_spans(matches)
 
     def test_pos_tag_match(self, sample_corpus):
         """Test matching by part-of-speech tag"""
@@ -132,9 +141,9 @@ class TestBasicTokenMatching:
         matches = get_matches(sample_corpus, query)
         # Should match "quick", "brown", "lazy"
         assert len(matches) == 3
-        assert Span(1, 2) in matches
-        assert Span(2, 3) in matches
-        assert Span(7, 8) in matches
+        assert Span(1, 2) in match_spans(matches)
+        assert Span(2, 3) in match_spans(matches)
+        assert Span(7, 8) in match_spans(matches)
 
     def test_lemma_match(self, sample_corpus):
         """Test matching by lemma"""
@@ -142,8 +151,8 @@ class TestBasicTokenMatching:
         matches = get_matches(sample_corpus, query)
         # Should match both "The" and "the"
         assert len(matches) == 2
-        assert Span(0, 1) in matches
-        assert Span(6, 7) in matches
+        assert Span(0, 1) in match_spans(matches)
+        assert Span(6, 7) in match_spans(matches)
 
     def test_case_insensitive_matching(self, sample_corpus):
         """Test case-insensitive matching with %c modifier"""
@@ -151,8 +160,8 @@ class TestBasicTokenMatching:
         query = '[word="the"%c]'
         matches = get_matches(sample_corpus, query)
         assert len(matches) == 2
-        assert Span(0, 1) in matches  # "The"
-        assert Span(6, 7) in matches  # "the"
+        assert Span(0, 1) in match_spans(matches)  # "The"
+        assert Span(6, 7) in match_spans(matches)  # "the"
 
         # Case-insensitive inequality
         query = '[word!="THE"%c]'
@@ -163,7 +172,7 @@ class TestBasicTokenMatching:
         query = '[pos="JJ" & word="BROWN"%c]'
         matches = get_matches(sample_corpus, query)
         assert len(matches) == 1
-        assert matches[0] == Span(2, 3)  # "brown"
+        assert matches[0].span == Span(2, 3)  # "brown"
 
     def test_no_match(self, sample_corpus):
         """Test query that should return no matches"""
@@ -181,8 +190,8 @@ class TestSequenceMatching:
         matches = get_matches(sample_corpus, query)
         # Should match "brown fox" and "lazy dog"
         assert len(matches) == 2
-        assert Span(2, 4) in matches
-        assert Span(7, 9) in matches
+        assert Span(2, 4) in match_spans(matches)
+        assert Span(7, 9) in match_spans(matches)
 
     def test_three_token_sequence(self, sample_corpus):
         """Test matching a sequence of three tokens"""
@@ -190,14 +199,14 @@ class TestSequenceMatching:
         matches = get_matches(sample_corpus, query)
         # Should match "the lazy dog"
         assert len(matches) == 1
-        assert matches[0] == Span(6, 9)
+        assert matches[0].span == Span(6, 9)
 
     def test_specific_word_sequence(self, sample_corpus):
         """Test matching specific word sequences"""
         query = '[word="the"] [word="lazy"]'
         matches = get_matches(sample_corpus, query)
         assert len(matches) == 1
-        assert matches[0] == Span(6, 8)
+        assert matches[0].span == Span(6, 8)
 
 
 class TestConstraintOperators:
@@ -208,7 +217,7 @@ class TestConstraintOperators:
         query = '[pos="JJ" & lemma="brown"]'
         matches = get_matches(sample_corpus, query)
         assert len(matches) == 1
-        assert matches[0] == Span(2, 3)
+        assert matches[0].span == Span(2, 3)
 
     def test_disjunction_constraint(self, sample_corpus):
         """Test OR constraint within a token"""
@@ -216,10 +225,10 @@ class TestConstraintOperators:
         matches = get_matches(sample_corpus, query)
         # Should match "The", "fox", "the", "dog"
         assert len(matches) == 4
-        assert Span(0, 1) in matches
-        assert Span(3, 4) in matches
-        assert Span(6, 7) in matches
-        assert Span(8, 9) in matches
+        assert Span(0, 1) in match_spans(matches)
+        assert Span(3, 4) in match_spans(matches)
+        assert Span(6, 7) in match_spans(matches)
+        assert Span(8, 9) in match_spans(matches)
 
     def test_complex_constraint(self, sample_corpus):
         """Test complex constraint with multiple operators"""
@@ -227,8 +236,8 @@ class TestConstraintOperators:
         matches = get_matches(sample_corpus, query)
         # Should match "quick" and "lazy"
         assert len(matches) == 2
-        assert Span(1, 2) in matches
-        assert Span(7, 8) in matches
+        assert Span(1, 2) in match_spans(matches)
+        assert Span(7, 8) in match_spans(matches)
 
 
 class TestWildcardMatching:
@@ -241,7 +250,7 @@ class TestWildcardMatching:
         # Should match every single token
         assert len(matches) == len(sample_corpus)
         for i in range(len(sample_corpus)):
-            assert Span(i, i + 1) in matches
+            assert Span(i, i + 1) in match_spans(matches)
 
     def test_wildcard_in_sequence(self, sample_corpus):
         """Test wildcard within a sequence"""
@@ -249,7 +258,7 @@ class TestWildcardMatching:
         matches = get_matches(sample_corpus, query)
         # Should match "the lazy dog"
         assert len(matches) == 1
-        assert matches[0] == Span(6, 9)
+        assert matches[0].span == Span(6, 9)
 
 
 class TestQuantifiers:
@@ -261,10 +270,10 @@ class TestQuantifiers:
         matches = get_matches(complex_corpus, query)
         # Should match "big red house", "long winding paved street", "red barn", "cow"
         assert len(matches) == 4
-        assert matches[0] == Span(5, 8)
-        assert matches[1] == Span(10, 14)
-        assert matches[2] == Span(15, 17)
-        assert matches[3] == Span(18, 19)
+        assert matches[0].span == Span(5, 8)
+        assert matches[1].span == Span(10, 14)
+        assert matches[2].span == Span(15, 17)
+        assert matches[3].span == Span(18, 19)
 
     def test_one_or_more_quantifier(self, complex_corpus):
         """Test + quantifier (one or more)"""
@@ -272,9 +281,9 @@ class TestQuantifiers:
         matches = get_matches(complex_corpus, query)
         # Should match "big red house", "long winding paved street", "red barn"
         assert len(matches) == 3
-        assert matches[0] == Span(5, 8)
-        assert matches[1] == Span(10, 14)
-        assert matches[2] == Span(15, 17)
+        assert matches[0].span == Span(5, 8)
+        assert matches[1].span == Span(10, 14)
+        assert matches[2].span == Span(15, 17)
 
     def test_optional_quantifier(self, sample_corpus):
         """Test ? quantifier (zero or one)"""
@@ -282,8 +291,8 @@ class TestQuantifiers:
         matches = get_matches(sample_corpus, query)
         # Should match "brown fox", "the lazy dog"
         assert len(matches) == 2
-        assert matches[0] == Span(2, 4)
-        assert matches[1] == Span(6, 9)
+        assert matches[0].span == Span(2, 4)
+        assert matches[1].span == Span(6, 9)
 
     def test_exact_count_quantifier(self, complex_corpus):
         """Test {n} quantifier (exactly n occurrences)"""
@@ -291,8 +300,8 @@ class TestQuantifiers:
         matches = get_matches(complex_corpus, query)
         # Should match "big red house", "winding paved street"
         assert len(matches) == 2
-        assert matches[0] == Span(5, 8)
-        assert matches[1] == Span(11, 14)
+        assert matches[0].span == Span(5, 8)
+        assert matches[1].span == Span(11, 14)
 
     def test_range_quantifier(self, complex_corpus):
         """Test {m,n} quantifier (between m and n occurrences)"""
@@ -300,9 +309,9 @@ class TestQuantifiers:
         matches = get_matches(complex_corpus, query)
         # Should match "big red house", "winding paved street", "red barn"
         assert len(matches) == 3
-        assert matches[0] == Span(5, 8)
-        assert matches[1] == Span(11, 14)
-        assert matches[2] == Span(15, 17)
+        assert matches[0].span == Span(5, 8)
+        assert matches[1].span == Span(11, 14)
+        assert matches[2].span == Span(15, 17)
 
     def test_min_quantifier(self, complex_corpus):
         """Test {m,} quantifier (at least m occurrences)"""
@@ -310,8 +319,8 @@ class TestQuantifiers:
         matches = get_matches(complex_corpus, query)
         # Should match "big red house", "long winding paved street"
         assert len(matches) == 2
-        assert matches[0] == Span(5, 8)
-        assert matches[1] == Span(10, 14)
+        assert matches[0].span == Span(5, 8)
+        assert matches[1].span == Span(10, 14)
 
     def test_max_quantifier(self, complex_corpus):
         """Test {,n} quantifier (at most n occurrences)"""
@@ -319,10 +328,10 @@ class TestQuantifiers:
         matches = get_matches(complex_corpus, query)
         # Should match "big red house", "winding paved street", "red barn", "cow"
         assert len(matches) == 4
-        assert matches[0] == Span(5, 8)
-        assert matches[1] == Span(11, 14)
-        assert matches[2] == Span(15, 17)
-        assert matches[3] == Span(18, 19)
+        assert matches[0].span == Span(5, 8)
+        assert matches[1].span == Span(11, 14)
+        assert matches[2].span == Span(15, 17)
+        assert matches[3].span == Span(18, 19)
 
 
 class TestDisjunction:
@@ -334,9 +343,9 @@ class TestDisjunction:
         matches = get_matches(sample_corpus, query)
         # Should match "The", "the", "jumps"
         assert len(matches) == 3
-        assert matches[0] == Span(0, 1)
-        assert matches[1] == Span(4, 5)
-        assert matches[2] == Span(6, 7)
+        assert matches[0].span == Span(0, 1)
+        assert matches[1].span == Span(4, 5)
+        assert matches[2].span == Span(6, 7)
 
     def test_complex_pattern_disjunction(self, sample_corpus):
         """Test OR between complex patterns"""
@@ -344,9 +353,9 @@ class TestDisjunction:
         matches = get_matches(sample_corpus, query)
         # Should match "The quick", "brown fox", "the lazy"
         assert len(matches) == 3
-        assert matches[0] == Span(0, 2)
-        assert matches[1] == Span(2, 4)
-        assert matches[2] == Span(6, 8)
+        assert matches[0].span == Span(0, 2)
+        assert matches[1].span == Span(2, 4)
+        assert matches[2].span == Span(6, 8)
 
 
 class TestEdgeCases:
@@ -367,7 +376,7 @@ class TestEdgeCases:
         query = '[pos="NN"]'
         matches = get_matches(single_corpus, query)
         assert len(matches) == 1
-        assert matches[0] == Span(0, 1)
+        assert matches[0].span == Span(0, 1)
 
     def test_pattern_longer_than_corpus(self, sample_corpus):
         """Test pattern that's longer than the corpus"""
@@ -386,21 +395,21 @@ class TestRegexPatterns:
         query = '[word=".*ox"]'  # Ends with "ox"
         matches = get_matches(sample_corpus, query)
         assert len(matches) == 1
-        assert matches[0] == Span(3, 4)  # "fox"
+        assert matches[0].span == Span(3, 4)  # "fox"
 
         # Character classes
         query = '[word="[Tt]he"]'  # "The" or "the"
         matches = get_matches(sample_corpus, query)
         assert len(matches) == 2
-        assert Span(0, 1) in matches  # "The"
-        assert Span(6, 7) in matches  # "the"
+        assert Span(0, 1) in match_spans(matches)  # "The"
+        assert Span(6, 7) in match_spans(matches)  # "the"
 
         # Alternation
         query = '[word="quick|brown"]'  # "quick" or "brown"
         matches = get_matches(sample_corpus, query)
         assert len(matches) == 2
-        assert Span(1, 2) in matches  # "quick"
-        assert Span(2, 3) in matches  # "brown"
+        assert Span(1, 2) in match_spans(matches)  # "quick"
+        assert Span(2, 3) in match_spans(matches)  # "brown"
 
         # POS patterns
         query = '[pos="[JN].*"]'  # Starts with J or N
@@ -411,14 +420,14 @@ class TestRegexPatterns:
         query = '[lemma="^the$"]'  # Exact match for "the"
         matches = get_matches(sample_corpus, query)
         assert len(matches) == 2
-        assert Span(0, 1) in matches
-        assert Span(6, 7) in matches
+        assert Span(0, 1) in match_spans(matches)
+        assert Span(6, 7) in match_spans(matches)
 
         # Quantifiers in patterns
         query = '[word="do.?"]'  # "do" followed by optional character
         matches = get_matches(sample_corpus, query)
         assert len(matches) == 1
-        assert matches[0] == Span(8, 9)  # "dog"
+        assert matches[0].span == Span(8, 9)  # "dog"
 
 
 # @pytest.mark.parametrize(
@@ -513,6 +522,174 @@ class TestSpanUtilities:
         spans = [Span(1, 3), Span(5, 7), Span(10, 12)]
         assert Span(1, 3) in spans
         assert Span(1, 4) not in spans
+
+
+class TestVariableBindings:
+    """Test CQP variable binding functionality ($var: pattern syntax)"""
+
+    @pytest.mark.parametrize(
+        "query,var,expected_span,description",
+        [
+            ('$n: ([pos="NN"])', "n", Span(3, 4), "single token"),
+            (
+                '$det: ([pos="DT"]) $adj: ([pos="JJ"]) $noun: ([pos="NN"])',
+                "det",
+                Span(6, 7),
+                "multiple vars - first",
+            ),
+            (
+                '[pos="DT"] $adj: ([pos="JJ"]) [pos="NN"]',
+                "adj",
+                Span(7, 8),
+                "mixed bound/unbound",
+            ),
+            (
+                '$v: ([pos="JJ"] | [pos="NN"])',
+                "v",
+                Span(1, 2),
+                "disjunction - first alternative matches",
+            ),
+            (
+                '$v: ([pos="VB"] | [pos="NN"])',
+                "v",
+                Span(3, 4),
+                "disjunction - second alternative matches (backtracking)",
+            ),
+        ],
+    )
+    def test_basic_bindings(
+        self, sample_corpus, query, var, expected_span, description
+    ):
+        """Test basic variable binding patterns"""
+        matches = get_matches(sample_corpus, query)
+        assert matches is not None, f"No matches for: {description}"
+        assert len(matches) > 0, f"Empty matches for: {description}"
+        assert var in matches[0].bindings, (
+            f"Variable '{var}' not in bindings for: {description}"
+        )
+        assert matches[0].bindings[var] == expected_span, (
+            f"Wrong span for {description}"
+        )
+
+    def test_multiple_variables_in_sequence(self, sample_corpus):
+        """Test that multiple variables are all captured simultaneously"""
+        query = '$det: ([pos="DT"]) $adj: ([pos="JJ"]) $noun: ([pos="NN"])'
+        matches = get_matches(sample_corpus, query)
+        assert matches is not None
+        assert len(matches) == 1
+
+        # Verify all three variables are captured
+        assert "det" in matches[0].bindings
+        assert "adj" in matches[0].bindings
+        assert "noun" in matches[0].bindings
+
+        # Verify their spans
+        assert matches[0].bindings["det"] == Span(6, 7)  # "the"
+        assert matches[0].bindings["adj"] == Span(7, 8)  # "lazy"
+        assert matches[0].bindings["noun"] == Span(8, 9)  # "dog"
+
+        # Verify overall match span
+        assert matches[0].span == Span(6, 9)
+
+    @pytest.mark.parametrize(
+        "query,var,expected_match_idx,expected_span,description",
+        [
+            (
+                '$adjs: ([pos="JJ"]+) [pos="NN"]',
+                "adjs",
+                0,
+                Span(5, 7),
+                "plus: all consecutive adjectives",
+            ),
+            (
+                '$adjs: ([pos="JJ"]*) [pos="NN"]',
+                "adjs",
+                -1,
+                Span(18, 18),
+                "star: zero-match empty span",
+            ),
+            (
+                '$det: ([pos="DT"]?) [pos="JJ"] [pos="NN"]',
+                "det",
+                2,
+                Span(14, 15),
+                "optional: present",
+            ),
+            (
+                '$det: ([pos="DT"]?) [pos="JJ"] [pos="NN"]',
+                "det",
+                0,
+                Span(6, 6),
+                "optional: absent empty span",
+            ),
+            (
+                '$two: ([pos="JJ"]{2}) [pos="NN"]',
+                "two",
+                0,
+                Span(5, 7),
+                "exact count: 2 adjectives",
+            ),
+        ],
+    )
+    def test_quantifier_bindings(
+        self, complex_corpus, query, var, expected_match_idx, expected_span, description
+    ):
+        """Test that quantifiers bind entire matched sequence, not just last token"""
+        matches = get_matches(complex_corpus, query)
+        assert matches is not None, f"No matches for: {description}"
+        assert len(matches) > 0, f"Empty matches for: {description}"
+
+        match = matches[expected_match_idx]
+        assert var in match.bindings, (
+            f"Variable '{var}' not in bindings for: {description}"
+        )
+        assert match.bindings[var] == expected_span, f"Wrong span for {description}"
+
+    def test_nested_bindings(self, sample_corpus):
+        """Test that nested variable bindings capture both outer and inner variables"""
+        query = '$phrase: (($det: ([pos="DT"])) [pos="JJ"] [pos="NN"])'
+        matches = get_matches(sample_corpus, query)
+        assert matches is not None
+        assert len(matches) == 1
+
+        # Both variables should be captured
+        assert "phrase" in matches[0].bindings
+        assert "det" in matches[0].bindings
+
+        # Verify spans
+        assert matches[0].bindings["det"] == Span(6, 7)  # "the"
+        assert matches[0].bindings["phrase"] == Span(6, 9)  # "the lazy dog"
+
+        # Overall match should equal phrase binding
+        assert matches[0].span == matches[0].bindings["phrase"]
+
+    def test_binding_in_alternation(self, sample_corpus):
+        """Test that variable bindings work correctly with alternation (disjunction)"""
+        query = '$target: ([pos="JJ"] | [pos="NN"])'
+        matches = get_matches(sample_corpus, query)
+        assert matches is not None
+
+        # Should match all JJ and NN: quick, brown, fox, lazy, dog
+        assert len(matches) == 5
+
+        # Each match should have the "target" binding
+        for match in matches:
+            assert "target" in match.bindings
+            # Binding should match the overall span for single-variable queries
+            assert match.bindings["target"] == match.span
+
+    @pytest.mark.parametrize(
+        "query",
+        [
+            '$x: ([pos="JJ"]) $x: ([pos="NN"])',  # Sequential reuse
+            '$x: ([pos="JJ"]+) $x: ([pos="NN"]+)',  # With quantifiers
+            '($x: ([pos="JJ"])) ($x: ([pos="NN"]))',  # In groups
+        ],
+    )
+    def test_variable_reuse_error(self, sample_corpus, query):
+        """Variable names cannot be reused in same query - should raise error"""
+        with pytest.raises((ValueError, RuntimeError, pp.ParseException)):
+            get_matches(sample_corpus, query)
 
 
 if __name__ == "__main__":

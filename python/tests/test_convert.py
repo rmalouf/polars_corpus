@@ -1,7 +1,6 @@
 import polars as pl
 import pytest
 from nltk.corpus import brown, lin_thesaurus, state_union, swadesh207, treebank
-
 from polars_corpus.convert import from_nltk
 
 

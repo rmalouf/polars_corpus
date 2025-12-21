@@ -6,7 +6,7 @@ from typing import Optional
 import polars as pl
 from polars._typing import IntoExprColumn
 
-from ._internal import Span, py_concordance, py_kwic, spans_to_chunks
+from ._internal import Match, py_concordance, py_kwic, spans_to_chunks
 
 __all__ = ["SearchResults", "concordance", "collocates"]
 
@@ -25,8 +25,8 @@ class SearchResults:
         The source corpus DataFrame containing the original data.
     query : str
         The CQP query string that generated these results.
-    matched_spans : list[Span]
-        List of Span objects representing the matched text positions.
+    matches : list[Match]
+        List of Match objects representing the matched text positions and bindings.
 
     Attributes
     ----------
@@ -34,8 +34,8 @@ class SearchResults:
         The source corpus DataFrame.
     _query : str
         The original search query.
-    _matched_spans : list[Span]
-        The matched text spans.
+    _matches : list[Match]
+        The matched text spans with bindings.
 
     Examples
     --------
@@ -51,18 +51,18 @@ class SearchResults:
         self,
         df: pl.DataFrame,
         query: str,
-        matched_spans: list[Span],
+        matches: list[Match],
     ) -> None:
         self._df = df
         self._query = query
-        self._matched_spans = matched_spans
+        self._matches = matches
 
     def __repr__(self) -> str:
-        if len(self._matched_spans) != 1:
+        if len(self._matches) != 1:
             es = "es"
         else:
             es = ""
-        return f"SearchResults<'{self._query}'; {len(self._matched_spans):,} match{es}>"
+        return f"SearchResults<'{self._query}'; {len(self._matches):,} match{es}>"
 
     def concordance(
         self,
@@ -113,7 +113,7 @@ class SearchResults:
             chunk_tag_column = self._df.get_column(chunk_tag)
             return py_concordance(
                 self._df.select(expr),
-                self._matched_spans,
+                self._matches,
                 chunk_tag_column,
             )
         else:
@@ -125,7 +125,7 @@ class SearchResults:
                 right_window = window
             return py_kwic(
                 self._df.select(expr),
-                self._matched_spans,
+                self._matches,
                 left_window,
                 right_window,
             )
@@ -195,7 +195,7 @@ class SearchResults:
                 right_on=column,
                 how="left",
             )
-            .with_columns(n=self._df.height, f1=len(self._matched_spans) * window * 2)
+            .with_columns(n=self._df.height, f1=len(self._matches) * window * 2)
         ).remove(pl.col("f12") < min_freq)
 
         return (
@@ -280,10 +280,10 @@ class SearchResults:
         --------
         >>> first_10 = results.head(10)
         """
-        if abs(n) > len(self._matched_spans):
+        if abs(n) > len(self._matches):
             return self
         else:
-            return SearchResults(self._df, self._query, self._matched_spans[:n])
+            return SearchResults(self._df, self._query, self._matches[:n])
 
     def tail(self, n: int) -> SearchResults:
         """Return the last n search results.
@@ -309,10 +309,10 @@ class SearchResults:
         --------
         >>> last_10 = results.tail(10)
         """
-        if n > len(self._matched_spans):
+        if n > len(self._matches):
             return self
         elif n > 0:
-            return SearchResults(self._df, self._query, self._matched_spans[-n:])
+            return SearchResults(self._df, self._query, self._matches[-n:])
         else:
             raise ValueError
 
@@ -349,11 +349,11 @@ class SearchResults:
         """
         state = random.getstate()
         random.seed(seed)
-        if k < 0 or k > len(self._matched_spans):
+        if k < 0 or k > len(self._matches):
             raise ValueError
         try:
             new_results = SearchResults(
-                self._df, self._query, random.sample(self._matched_spans, k)
+                self._df, self._query, random.sample(self._matches, k)
             )
         finally:
             random.setstate(state)
@@ -386,7 +386,7 @@ class SearchResults:
             new_results = SearchResults(
                 self._df,
                 self._query,
-                random.sample(self._matched_spans, len(self._matched_spans)),
+                random.sample(self._matches, len(self._matches)),
             )
         finally:
             if seed is not None:
@@ -423,8 +423,10 @@ class SearchResults:
         >>> df_with_spans = results.with_spans_as_chunks('match_tags')
         >>> df_with_spans = results.with_spans_as_chunks()  # Default name 'spans'
         """
+        # Extract spans from matches for Rust function
+        spans = [match.span for match in self._matches]
         return self._df.with_columns(
-            spans_to_chunks(self._matched_spans, self._df.height).alias(name)
+            spans_to_chunks(spans, self._df.height).alias(name)
         )
 
 

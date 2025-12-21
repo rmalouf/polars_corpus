@@ -15,3 +15,20 @@ statrs = { version = "0.18", default-features = false }
 itertools = "0.14"
 polars-arrow = { version = "0.52", default-features = true }
 serde = { version = "1.0", features = ["derive"] }
+
+[profile.release]
+#debug = true
+#debug = "line-tables-only"  # or "limited"/"full" if you want more
+debug = "full"  # or "limited"/"full" if you want more
+strip = "none"
+lto = "off"                 # reduces cross-crate inlining + improves attribution
+codegen-units = 1
+
+[profile.profiling]
+inherits = "release"
+#debug = "line-tables-only"  # or "limited"/"full" if you want more
+#debug = true
+debug = "full"  # or "limited"/"full" if you want more
+strip = "none"
+lto = "off"                 # reduces cross-crate inlining + improves attribution
+codegen-units = 1           # optional: improves stability of profiles# optional: improves stability of profiles

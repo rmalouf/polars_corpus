@@ -1,9 +1,8 @@
 """Tests for lexical richness measures."""
 
 import polars as pl
-import pytest
-
 import polars_corpus as plc
+import pytest
 
 
 class TestTTR:

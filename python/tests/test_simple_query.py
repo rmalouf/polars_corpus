@@ -1,9 +1,8 @@
 from typing import Any, Optional
 
 import polars as pl
-import pytest
-
 import polars_corpus as plc
+import pytest
 
 
 def get_matched_tokens(
@@ -13,8 +12,8 @@ def get_matched_tokens(
     if search_results is None:
         return []
     tokens = []
-    for span in search_results._matched_spans:
-        matched_tokens = corpus["token"][span.start : span.end]  # type: ignore[attr-defined]
+    for match in search_results._matches:
+        matched_tokens = corpus["token"][match.span.start : match.span.end]  # type: ignore[attr-defined]
         tokens.append(" ".join(matched_tokens))
     return tokens
 
@@ -26,9 +25,9 @@ def get_matched_spans(
     if search_results is None:
         return []
     spans = []
-    for span in search_results._matched_spans:
-        matched_tokens = corpus["token"][span.start : span.end]  # type: ignore[attr-defined]
-        spans.append((span.start, span.end, " ".join(matched_tokens)))  # type: ignore[attr-defined]
+    for match in search_results._matches:
+        matched_tokens = corpus["token"][match.span.start : match.span.end]  # type: ignore[attr-defined]
+        spans.append((match.span.start, match.span.end, " ".join(matched_tokens)))  # type: ignore[attr-defined]
     return spans
 
 
@@ -52,9 +51,9 @@ def assert_matches(
         actual: list[tuple[int, int, str]] = []
     else:
         actual = []
-        for span in search_results._matched_spans:
-            tokens = corpus["token"][span.start : span.end]  # type: ignore[attr-defined]
-            actual.append((span.start, span.end, " ".join(tokens)))  # type: ignore[attr-defined]
+        for match in search_results._matches:
+            tokens = corpus["token"][match.span.start : match.span.end]  # type: ignore[attr-defined]
+            actual.append((match.span.start, match.span.end, " ".join(tokens)))  # type: ignore[attr-defined]
 
     # Normalize expected spans to include text
     expected: list[tuple[int, int, str]] = []
@@ -783,6 +782,26 @@ class TestGroupDisjunction:
         # Should match "and schoolroom" at indices 44-46
         assert_matches(sample_corpus, matches, [(44, 46, "and schoolroom")])
 
+    def test_quantifier_vs_gap_whitespace_sensitivity(
+        self, sample_corpus: pl.DataFrame
+    ) -> None:
+        """Test that whitespace disambiguates quantifier from gap token.
+
+        - (pattern)+ (no space) = quantifier: one or more repetitions
+        - (pattern) + (with space) = gap token: pattern followed by mandatory token
+        """
+        # Without space: quantifier (one or more)
+        query_quantifier = "(red)+ car"
+        # Should match "red car" where "red" appears one or more times
+        matches = plc.search(sample_corpus, query_quantifier)
+        assert_matches(sample_corpus, matches, [(20, 22, "red car")])
+
+        # With space: gap token (followed by exactly one token)
+        query_gap = "(red) + and"
+        # Should match "red <any-token> and" = "red car and"
+        matches = plc.search(sample_corpus, query_gap)
+        assert_matches(sample_corpus, matches, [(20, 23, "red car and")])
+
     def test_three_way_disjunction(self, sample_corpus: pl.DataFrame) -> None:
         """Test three-way disjunction: (car | truck | dog)"""
         query = "(car | truck | dog)"
@@ -841,6 +860,156 @@ class TestGroupDisjunction:
         # Verify structure: each match should start with "the"
         for m in matched:
             assert m.lower().startswith("the ")
+
+
+class TestSimpleQueryBindings:
+    """Test variable bindings in simple queries."""
+
+    @pytest.mark.parametrize(
+        "query,var_name,expected_token",
+        [
+            ("$target: fox", "target", "fox"),
+            ("$word: quick", "word", "quick"),
+            ("$suffix: *able", "suffix", "able"),
+        ],
+    )
+    def test_basic_binding(
+        self,
+        sample_corpus: pl.DataFrame,
+        query: str,
+        var_name: str,
+        expected_token: str,
+    ) -> None:
+        """Test basic single variable bindings."""
+        results = plc.search(sample_corpus, query)
+        assert results is not None
+        assert len(results._matches) > 0
+        match = results._matches[0]
+        assert var_name in match.bindings
+        span = match.bindings[var_name]
+        bound_text = " ".join(
+            sample_corpus["token"][span.start : span.end]  # type: ignore[attr-defined]
+        )
+        assert expected_token in bound_text.lower()
+
+    def test_multiple_variables(self, sample_corpus: pl.DataFrame) -> None:
+        """Test multiple variables in sequence."""
+        results = plc.search(sample_corpus, "$color: brown $noun: fox")
+        assert results is not None
+        assert len(results._matches) > 0
+        match = results._matches[0]
+        assert "color" in match.bindings
+        assert "noun" in match.bindings
+        # Verify the bindings capture the right tokens
+        color_text = " ".join(
+            sample_corpus["token"][  # type: ignore[attr-defined]
+                match.bindings["color"].start : match.bindings[
+                    "color"
+                ].end  # type: ignore[attr-defined]
+            ]
+        )
+        noun_text = " ".join(
+            sample_corpus["token"][  # type: ignore[attr-defined]
+                match.bindings["noun"].start : match.bindings[
+                    "noun"
+                ].end  # type: ignore[attr-defined]
+            ]
+        )
+        assert color_text == "brown"
+        assert noun_text == "fox"
+
+    @pytest.mark.parametrize(
+        "query,var_name",
+        [
+            ("$pos: _NN", "pos"),
+            ("$lemma: {sing}", "lemma"),
+            ("$tagged: walked_VBD", "tagged"),
+        ],
+    )
+    def test_binding_linguistic_features(
+        self, sample_corpus: pl.DataFrame, query: str, var_name: str
+    ) -> None:
+        """Test bindings with POS tags and lemmas."""
+        results = plc.search(sample_corpus, query)
+        assert results is not None
+        if len(results._matches) > 0:
+            assert var_name in results._matches[0].bindings
+
+    def test_binding_groups(self, sample_corpus: pl.DataFrame) -> None:
+        """Test binding groups with quantifiers."""
+        results = plc.search(sample_corpus, "$phrase: (quick brown) fox")
+        assert results is not None
+        assert len(results._matches) > 0
+        match = results._matches[0]
+        assert "phrase" in match.bindings
+        span = match.bindings["phrase"]
+        # Should capture "quick brown" (2 tokens)
+        assert span.end - span.start == 2  # type: ignore[attr-defined]
+        phrase_text = " ".join(
+            sample_corpus["token"][span.start : span.end]  # type: ignore[attr-defined]
+        )
+        assert phrase_text == "quick brown"
+
+    def test_binding_with_quantifier(self, sample_corpus: pl.DataFrame) -> None:
+        """Test binding with quantified groups."""
+        results = plc.search(sample_corpus, "($mods: very)+ capable")
+        assert results is not None
+        assert len(results._matches) > 0
+        match = results._matches[0]
+        assert "mods" in match.bindings
+        # Should capture "very" (one or more)
+        mods_text = " ".join(
+            sample_corpus["token"][  # type: ignore[attr-defined]
+                match.bindings["mods"].start : match.bindings[
+                    "mods"
+                ].end  # type: ignore[attr-defined]
+            ]
+        )
+        assert "very" in mods_text
+
+    def test_binding_alternatives(self, sample_corpus: pl.DataFrame) -> None:
+        """Test binding alternatives."""
+        results = plc.search(sample_corpus, "$vehicle: [car,truck]")
+        assert results is not None
+        assert len(results._matches) > 0
+        match = results._matches[0]
+        assert "vehicle" in match.bindings
+        vehicle_text = " ".join(
+            sample_corpus["token"][  # type: ignore[attr-defined]
+                match.bindings["vehicle"].start : match.bindings[
+                    "vehicle"
+                ].end  # type: ignore[attr-defined]
+            ]
+        )
+        assert vehicle_text.lower() in ["car", "truck"]
+
+    def test_binding_translation(self) -> None:
+        """Verify bindings translate correctly to CQP."""
+        from polars_corpus.simple_parser import simple_to_cqp
+
+        cqp = simple_to_cqp("$x: fox")
+        assert "$x: ([token=" in cqp
+        assert "fox" in cqp
+
+        cqp = simple_to_cqp("$a: quick $b: brown")
+        assert "$a:" in cqp and "$b:" in cqp
+
+    def test_binding_with_wildcard(self) -> None:
+        """Test that wildcard patterns translate correctly in bindings."""
+        from polars_corpus.simple_parser import simple_to_cqp
+
+        cqp = simple_to_cqp("$suffix: *able")
+        assert "$suffix:" in cqp
+        assert ".*able" in cqp
+
+    def test_binding_group_pattern(self) -> None:
+        """Test that group patterns translate correctly in bindings."""
+        from polars_corpus.simple_parser import simple_to_cqp
+
+        cqp = simple_to_cqp("$phrase: (quick brown)")
+        assert "$phrase:" in cqp
+        # Should have nested parentheses: $phrase: ((...))
+        assert "$phrase: (" in cqp
 
 
 if __name__ == "__main__":

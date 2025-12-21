@@ -10,23 +10,18 @@ from ._internal import Opcode
 __all__ = ["cqp"]
 
 
-## compile token-level constraints into polars expressions
-
-
 feature = pp.Word(pp.alphas + pp.nums + "_")
 number = pp.Word(pp.nums)
 value = pp.QuotedString('"')
 case_modifier = pp.Optional(pp.Literal("%c"))
+variable = pp.Suppress("$") + pp.Word(pp.alphas + pp.nums + "_")
 
 constraint_formula = pp.Forward()
 
 
 def compile_atomic_constraint(args: pp.ParseResults) -> pl.Expr:
-    # Check if case-insensitive modifier is present (will be at position 3 if present)
-    case_insensitive = len(args) > 3 and args[3] == "%c"
-
-    # Build regex pattern with optional case-insensitive flag
     pattern = "^(" + args[2] + ")$"
+    case_insensitive = len(args) > 3 and args[3] == "%c"
     if case_insensitive:
         pattern = "(?i)" + pattern
 
@@ -57,11 +52,11 @@ token_disj = (
 constraint_formula <<= token_disj
 
 
-def compile_node(args: pp.ParseResults) -> tuple[Opcode, ...]:
+def compile_node(args: pp.ParseResults) -> Opcode:
     if args:
-        return (Opcode.TOKEN, args[0])
+        return Opcode.Token(args[0].meta.serialize())
     else:
-        return (Opcode.SKIP,)
+        return Opcode.Skip()
 
 
 node = (
@@ -69,39 +64,59 @@ node = (
 ).set_parse_action(compile_node)
 
 
-## compile CQP commands into search operations
+## compile CQP commands into search Opcodes
 
 cqp = pp.Forward()
 
+
+## See: Gimpel, James F. "A theory of discrete patterns and their implementation
+##      in SNOBOL4." Communications of the ACM 16, no. 2 (1973): 91-100.
+
+
+def compile_binding(args: pp.ParseResults) -> list[Opcode]:
+    opcodes: list[Opcode] = []
+    opcodes.append(Opcode.PushVar())
+    opcodes.append(Opcode.Split(1, len(args[1:]) + 2))
+    opcodes.extend(args[1:])
+    opcodes.append(Opcode.Jump(3))
+    opcodes.append(Opcode.PopVar())
+    opcodes.append(Opcode.Fail())
+    opcodes.append(Opcode.BindVar(args[0]))
+    opcodes.append(Opcode.Split(3, 1))
+    opcodes.append(Opcode.UnBindVar())
+    opcodes.append(Opcode.Fail())
+    return opcodes
+
+
 simple_primary = node | (pp.Suppress("(") + cqp + pp.Suppress(")"))
-# binding = (feature + pp.Suppress(":") + simple_primary).set_parse_action(
-#     lambda toks: Bind(toks[0], toks[1])
-# )
-# primary = simple_primary | binding
-primary = simple_primary
+binding = (
+    variable + pp.Suppress(":") + pp.Suppress("(") + cqp + pp.Suppress(")")
+).set_parse_action(compile_binding)
+primary = simple_primary | binding
 
 
-def compile_star(args: pp.ParseResults) -> list[Any]:
-    operations: list[Any] = [(Opcode.SPLIT, 1, len(args) + 2)]
-    operations.extend(args)
-    operations.append((Opcode.JUMP, -(len(args) + 1)))
-    return operations
+def compile_star(args: pp.ParseResults) -> list[Opcode]:
+    opcodes: list[Opcode] = [Opcode.Split(1, len(args) + 2)]
+
+    opcodes.extend(args)
+    opcodes.append(Opcode.Jump(-(len(args) + 1)))
+    return opcodes
 
 
-def compile_plus(args: pp.ParseResults) -> list[Any]:
-    operations: list[Any] = []
-    operations.extend(args)
-    operations.append((Opcode.SPLIT, -len(args), 1))
-    return operations
+def compile_plus(args: pp.ParseResults) -> list[Opcode]:
+    opcodes: list[Opcode] = []
+    opcodes.extend(args)
+    opcodes.append(Opcode.Split(-len(args), 1))
+    return opcodes
 
 
-def compile_question(args: pp.ParseResults) -> list[Any]:
-    operations: list[Any] = [(Opcode.SPLIT, 1, len(args) + 1)]
-    operations.extend(args)
-    return operations
+def compile_question(args: pp.ParseResults) -> list[Opcode]:
+    opcodes: list[Opcode] = [Opcode.Split(1, len(args) + 1)]
+    opcodes.extend(args)
+    return opcodes
 
 
-def compile_m_to_n(args: pp.ParseResults) -> list[Any]:
+def compile_m_to_n(args: pp.ParseResults) -> list[Opcode]:
     m: Optional[int]
     n: Optional[int]
     args_dict = args.as_dict()
@@ -114,15 +129,15 @@ def compile_m_to_n(args: pp.ParseResults) -> list[Any]:
     if n and m > n:
         raise ValueError("m > n")
 
-    operations: list[Any] = []
+    opcodes: list[Opcode] = []
     for _ in range(m):
-        operations.extend(args[0])
+        opcodes.extend(args[0])
     if n is None:
-        operations.extend(compile_star(args[0]))
+        opcodes.extend(compile_star(args[0]))
     else:
         for i in range(0, n - m):
-            operations.extend(compile_question(args[0]))
-    return operations
+            opcodes.extend(compile_question(args[0]))
+    return opcodes
 
 
 repetition = (
@@ -154,13 +169,13 @@ def compile_disjunction(args: pp.ParseResults) -> Any:
     if len(args) == 1:
         return args[0]
     else:
-        operations: list[Any] = []
+        opcodes: list[Opcode] = []
         for i in range(len(args) - 1):
-            operations.append((Opcode.SPLIT, 1, len(args[i]) + 2))
-            operations.extend(args[i])
-            operations.append((Opcode.JUMP, len(args[i + 1]) + 1))
-        operations.extend(args[-1])
-        return operations
+            opcodes.append(Opcode.Split(1, len(args[i]) + 2))
+            opcodes.extend(args[i])
+            opcodes.append(Opcode.Jump(len(args[i + 1]) + 1))
+        opcodes.extend(args[-1])
+        return opcodes
 
 
 disjunction = (

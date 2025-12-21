@@ -6,10 +6,10 @@ import polars as pl
 
 from .assoc import crosstab, loglik, pmi, minsens
 from .chunk import chunk_id, with_chunk_index
+from .lexical import msttr, mtld, ttr, yules_k
 from .matcher import search, search_cqp
 from .search import SearchResults
 from .utils import ngrams
-from .lexical import ttr, msttr, yules_k, mtld
 
 
 @pl.api.register_expr_namespace("corpus")

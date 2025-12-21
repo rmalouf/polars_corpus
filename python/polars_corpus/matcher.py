@@ -1,22 +1,22 @@
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Optional
 
 import polars as pl
 
-from ._internal import Opcode, OpcodeMatcher, Span
+from ._internal import Match, Opcode, OpcodeMatcher, Span
 from .cqp_parser import cqp
 from .search import SearchResults
 from .simple_parser import simple_to_cqp
 
-__all__ = ["search", "search_cqp", "Span"]
+__all__ = ["search", "search_cqp", "Match", "Span"]
 
 
 def col_name(i: int) -> str:
     return f"_{i}"
 
 
-def compute_masks(df: pl.DataFrame, opcodes: list[Any]) -> pl.DataFrame:
+def compute_masks(df: pl.DataFrame, opcodes: list[Opcode]) -> pl.DataFrame:
     """Find token positions where a (sub-)query might potentially match"""
     for pc in range(len(opcodes)):
         df = propagate_masks(df, opcodes, pc)
@@ -24,19 +24,28 @@ def compute_masks(df: pl.DataFrame, opcodes: list[Any]) -> pl.DataFrame:
     return df.rechunk()
 
 
-def propagate_masks(df: pl.DataFrame, opcodes: list[Any], pc: int) -> pl.DataFrame:
+def propagate_masks(df: pl.DataFrame, opcodes: list[Opcode], pc: int) -> pl.DataFrame:
     """Propagate token masks backwards through the NFA"""
     if col_name(pc) not in df:
         match opcodes[pc]:
-            case (Opcode.TOKEN, expr):
+            case Opcode.Token(expr):
+                expr = pl.Expr.deserialize(expr)
                 df = df.with_columns(expr.fill_null(False).alias(col_name(pc)))
-            case (Opcode.MATCH,) | (Opcode.SKIP,):
+            case Opcode.Match() | Opcode.Skip() | Opcode.Fail():
                 df = df.with_columns(pl.lit(True).alias(col_name(pc)))
-            case (Opcode.JUMP, offset):
+            case (
+                Opcode.PushVar()
+                | Opcode.PopVar()
+                | Opcode.BindVar(_)
+                | Opcode.UnBindVar()
+            ):
+                df = propagate_masks(df, opcodes, pc + 1)
+                df = df.with_columns(pl.col(col_name(pc + 1)).alias(col_name(pc)))
+            case Opcode.Jump(offset):
                 if col_name(pc + offset) not in df.columns:
                     df = propagate_masks(df, opcodes, pc + offset)
                 df = df.with_columns(pl.col(col_name(pc + offset)).alias(col_name(pc)))
-            case (Opcode.SPLIT, offset1, offset2):
+            case Opcode.Split(offset1, offset2):
                 if col_name(pc + offset1) not in df.columns:
                     df = propagate_masks(df, opcodes, pc + offset1)
                 if col_name(pc + offset2) not in df.columns:
@@ -51,13 +60,13 @@ def propagate_masks(df: pl.DataFrame, opcodes: list[Any], pc: int) -> pl.DataFra
     return df
 
 
-def get_matches(df: pl.DataFrame, query: str) -> Optional[list[Span]]:
+def get_matches(df: pl.DataFrame, query: str) -> Optional[list[Match]]:
     """Parse query and retrieve matching spans"""
     if df.is_empty():
         return None
 
     opcodes = list(cqp.parse_string(query, parse_all=True))
-    opcodes.append((Opcode.MATCH,))
+    opcodes.append(Opcode.Match())
 
     mask_df = compute_masks(df, opcodes)
     masks = [mask_df.get_column(col) for col in mask_df.columns]
@@ -167,6 +176,10 @@ def search(
       - `{walk}_VBD` → lemma "walk" with exact POS tag VBD
       - `{be}_V*` → lemma "be" with any verb POS tag
       - `{eat} * up` → lemma "eat" followed by "up"
+    - **Variable bindings**: `$varname: pattern` to capture subpatterns
+      - `$target: fox` → capture "fox" position
+      - `$phrase: (quick brown)` → capture multi-token span
+      - Access via `match.bindings[varname]`
     - **Escaping**: `\\?` for literal question mark
 
     For CQP queries with advanced features, use `search_cqp()` instead.
@@ -190,6 +203,12 @@ def search(
     >>> search(corpus, "{light/V}")  # Verbal forms (simplified POS)
     >>> search(corpus, "{walk}_VBD")  # Lemma "walk" with exact POS tag
     >>> search(corpus, "{eat} * up")  # Lemma "eat" followed by "up"
+
+    >>> # Variable bindings
+    >>> results = search(corpus, "$verb: {walk}")
+    >>> match = results._matches[0]
+    >>> verb_span = match.bindings["verb"]
+    >>> verb_text = corpus["token"][verb_span.start:verb_span.end]
 
     >>> # Search in a different column
     >>> search(corpus, "NN*", column="pos")  # Find noun POS tags

@@ -3,7 +3,6 @@
 import polars as pl
 from polars._typing import IntoExprColumn
 
-
 __all__ = [
     "frequency_spectrum",
     "yules_K",
