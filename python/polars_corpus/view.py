@@ -87,9 +87,7 @@ class ConcordanceWidget:
             raise ValueError(f"Missing required column: {self.column}")
 
         # Check if context columns exist
-        self.has_context = (
-            self.left_col in df.columns and self.right_col in df.columns
-        )
+        self.has_context = self.left_col in df.columns and self.right_col in df.columns
 
         # Create the widget
         self.widget = self._create_widget(anywidget, traitlets, page_size)
@@ -699,7 +697,9 @@ export function render({ model, el }) {
         widget.observe(_on_filter_change, names=["filter_query"])
 
         # Handle custom messages (for shuffle)
-        def _on_custom_msg(widget_instance: Any, content: Dict[str, Any], buffers: List[Any]) -> None:
+        def _on_custom_msg(
+            widget_instance: Any, content: Dict[str, Any], buffers: List[Any]
+        ) -> None:
             if content.get("type") == "shuffle":
                 self.df = self.df.sample(fraction=1.0, shuffle=True)
                 widget.sort_column = None

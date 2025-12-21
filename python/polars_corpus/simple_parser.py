@@ -308,17 +308,17 @@ def _build_grammar(column: str, pos_column: str, lemma_column: str) -> pp.Parser
 
     # Match closing paren optionally followed immediately by quantifier (no whitespace)
     # This regex captures ) and optional quantifier as a single token
-    closing_with_optional_quant = pp.Regex(r'\)(?:[?+*]|\{\d+(?:,\d+)?\})?')
+    closing_with_optional_quant = pp.Regex(r"\)(?:[?+*]|\{\d+(?:,\d+)?\})?")
 
     group_pattern = (
-        pp.Suppress("(")
-        + pp.Group(group_content)
-        + closing_with_optional_quant
+        pp.Suppress("(") + pp.Group(group_content) + closing_with_optional_quant
     )
 
     def make_group(t: pp.ParseResults) -> str:
         content = t[0]  # The group content (may contain multiple alternatives)
-        closing = t[1]  # The closing paren + optional quantifier (e.g., ")", ")+", ")?", etc.)
+        closing = t[
+            1
+        ]  # The closing paren + optional quantifier (e.g., ")", ")+", ")?", etc.)
         # Extract quantifier if present (everything after the ')')
         quant = closing[1:] if len(closing) > 1 else None
 
