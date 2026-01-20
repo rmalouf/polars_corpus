@@ -8,8 +8,6 @@ now = time.time()
 result = c.corpus.search_cqp('$x:([pos!="ADJ"]) $y:([token="small"]) $z:([pos="ADJ"]*) [pos="SUBST"]')
 print(f'{time.time()-now:.3f}', result)
 
-# now = time.time()
-# result = c.corpus.search_cqp('([pos!="ADJ"]) ([token="small"]) ([pos="ADJ"]*) [pos="SUBST"]')
-#
-# print(f'{time.time()-now:.3f}', result)
-
+now = time.time()
+result = c.corpus.search_cqp('([pos!="ADJ"]) ([token="small"]) ([pos="ADJ"]*) [pos="SUBST"]')
+print(f'{time.time()-now:.3f}', result)

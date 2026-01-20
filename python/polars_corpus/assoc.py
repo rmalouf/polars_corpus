@@ -19,9 +19,7 @@ __all__ = [
 LIB = Path(__file__).parent
 
 
-def crosstab(
-    df: T_Frame, x: str, y: str, freqs_name: str = "freqs"
-) -> T_Frame:
+def crosstab(df: T_Frame, x: str, y: str, freqs_name: str = "freqs") -> T_Frame:
     """
     Create a crosstabulation (contingency table) from two categorical variables.
 

@@ -4,7 +4,7 @@ from typing import Any, Optional
 
 import polars as pl
 
-from .assoc import crosstab, loglik, pmi, minsens
+from .assoc import crosstab, loglik, minsens, pmi
 from .chunk import chunk_id, with_chunk_index
 from .lexical import msttr, mtld, ttr, yules_k
 from .matcher import search, search_cqp
