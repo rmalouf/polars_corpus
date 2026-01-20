@@ -76,11 +76,10 @@ cqp = pp.Forward()
 def compile_binding(args: pp.ParseResults) -> list[Opcode]:
     opcodes: list[Opcode] = []
     opcodes.append(Opcode.PushVar())
-    opcodes.append(Opcode.Split(1, len(args[1:]) + 2))
-    opcodes.extend(args[1:])
-    opcodes.append(Opcode.Jump(3))
+    opcodes.append(Opcode.Split(3, 1))
     opcodes.append(Opcode.PopVar())
     opcodes.append(Opcode.Fail())
+    opcodes.extend(args[1:])
     opcodes.append(Opcode.BindVar(args[0]))
     opcodes.append(Opcode.Split(3, 1))
     opcodes.append(Opcode.UnBindVar())
