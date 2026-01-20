@@ -1,5 +1,3 @@
-#![allow(clippy::upper_case_acronyms)]
-
 use std::collections::HashMap;
 
 use polars::prelude::*;
@@ -11,7 +9,7 @@ use pyo3_polars::PySeries;
 use crate::span::Span;
 
 #[pyclass(module = "polars_corpus")]
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub enum Opcode {
     Token(Vec<u8>),
     Skip(),
@@ -42,7 +40,6 @@ impl Match {
     }
 }
 
-/// Reusable buffers for matching to avoid repeated allocations
 struct MatchBuffers {
     stack: Vec<(usize, usize)>,
     var_stack: Vec<Option<usize>>,
@@ -53,7 +50,7 @@ struct MatchBuffers {
 impl MatchBuffers {
     fn new() -> Self {
         Self {
-            stack: Vec::with_capacity(64),
+            stack: Vec::new(),
             var_stack: Vec::new(),
             bindings_stack: Vec::new(),
             match_bindings: Vec::new(),
@@ -117,7 +114,6 @@ impl OpcodeMatcher {
     }
 }
 
-// Private helper methods
 impl OpcodeMatcher {
     fn _match_opcodes(&self, cursor: usize, buffers: &mut MatchBuffers) -> PyResult<Option<Match>> {
         let match_start = cursor;
@@ -151,6 +147,13 @@ impl OpcodeMatcher {
                     Opcode::Jump(offset) => {
                         pc = (pc as isize + offset) as usize;
                     },
+                    Opcode::Match() => {
+                        if cursor > match_end {
+                            match_end = cursor;
+                            buffers.match_bindings.clone_from(&buffers.bindings_stack);
+                        }
+                        pc += 1;
+                    },
                     Opcode::PushVar() => {
                         buffers.var_stack.push(Some(cursor));
                         pc += 1;
@@ -169,16 +172,6 @@ impl OpcodeMatcher {
                     Opcode::UnBindVar() => {
                         buffers.bindings_stack.pop();
                         buffers.var_stack.push(None);
-                        pc += 1;
-                    },
-                    Opcode::Match() => {
-                        if cursor > match_end {
-                            match_end = cursor;
-                            // Collect bindings to avoid simultaneous borrows
-                            let current_bindings = buffers.bindings_stack.to_vec();
-                            buffers.match_bindings.clear();
-                            buffers.match_bindings.extend(current_bindings);
-                        }
                         pc += 1;
                     },
                     Opcode::Fail() => {
