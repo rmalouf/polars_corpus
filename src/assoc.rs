@@ -50,7 +50,7 @@ fn loglik_row(f12: f64, f1: f64, f2: f64, n: f64) -> Option<f64> {
     }
 
     let ll = term(o11, e11) + term(o12, e12) + term(o21, e21) + term(o22, e22);
-    if o12 < e12 {
+    if o11 < e11 {
         Some(-ll * 2.0)
     } else {
         Some(ll * 2.0)
