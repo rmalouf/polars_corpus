@@ -4,7 +4,7 @@ build-backend = "maturin"
 
 [project]
 name = "polars-corpus"
-version = "0.1.4-pre"
+version = "0.2.0-pre"
 requires-python = ">=3.10"
 classifiers = [
     "Development Status :: 3 - Alpha",
@@ -59,12 +59,12 @@ ignore_missing_imports = true
 module-name = "polars_corpus._internal"
 python-source = "python"
 
-# [dependency-groups]
-# dev = [
-#     "jupyterlab>=4.4.0",
-#     "maturin>=1.8.3",
-#     "mypy>=1.15.0",
-#     "notebook>=7.4.0",
-#     "pip>=25.0.1",
-#     "pytest>=8.3.5",
-# ]
+[dependency-groups]
+dev = [
+ "jupyterlab>=4.4.0",
+ "maturin>=1.8.3",
+ "mypy>=1.15.0",
+ "notebook>=7.4.0",
+ "pip>=25.0.1",
+ "pytest>=8.3.5",
+]

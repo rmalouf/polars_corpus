@@ -135,9 +135,9 @@ def test_compute_loglik() -> None:
 
         # Manual verification for known case (f12=20)
         # o11=20, o12=10, o21=5, o22=15; e11=15, e12=15, e21=10, e22=10
-        # o12 < e12 (10 < 15), so loglik is negative (negative association)
+        # o11 > e11 (20 > 15), so loglik is positive
         known_ll = result.filter(pl.col("f12") == 20)["LL"].item()
-        expected = -2 * (
+        expected = 2 * (
             20 * math.log(20 / 15)
             + 10 * math.log(10 / 15)
             + 5 * math.log(5 / 10)

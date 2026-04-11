@@ -103,7 +103,7 @@ def _build_grammar(column: str, pos_column: str, lemma_column: str) -> pp.Parser
     alternative_word = pp.Combine(pp.ZeroOrMore(word_part))
     alternative_list = (
         pp.Suppress("[")
-        + pp.delimited_list(alternative_word, delim=",")
+        + pp.DelimitedList(alternative_word, delim=",")
         + pp.Suppress("]")
     )
 

@@ -51,7 +51,7 @@ fn concordance_df(
     chunk_tag: &Series,
 ) -> PolarsResult<DataFrame> {
     let mut result_columns: Vec<Column> = Vec::new();
-    for column in df.get_columns() {
+    for column in df.columns() {
         let left_spans = Some(left_chunk_context_from_spans(matched_spans, chunk_tag)?);
         let right_spans = Some(right_chunk_context_from_spans(matched_spans, chunk_tag)?);
         add_columns(
@@ -62,7 +62,7 @@ fn concordance_df(
             &mut result_columns,
         )?;
     }
-    DataFrame::new(result_columns)
+    DataFrame::new_infer_height(result_columns)
 }
 
 fn add_columns(
@@ -148,7 +148,7 @@ fn kwic_df(
     right_window: i32,
 ) -> PolarsResult<DataFrame> {
     let mut result_columns: Vec<Column> = Vec::new();
-    for column in df.get_columns() {
+    for column in df.columns() {
         let left_spans = if left_window > 0 {
             Some(left_fixed_context_from_spans(matched_spans, left_window)?)
         } else {
@@ -167,7 +167,7 @@ fn kwic_df(
             &mut result_columns,
         )?;
     }
-    DataFrame::new(result_columns)
+    DataFrame::new_infer_height(result_columns)
 }
 
 fn left_fixed_context_from_spans(spans: &[Span], window_size: i32) -> PolarsResult<Vec<Span>> {
