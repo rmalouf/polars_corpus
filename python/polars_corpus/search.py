@@ -379,8 +379,8 @@ class SearchResults:
         --------
         >>> shuffled = results.shuffle(seed=123)
         """
+        state = random.getstate()
         if seed is not None:
-            state = random.getstate()
             random.seed(seed)
         try:
             new_results = SearchResults(

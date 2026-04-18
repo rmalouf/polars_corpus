@@ -71,9 +71,9 @@ class CorpusReader:
 
 
 class TextCorpusReader(CorpusReader):
-    def read_file(self, file: PathType) -> Generator[dict[str, str]]:
+    def read_file(self, path: PathType) -> Generator[dict[str, str]]:
         bos = True
-        for line in open(file, "rt"):
+        for line in open(path, "rt"):
             if line != "\n":
                 bos = True
                 tokens = line.strip().split()

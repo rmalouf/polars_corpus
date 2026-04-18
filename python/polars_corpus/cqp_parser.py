@@ -20,15 +20,19 @@ constraint_formula = pp.Forward()
 
 
 def compile_atomic_constraint(args: pp.ParseResults) -> pl.Expr:
-    pattern = "^(" + args[2] + ")$"
-    case_insensitive = len(args) > 3 and args[3] == "%c"
-    if case_insensitive:
-        pattern = "(?i)" + pattern
 
-    expr = pl.col(args[0]).str.contains(pattern)
-    if args[1] == "=":
+    feature = args[0]
+    relation = args[1]
+    value = args[2]
+    modifier = args[3:]
+
+    pattern = "^(" + value + ")$" # pyrefly: ignore
+    if modifier == ["%c"]:
+        pattern = "(?i)" + pattern
+    expr = pl.col(feature).str.contains(pattern) # pyrefly: ignore
+    if relation == "=":
         return expr
-    elif args[1] == "!=":
+    elif relation == "!=":
         return expr.not_()
     else:
         raise ValueError("Unknown constraint")
@@ -44,17 +48,17 @@ constraint = atomic_constraint | pp.Suppress("(") + constraint_formula + pp.Supp
 
 token_conj = (
     constraint + pp.ZeroOrMore(pp.Suppress("&") + constraint)
-).set_parse_action(lambda args: args[0].and_(*args[1:]))
+).set_parse_action(lambda args: args[0].and_(*args[1:])) # pyrefly: ignore
 token_disj = (
     token_conj + pp.ZeroOrMore(pp.Suppress("|") + token_conj)
-).set_parse_action(lambda args: args[0].or_(*args[1:]))
+).set_parse_action(lambda args: args[0].or_(*args[1:])) # pyrefly: ignore
 
 constraint_formula <<= token_disj
 
 
 def compile_node(args: pp.ParseResults) -> Opcode:
     if args:
-        return Opcode.Token(args[0].meta.serialize())
+        return Opcode.Token(args[0].meta.serialize()) # pyrefly: ignore
     else:
         return Opcode.Skip()
 
@@ -80,7 +84,7 @@ def compile_binding(args: pp.ParseResults) -> list[Opcode]:
     opcodes.append(Opcode.PopVar())
     opcodes.append(Opcode.Fail())
     opcodes.extend(args[1:])
-    opcodes.append(Opcode.BindVar(args[0]))
+    opcodes.append(Opcode.BindVar(args[0])) # pyrefly: ignore
     opcodes.append(Opcode.Split(3, 1))
     opcodes.append(Opcode.UnBindVar())
     opcodes.append(Opcode.Fail())
@@ -132,10 +136,10 @@ def compile_m_to_n(args: pp.ParseResults) -> list[Opcode]:
     for _ in range(m):
         opcodes.extend(args[0])
     if n is None:
-        opcodes.extend(compile_star(args[0]))
+        opcodes.extend(compile_star(args[0])) # pyrefly: ignore
     else:
         for i in range(0, n - m):
-            opcodes.extend(compile_question(args[0]))
+            opcodes.extend(compile_question(args[0])) # pyrefly: ignore
     return opcodes
 
 
@@ -164,9 +168,9 @@ repetition = (
 concatenation = pp.OneOrMore(repetition)
 
 
-def compile_disjunction(args: pp.ParseResults) -> Any:
+def compile_disjunction(args: pp.ParseResults) -> list[Opcode]:
     if len(args) == 1:
-        return args[0]
+        return list(args[0])
     else:
         opcodes: list[Opcode] = []
         for i in range(len(args) - 1):

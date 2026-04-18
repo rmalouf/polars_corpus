@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import importlib
+import importlib.metadata
 
 from .assoc import *  # noqa: F403
 from .chunk import *  # noqa: F403

@@ -85,7 +85,7 @@ def _validated_crosstab(df: T_Frame) -> T_Frame:
 
 def pmi(
     f12: IntoExprColumn, f1: IntoExprColumn, f2: IntoExprColumn, n: IntoExprColumn
-) -> pl.Expr:
+) -> pl.Expr | pl.Series:
     """
     Compute Pointwise Mutual Information (PMI) for contingency table data.
 

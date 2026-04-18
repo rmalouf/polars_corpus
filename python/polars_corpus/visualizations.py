@@ -1,6 +1,6 @@
 import polars as pl
-import seaborn as sns
-from matplotlib.axes import Axes
+#import seaborn as sns
+#from matplotlib.axes import Axes
 
 from ._typing import IntoExpr, T_Frame
 
