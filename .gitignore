@@ -19,6 +19,7 @@ target/
 .idea/
 .ipynb_checkpoints/
 
+site/
 .coverage
 .claude/
 .pytest_cache/
