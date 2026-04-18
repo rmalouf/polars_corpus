@@ -13,6 +13,7 @@ from lxml import etree
 
 from joblib import Parallel, delayed
 from joblib_progress import joblib_progress
+import pyarrow.parquet as pq
 
 
 def get_xml(filename):
@@ -58,7 +59,6 @@ def get_xml(filename):
             "persName": pl.String,
             #'age': pl.String,
             "occupation": pl.String,
-            "dialect": pl.String,
             "persNote": pl.String,
         },
     )
@@ -127,5 +127,16 @@ with joblib_progress(total=len(paths)):
         corpus_df = pl.concat(corpus_dfs)
         speakers_df = pl.concat(speakers_dfs)
 
-corpus_df.write_parquet("bnc.parquet")
+# corpus_df.write_parquet("bnc.parquet")
+
+writer = None
+for part in corpus_df.partition_by("file_id", maintain_order=True):
+    table = part.to_arrow()
+    if writer is None:
+        writer = pq.ParquetWriter("bnc.parquet", table.schema)
+    writer.write_table(table)  # each call = one row group
+
+writer.close()
+
+
 speakers_df.write_parquet("bnc-speakers.parquet")

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Dict, List, Literal, Optional
+from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
 import polars as pl
 
@@ -82,7 +82,6 @@ class ConcordanceWidget:
         self.right_col = f"{column}_right_context"
 
         # Verify columns exist
-        required_cols = [self.column]
         if self.column not in df.columns:
             raise ValueError(f"Missing required column: {self.column}")
 

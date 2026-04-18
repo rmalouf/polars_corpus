@@ -2,10 +2,12 @@ import polars as pl
 from polars_corpus.matcher import get_matches
 
 # Create test corpus
-corpus = pl.DataFrame({
-    "word": ["the", "big", "red", "house", "yesterday"],
-    "pos": ["DT", "JJ", "JJ", "NN", "RB"],
-})
+corpus = pl.DataFrame(
+    {
+        "word": ["the", "big", "red", "house", "yesterday"],
+        "pos": ["DT", "JJ", "JJ", "NN", "RB"],
+    }
+)
 
 # Test different quantifiers with bindings
 test_cases = [
