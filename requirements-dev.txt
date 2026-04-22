@@ -32,7 +32,7 @@ beautifulsoup4==4.14.3
     # via nbconvert
 bleach==6.3.0
     # via nbconvert
-certifi==2026.2.25
+certifi==2026.4.22
     # via
     #   httpcore
     #   httpx
@@ -41,7 +41,7 @@ cffi==2.0.0
     # via argon2-cffi-bindings
 charset-normalizer==3.4.7
     # via requests
-click==8.3.2
+click==8.3.3
     # via
     #   mkdocs
     #   nltk
@@ -89,7 +89,7 @@ httpcore==1.0.9
     # via httpx
 httpx==0.28.1
     # via jupyterlab
-idna==3.11
+idna==3.13
     # via
     #   anyio
     #   httpx
@@ -147,7 +147,7 @@ jupyter-core==5.9.1
     #   nbclient
     #   nbconvert
     #   nbformat
-jupyter-events==0.12.0
+jupyter-events==0.12.1
     # via jupyter-server
 jupyter-lsp==2.3.1
     # via jupyterlab
@@ -175,7 +175,9 @@ jupyterlab-widgets==3.0.16
 kiwisolver==1.5.0
     # via matplotlib
 lark==1.3.1
-    # via rfc3987-syntax
+    # via
+    #   -r requirements.in
+    #   rfc3987-syntax
 markdown==3.10.2
     # via
     #   mkdocs
@@ -290,9 +292,9 @@ platformdirs==4.9.6
     #   mkdocs-get-deps
 pluggy==1.6.0
     # via pytest
-polars==1.39.3
+polars==1.40.1
     # via -r requirements.in
-polars-runtime-32==1.39.3
+polars-runtime-32==1.40.1
     # via polars
 prometheus-client==0.25.0
     # via jupyter-server

@@ -1,5 +1,4 @@
 import polars as pl
-import pyparsing as pp
 import pytest
 from polars_corpus.matcher import Span, get_matches
 
@@ -486,7 +485,7 @@ class TestErrorHandling:
         ]
 
         for query in error_cases:
-            with pytest.raises((ValueError, pp.ParseException)):
+            with pytest.raises(ValueError):
                 list(get_matches(sample_corpus, query))
 
     def test_invalid_features_and_regex(self, sample_corpus):
@@ -688,7 +687,7 @@ class TestVariableBindings:
     )
     def test_variable_reuse_error(self, sample_corpus, query):
         """Variable names cannot be reused in same query - should raise error"""
-        with pytest.raises((ValueError, RuntimeError, pp.ParseException)):
+        with pytest.raises((ValueError, RuntimeError)):
             get_matches(sample_corpus, query)
 
 

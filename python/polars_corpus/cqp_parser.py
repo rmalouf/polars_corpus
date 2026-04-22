@@ -3,186 +3,203 @@ from __future__ import annotations
 from typing import Any, Optional
 
 import polars as pl
-import pyparsing as pp
+from lark import Lark, Transformer
+from lark.exceptions import LarkError
 
 from ._internal import Opcode
 
 __all__ = ["cqp"]
 
 
-feature = pp.Word(pp.alphas + pp.nums + "_")
-number = pp.Word(pp.nums)
-value = pp.QuotedString('"')
-case_modifier = pp.Optional(pp.Literal("%c"))
-variable = pp.Suppress("$") + pp.Word(pp.alphas + pp.nums + "_")
+GRAMMAR = r"""
+cqp: disjunction
 
-constraint_formula = pp.Forward()
+disjunction: concatenation ("|" concatenation)*
 
+concatenation: repetition+
 
-def compile_atomic_constraint(args: pp.ParseResults) -> pl.Expr:
+?repetition: primary
+           | primary "*" -> rep_star
+           | primary "+" -> rep_plus
+           | primary "?" -> rep_question
+           | primary "{" INT "}" -> rep_exact
+           | primary "{" INT "," INT "}" -> rep_range_mn
+           | primary "{" INT "," "}" -> rep_range_m
+           | primary "{" "," INT "}" -> rep_range_n
+           | primary "{" "," "}" -> rep_range_all
 
-    feature = args[0]
-    relation = args[1]
-    value = args[2]
-    modifier = args[3:]
+?primary: node
+        | "(" cqp ")"
+        | binding
 
-    pattern = "^(" + value + ")$" # pyrefly: ignore
-    if modifier == ["%c"]:
-        pattern = "(?i)" + pattern
-    expr = pl.col(feature).str.contains(pattern) # pyrefly: ignore
-    if relation == "=":
-        return expr
-    elif relation == "!=":
-        return expr.not_()
-    else:
-        raise ValueError("Unknown constraint")
+binding: "$" NAME ":" "(" cqp ")"
 
+node: "[" constraint_formula? "]"
 
-atomic_constraint = (
-    feature + (pp.Literal("=") | pp.Literal("!=")) + value + case_modifier
-).set_parse_action(compile_atomic_constraint)
+?constraint_formula: token_disj
 
-constraint = atomic_constraint | pp.Suppress("(") + constraint_formula + pp.Suppress(
-    ")"
-)
+token_disj: token_conj ("|" token_conj)*
+token_conj: constraint ("&" constraint)*
 
-token_conj = (
-    constraint + pp.ZeroOrMore(pp.Suppress("&") + constraint)
-).set_parse_action(lambda args: args[0].and_(*args[1:])) # pyrefly: ignore
-token_disj = (
-    token_conj + pp.ZeroOrMore(pp.Suppress("|") + token_conj)
-).set_parse_action(lambda args: args[0].or_(*args[1:])) # pyrefly: ignore
+?constraint: atomic
+           | "(" constraint_formula ")"
 
-constraint_formula <<= token_disj
+atomic: NAME OP ESCAPED_STRING CASEI?
 
+OP: "!=" | "="
+CASEI: "%c"
+NAME: /[a-zA-Z_][a-zA-Z_0-9]*/
+INT: /[0-9]+/
 
-def compile_node(args: pp.ParseResults) -> Opcode:
-    if args:
-        return Opcode.Token(args[0].meta.serialize()) # pyrefly: ignore
-    else:
-        return Opcode.Skip()
+%import common.ESCAPED_STRING
+%import common.WS
+%ignore WS
+"""
 
 
-node = (
-    pp.Suppress("[") + (constraint_formula | pp.Empty()) + pp.Suppress("]")
-).set_parse_action(compile_node)
-
-
-## compile CQP commands into search Opcodes
-
-cqp = pp.Forward()
-
-
-## See: Gimpel, James F. "A theory of discrete patterns and their implementation
-##      in SNOBOL4." Communications of the ACM 16, no. 2 (1973): 91-100.
-
-
-def compile_binding(args: pp.ParseResults) -> list[Opcode]:
-    opcodes: list[Opcode] = []
-    opcodes.append(Opcode.PushVar())
-    opcodes.append(Opcode.Split(3, 1))
-    opcodes.append(Opcode.PopVar())
-    opcodes.append(Opcode.Fail())
-    opcodes.extend(args[1:])
-    opcodes.append(Opcode.BindVar(args[0])) # pyrefly: ignore
-    opcodes.append(Opcode.Split(3, 1))
-    opcodes.append(Opcode.UnBindVar())
-    opcodes.append(Opcode.Fail())
+def _star(body: list[Opcode]) -> list[Opcode]:
+    opcodes: list[Opcode] = [Opcode.Split(1, len(body) + 2)]
+    opcodes.extend(body)
+    opcodes.append(Opcode.Jump(-(len(body) + 1)))
     return opcodes
 
 
-simple_primary = node | (pp.Suppress("(") + cqp + pp.Suppress(")"))
-binding = (
-    variable + pp.Suppress(":") + pp.Suppress("(") + cqp + pp.Suppress(")")
-).set_parse_action(compile_binding)
-primary = simple_primary | binding
-
-
-def compile_star(args: pp.ParseResults) -> list[Opcode]:
-    opcodes: list[Opcode] = [Opcode.Split(1, len(args) + 2)]
-
-    opcodes.extend(args)
-    opcodes.append(Opcode.Jump(-(len(args) + 1)))
+def _question(body: list[Opcode]) -> list[Opcode]:
+    opcodes: list[Opcode] = [Opcode.Split(1, len(body) + 1)]
+    opcodes.extend(body)
     return opcodes
 
 
-def compile_plus(args: pp.ParseResults) -> list[Opcode]:
-    opcodes: list[Opcode] = []
-    opcodes.extend(args)
-    opcodes.append(Opcode.Split(-len(args), 1))
-    return opcodes
-
-
-def compile_question(args: pp.ParseResults) -> list[Opcode]:
-    opcodes: list[Opcode] = [Opcode.Split(1, len(args) + 1)]
-    opcodes.extend(args)
-    return opcodes
-
-
-def compile_m_to_n(args: pp.ParseResults) -> list[Opcode]:
-    m: Optional[int]
-    n: Optional[int]
-    args_dict = args.as_dict()
-    if "m_n" in args_dict:
-        m = int(args_dict["m_n"])
-        n = int(args_dict["m_n"])
-    else:
-        m = int(args_dict["m"]) if "m" in args_dict else 0
-        n = int(args_dict["n"]) if "n" in args_dict else None
-    if n and m > n:
+def _mn_expand(body: list[Opcode], m: int, n: Optional[int]) -> list[Opcode]:
+    if n is not None and m > n:
         raise ValueError("m > n")
-
     opcodes: list[Opcode] = []
     for _ in range(m):
-        opcodes.extend(args[0])
+        opcodes.extend(body)
     if n is None:
-        opcodes.extend(compile_star(args[0])) # pyrefly: ignore
+        opcodes.extend(_star(body))
     else:
-        for i in range(0, n - m):
-            opcodes.extend(compile_question(args[0])) # pyrefly: ignore
+        for _ in range(n - m):
+            opcodes.extend(_question(body))
     return opcodes
 
 
-repetition = (
-    (primary + pp.Suppress("*")).set_parse_action(compile_star)
-    | (primary + pp.Suppress("+")).set_parse_action(compile_plus)
-    | (primary + pp.Suppress("?")).set_parse_action(compile_question)
-    | (
-        pp.Group(primary)
-        + pp.Suppress("{")
-        + pp.Opt(number).set_results_name("m")
-        + pp.Suppress(",")
-        + pp.Opt(number).set_results_name("n")
-        + pp.Suppress("}")
-    ).set_parse_action(compile_m_to_n)
-    | (
-        pp.Group(primary)
-        + pp.Suppress("{")
-        + number.set_results_name("m_n")
-        + pp.Suppress("}")
-    ).set_parse_action(compile_m_to_n)
-    | primary
-)
+class CQPCompiler(Transformer):
+    def atomic(self, items: list[Any]) -> pl.Expr:
+        feature = str(items[0])
+        op = str(items[1])
+        value = str(items[2])[1:-1]
+        pattern = "^(" + value + ")$"
+        if len(items) > 3:
+            modifier = str(items[3])
+            if modifier != "%c":
+                raise ValueError(f"Unknown modifier: {modifier}")
+            pattern = "(?i)" + pattern
+        expr = pl.col(feature).str.contains(pattern)
+        if op == "=":
+            return expr
+        return expr.not_()
 
+    def token_conj(self, items: list[pl.Expr]) -> pl.Expr:
+        if len(items) == 1:
+            return items[0]
+        return items[0].and_(*items[1:])
 
-concatenation = pp.OneOrMore(repetition)
+    def token_disj(self, items: list[pl.Expr]) -> pl.Expr:
+        if len(items) == 1:
+            return items[0]
+        return items[0].or_(*items[1:])
 
+    def node(self, items: list[pl.Expr]) -> list[Opcode]:
+        if items:
+            return [Opcode.Token(items[0].meta.serialize())]
+        return [Opcode.Skip()]
 
-def compile_disjunction(args: pp.ParseResults) -> list[Opcode]:
-    if len(args) == 1:
-        return list(args[0])
-    else:
-        opcodes: list[Opcode] = []
-        for i in range(len(args) - 1):
-            opcodes.append(Opcode.Split(1, len(args[i]) + 2))
-            opcodes.extend(args[i])
-            opcodes.append(Opcode.Jump(len(args[i + 1]) + 1))
-        opcodes.extend(args[-1])
+    # See: Gimpel, James F. "A theory of discrete patterns and their implementation
+    #      in SNOBOL4." Communications of the ACM 16, no. 2 (1973): 91-100.
+    def binding(self, items: list[Any]) -> list[Opcode]:
+        name = str(items[0])
+        body: list[Opcode] = items[1]
+        opcodes: list[Opcode] = [
+            Opcode.PushVar(),
+            Opcode.Split(3, 1),
+            Opcode.PopVar(),
+            Opcode.Fail(),
+        ]
+        opcodes.extend(body)
+        opcodes.extend(
+            [
+                Opcode.BindVar(name),
+                Opcode.Split(3, 1),
+                Opcode.UnBindVar(),
+                Opcode.Fail(),
+            ]
+        )
         return opcodes
 
+    def rep_star(self, items: list[list[Opcode]]) -> list[Opcode]:
+        return _star(list(items[0]))
 
-disjunction = (
-    pp.Group(concatenation) + pp.ZeroOrMore(pp.Suppress("|") + pp.Group(concatenation))
-).set_parse_action(compile_disjunction)
+    def rep_plus(self, items: list[list[Opcode]]) -> list[Opcode]:
+        body = list(items[0])
+        return body + [Opcode.Split(-len(body), 1)]
 
-cqp <<= disjunction
+    def rep_question(self, items: list[list[Opcode]]) -> list[Opcode]:
+        return _question(list(items[0]))
+
+    def rep_exact(self, items: list[Any]) -> list[Opcode]:
+        n = int(items[1])
+        return _mn_expand(list(items[0]), n, n)
+
+    def rep_range_mn(self, items: list[Any]) -> list[Opcode]:
+        return _mn_expand(list(items[0]), int(items[1]), int(items[2]))
+
+    def rep_range_m(self, items: list[Any]) -> list[Opcode]:
+        return _mn_expand(list(items[0]), int(items[1]), None)
+
+    def rep_range_n(self, items: list[Any]) -> list[Opcode]:
+        return _mn_expand(list(items[0]), 0, int(items[1]))
+
+    def rep_range_all(self, items: list[Any]) -> list[Opcode]:
+        return _mn_expand(list(items[0]), 0, None)
+
+    def concatenation(self, items: list[list[Opcode]]) -> list[Opcode]:
+        opcodes: list[Opcode] = []
+        for item in items:
+            opcodes.extend(item)
+        return opcodes
+
+    def disjunction(self, items: list[list[Opcode]]) -> list[Opcode]:
+        if len(items) == 1:
+            return items[0]
+        opcodes: list[Opcode] = []
+        for i in range(len(items) - 1):
+            opcodes.append(Opcode.Split(1, len(items[i]) + 2))
+            opcodes.extend(items[i])
+            opcodes.append(Opcode.Jump(len(items[i + 1]) + 1))
+        opcodes.extend(items[-1])
+        return opcodes
+
+    def cqp(self, items: list[list[Opcode]]) -> list[Opcode]:
+        return items[0]
+
+
+class _CQPParser:
+    """Shim exposing a pyparsing-compatible ``parse_string`` API."""
+
+    def __init__(self) -> None:
+        self._parser = Lark(
+            GRAMMAR,
+            start="cqp",
+            parser="lalr",
+            transformer=CQPCompiler(),
+        )
+
+    def parse_string(self, query: str, parse_all: bool = True) -> list[Opcode]:
+        try:
+            return self._parser.parse(query)  # pyrefly: ignore
+        except LarkError as e:
+            raise ValueError(f"Parse error: {e}") from e
+
+
+cqp = _CQPParser()
