@@ -75,6 +75,7 @@ dev = [
  "maturin>=1.8.3",
  "notebook>=7.4.0",
  "pip>=25.0.1",
+ "pyrefly>=0.62",
  "pytest>=8.3.5",
  "zensical>=0.0.33",
  "mkdocstrings[python]>=0.27",

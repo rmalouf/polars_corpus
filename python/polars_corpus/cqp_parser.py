@@ -4,7 +4,6 @@ from typing import Any, Optional
 
 import polars as pl
 from lark import Lark, Transformer
-from lark.exceptions import LarkError
 
 from ._internal import Opcode
 
@@ -184,22 +183,9 @@ class CQPCompiler(Transformer):
         return items[0]
 
 
-class _CQPParser:
-    """Shim exposing a pyparsing-compatible ``parse_string`` API."""
-
-    def __init__(self) -> None:
-        self._parser = Lark(
-            GRAMMAR,
-            start="cqp",
-            parser="lalr",
-            transformer=CQPCompiler(),
-        )
-
-    def parse_string(self, query: str, parse_all: bool = True) -> list[Opcode]:
-        try:
-            return self._parser.parse(query)  # pyrefly: ignore
-        except LarkError as e:
-            raise ValueError(f"Parse error: {e}") from e
+_parser = Lark(GRAMMAR, start="cqp", parser="lalr", transformer=CQPCompiler())
 
 
-cqp = _CQPParser()
+def cqp(query: str) -> list[Opcode]:
+    """Parse a CQP query string into a list of opcodes."""
+    return _parser.parse(query)  # type: ignore[return-value]

@@ -384,6 +384,8 @@ pyparsing==3.3.2
     # via
     #   -r requirements.in
     #   matplotlib
+pyrefly==0.62.0
+    # via -r requirements-dev.in
 pysocks==1.7.1
     # via urllib3
 pytest==8.4.2

@@ -115,7 +115,7 @@ Phase 4 Not Started:
 
 2. **Code Quality**
    - Clean separation of concerns
-   - Full type hints, strict mypy
+   - Full type hints, checked with pyrefly
    - Modern best practices
    - "Minimal defensive programming" principle
 
@@ -180,10 +180,10 @@ Phase 4 Not Started:
 
 ## Dependencies Management
 
-- **Runtime:** polars ≥1.34, pyparsing ≥3.2, nltk ≥3.9, ipywidgets ≥8.1
+- **Runtime:** polars ≥1.34, lark ≥1.2, pyparsing ≥3.2, nltk ≥3.9, ipywidgets ≥8.1
 - **Build:** maturin, pyo3 0.26, pyo3-polars 0.25
 - **Rust:** polars 0.52, statrs 0.18, itertools 0.14
-- **Dev:** pytest, mypy, ruff, jupyterlab
+- **Dev:** pytest, pyrefly, ruff, jupyterlab
 - **Managed via:** uv with 3-level requirements (runtime, dev, examples)
 
 ---
@@ -197,7 +197,7 @@ ruff format       # Format Python
 ruff check        # Lint Python
 cargo fmt         # Format Rust
 cargo clippy      # Lint Rust
-mypy python/polars_corpus/
+pyrefly check python/polars_corpus/
 
 # Testing
 pytest            # Python changes don't need rebuild

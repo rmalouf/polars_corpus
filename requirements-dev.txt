@@ -327,6 +327,8 @@ pyparsing==3.3.2
     # via
     #   -r requirements.in
     #   matplotlib
+pyrefly==0.62.0
+    # via -r requirements-dev.in
 pytest==8.4.2
     # via -r requirements-dev.in
 python-dateutil==2.9.0.post0

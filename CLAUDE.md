@@ -16,7 +16,7 @@ ruff format       # Format Python
 ruff check        # Lint Python
 cargo fmt         # Format Rust
 cargo clippy      # Lint Rust
-mypy python/polars_corpus/
+pyrefly check python/polars_corpus/
 make develop      # Rebuild after Rust changes (required)
 pytest            # Run tests (Python changes don't need rebuild)
 ```
@@ -24,7 +24,7 @@ pytest            # Run tests (Python changes don't need rebuild)
 ## Dependencies
 Managed via `uv` with three levels of requirements:
 - `requirements.txt`: Runtime dependencies only
-- `requirements-dev.txt`: Runtime + development tools (pytest, mypy, etc.)
+- `requirements-dev.txt`: Runtime + development tools (pytest, pyrefly, etc.)
 - `requirements-examples.txt`: Runtime + dev + example notebooks
 - Regenerate lock files: `make locks`
 

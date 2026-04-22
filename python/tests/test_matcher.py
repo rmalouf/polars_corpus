@@ -1,5 +1,6 @@
 import polars as pl
 import pytest
+from lark.exceptions import LarkError
 from polars_corpus.matcher import Span, get_matches
 
 
@@ -485,7 +486,7 @@ class TestErrorHandling:
         ]
 
         for query in error_cases:
-            with pytest.raises(ValueError):
+            with pytest.raises((ValueError, LarkError)):
                 list(get_matches(sample_corpus, query))
 
     def test_invalid_features_and_regex(self, sample_corpus):

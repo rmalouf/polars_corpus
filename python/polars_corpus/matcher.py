@@ -24,6 +24,15 @@ def compute_masks(df: pl.DataFrame, opcodes: list[Opcode]) -> pl.DataFrame:
     return df.rechunk()
 
 
+def check_bindings(opcodes: list[Opcode]):
+    seen: set[str] = set()
+    for op in opcodes:
+        if isinstance(op, Opcode.BindVar):
+            if op._0 in seen:
+                raise ValueError(f"Duplicate variable binding: ${op._0}")
+            seen.add(op._0)
+
+
 def propagate_masks(df: pl.DataFrame, opcodes: list[Opcode], pc: int) -> pl.DataFrame:
     """Propagate token masks backwards through the NFA"""
     if col_name(pc) not in df:
@@ -65,9 +74,10 @@ def get_matches(df: pl.DataFrame, query: str) -> Optional[list[Match]]:
     if df.is_empty():
         return None
 
-    opcodes = list(cqp.parse_string(query, parse_all=True))
+    opcodes = cqp(query)
     opcodes.append(Opcode.Match())
 
+    check_bindings(opcodes)
     mask_df = compute_masks(df, opcodes)
     masks = [mask_df.get_column(col) for col in mask_df.columns]
     opcode_matcher = OpcodeMatcher(opcodes, masks)

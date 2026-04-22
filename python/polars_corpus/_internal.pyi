@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Iterator
+
 import polars as pl
 
 def py_concordance(
@@ -30,26 +32,52 @@ class Match:
     def __init__(self, span: Span, bindings: dict[str, Span]) -> None: ...
 
 class Opcode:
-    @staticmethod
-    def Token(mask: bytes) -> Opcode: ...
-    @staticmethod
-    def Skip() -> Opcode: ...
-    @staticmethod
-    def Jump(offset: int) -> Opcode: ...
-    @staticmethod
-    def Split(offset1: int, offset2: int) -> Opcode: ...
-    @staticmethod
-    def Match() -> Opcode: ...
-    @staticmethod
-    def PushVar() -> Opcode: ...
-    @staticmethod
-    def PopVar() -> Opcode: ...
-    @staticmethod
-    def BindVar(name: str) -> Opcode: ...
-    @staticmethod
-    def UnBindVar() -> Opcode: ...
-    @staticmethod
-    def Fail() -> Opcode: ...
+    def __iter__(self) -> Iterator[object]: ...
+
+    class Token(Opcode):
+        _0: bytes
+        __match_args__ = ("_0",)
+        def __init__(self, mask: bytes) -> None: ...
+
+    class Skip(Opcode):
+        __match_args__ = ()
+        def __init__(self) -> None: ...
+
+    class Jump(Opcode):
+        _0: int
+        __match_args__ = ("_0",)
+        def __init__(self, offset: int) -> None: ...
+
+    class Split(Opcode):
+        _0: int
+        _1: int
+        __match_args__ = ("_0", "_1")
+        def __init__(self, offset1: int, offset2: int) -> None: ...
+
+    class Match(Opcode):
+        __match_args__ = ()
+        def __init__(self) -> None: ...
+
+    class PushVar(Opcode):
+        __match_args__ = ()
+        def __init__(self) -> None: ...
+
+    class PopVar(Opcode):
+        __match_args__ = ()
+        def __init__(self) -> None: ...
+
+    class BindVar(Opcode):
+        _0: str
+        __match_args__ = ("_0",)
+        def __init__(self, name: str) -> None: ...
+
+    class UnBindVar(Opcode):
+        __match_args__ = ()
+        def __init__(self) -> None: ...
+
+    class Fail(Opcode):
+        __match_args__ = ()
+        def __init__(self) -> None: ...
 
 class OpcodeMatcher:
     def __init__(self, opcodes: list[Opcode], masks: list[pl.Series]) -> None: ...
