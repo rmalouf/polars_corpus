@@ -13,8 +13,9 @@ See simple_grammar.md for the full grammar specification.
 from __future__ import annotations
 
 import re
+from typing import Any
 
-import pyparsing as pp
+from lark import Lark, Transformer
 
 __all__ = ["simple_to_cqp"]
 
@@ -39,20 +40,12 @@ def wildcard_to_regex(pattern: str) -> str:
     - * = zero or more characters (.*)
     - + = one or more characters (.+)
     """
-    # First escape all regex metacharacters
     result = re.escape(pattern)
-
-    # Then replace escaped wildcards with regex equivalents
-    # re.escape will have turned ? into \?, * into \*, + into \+
     result = result.replace(r"\?", ".")
     result = result.replace(r"\*", ".*")
     result = result.replace(r"\+", ".+")
-
     return result
 
-
-# Pyparsing grammar
-# Parse actions return tuples that will be converted to CQP later
 
 # Simplified POS tag mapping - supports both BNC CLAWS-5 and Penn Treebank tagsets
 _POS_MAPPING = {
@@ -74,300 +67,180 @@ _POS_MAPPING = {
 }
 
 
-# Define metacharacters that can be escaped
-metacharacters = "?*+,:@$/()[]{}_ -<>"
-
-# Escaped character: backslash followed by metacharacter
-escaped_char = pp.Combine(pp.Literal("\\") + pp.Char(metacharacters)).set_parse_action(
-    lambda t: t[0][1]
-)  # Remove backslash
-
-# Regular characters for words (not wildcards or special chars)
-# Note: underscore is NOT included here because it's used for POS patterns
-word_char = pp.Char(pp.alphas + pp.nums + "!@#$%^&=\\-")
-
-# Wildcard characters
-wildcard_char = pp.Char("?*+")
-
-# Character parts that can appear in words or alternatives
-word_part = escaped_char | wildcard_char | word_char
-
-# Variable name pattern for bindings: letter followed by alphanumeric + underscore
-variable_name = pp.Combine(pp.Word(pp.alphas, pp.alphas + pp.nums + "_"))
+# Metacharacters that can be escaped with a backslash.
+_META_CHARS = r"?*+,:@$/()[]{}_- <>"
+# Regex fragments (injected into the Lark grammar). `/` must be escaped as `\/`
+# because Lark uses `/` as the regex-literal delimiter in its grammar syntax.
+_META_CC = r"?*+,:@$\/()\[\]{}_\- <>"  # same set, for use inside a char class
+_ESC = rf"\\[{_META_CC}]"  # matches a \X escape sequence
+_WC = r"[A-Za-z0-9!@#%^&=\\\-]"  # word character (non-wildcard); `$` is excluded to leave it for variable bindings
+_WL = r"[?*+]"  # wildcard
+_NW = f"(?:{_ESC}|{_WC})"  # non-wildcard part (escape or plain char)
+_PC = f"(?:{_ESC}|{_WC}|{_WL})"  # part char (including wildcards)
 
 
-def _build_grammar(column: str, pos_column: str, lemma_column: str) -> pp.ParserElement:
-    """Build grammar with parse actions that generate CQP directly."""
+_GRAMMAR = rf"""
+start: seq
+seq: item+
+?item: binding | group | atom
+binding: BINDING_HEAD (group | atom)
+group: _LPAREN seq (_PIPE seq)* RPAREN_QUANT
+?atom: LEMMA_POS_TAG | LEMMA | POS_TAG | ALT_LIST | GAPS | WORD
 
-    # Alternative list: [alt1,alt2,alt3] or [u,] for optional
-    alternative_word = pp.Combine(pp.ZeroOrMore(word_part))
-    alternative_list = (
-        pp.Suppress("[")
-        + pp.DelimitedList(alternative_word, delim=",")
-        + pp.Suppress("]")
-    )
+BINDING_HEAD: /\$[A-Za-z][A-Za-z0-9_]*:/
+RPAREN_QUANT: /\)(?:[?+*]|\{{\d+(?:,\d+)?\}})?/
+_LPAREN: "("
+_PIPE: "|"
 
-    def make_alternative(t: pp.ParseResults) -> str:
-        patterns = [wildcard_to_regex(alt) for alt in t]
-        combined = "|".join(patterns)
-        return _make_token(_make_constraint(column, combined))
+LEMMA_POS_TAG: /\{{[^\}}]+\}}_(?:\{{[A-Za-z]+\}}|{_PC}+)/
+LEMMA: /\{{[^\}}]+\}}/
+// POS_TAG and WORD overlap (e.g. "fox_NN" could start with a WORD match on
+// "fox"); give POS_TAG higher priority so Lark's lexer prefers it over the
+// shorter WORD match. Longest-match alone isn't reliable here with complex
+// character classes in the Lark basic lexer.
+POS_TAG.2: /{_PC}*_(?:\{{[A-Za-z]+\}}|{_PC}+)/
+ALT_LIST: /\[[^\]]*\]/
+GAPS: /[+*]+/
+WORD: /{_PC}*{_NW}{_PC}*/
 
-    alternative_list.set_parse_action(make_alternative)
+%ignore /[ \t\r\n]+/
+"""
 
-    # Word token: must contain at least one non-wildcard character
-    # This ensures standalone * and + are parsed as gap tokens, not words
-    # Patterns:
-    # 1. Starts with non-wildcard, followed by anything
-    # 2. Starts with wildcard(s), but must have at least one non-wildcard somewhere
-    word_with_content = pp.Combine(
-        # Pattern 1: non-wildcard start
-        (word_char | escaped_char) + pp.ZeroOrMore(word_part)
-        |
-        # Pattern 2: wildcard(s) followed by at least one non-wildcard
-        pp.OneOrMore(wildcard_char)
-        + (word_char | escaped_char)
-        + pp.ZeroOrMore(word_part)
-    )
 
-    def make_word(t: pp.ParseResults) -> str:
-        pattern = wildcard_to_regex(t[0])
-        return _make_token(_make_constraint(column, pattern))
+def _unescape(text: str) -> str:
+    """Strip backslashes from escape sequences (\\X -> X)."""
+    return re.sub(rf"\\([{re.escape(_META_CHARS)}])", r"\1", text)
 
-    word_with_content.set_parse_action(make_word)
 
-    # Lemma pattern: {lemma} or {lemma/POS}
-    # Lemma part can include wildcards, optional /POS suffix
-    lemma_word_part = pp.Combine(pp.OneOrMore(word_part))
-    lemma_pos_part = pp.Combine(
-        pp.OneOrMore(pp.Char(pp.alphas))
-    )  # Simplified POS tags are alpha only
-    lemma_only_pattern = (
-        pp.Suppress("{")
-        + lemma_word_part
-        + pp.Optional(pp.Suppress("/") + lemma_pos_part)
-        + pp.Suppress("}")
-    )
-    lemma_pattern = lemma_only_pattern.copy()
+def _gap_tokens(gap_str: str) -> str:
+    plus_count = gap_str.count("+")
+    star_count = gap_str.count("*")
+    min_tokens = plus_count
+    max_tokens = plus_count + star_count
 
-    def make_lemma(t: pp.ParseResults) -> str:
-        lemma_part = t[0]
-        pos_part = t[1] if len(t) > 1 else None
-        lemma_pattern = wildcard_to_regex(lemma_part)
-        constraints = [_make_constraint(lemma_column, lemma_pattern)]
+    if min_tokens == max_tokens:
+        return f"[]{{{min_tokens}}}"
+    if max_tokens == min_tokens + 1:
+        if min_tokens == 0:
+            return "[]?"
+        return f"[]{{{min_tokens}}} []?"
+    return f"[]{{{min_tokens},{max_tokens}}}"
+
+
+def _resolve_pos_tag(raw: str) -> str:
+    """Convert a captured POS tag fragment to a CQP pattern."""
+    # Braced form: {TAG} — simplified, lookup required.
+    if raw.startswith("{") and raw.endswith("}"):
+        key = raw[1:-1].upper()
+        return _POS_MAPPING[key]
+    # Unbraced form: may still match a simplified key (mirrors pyparsing impl).
+    unescaped = _unescape(raw)
+    if unescaped.isalpha() and unescaped.upper() in _POS_MAPPING:
+        return _POS_MAPPING[unescaped.upper()]
+    return wildcard_to_regex(unescaped)
+
+
+class SimpleCompiler(Transformer):
+    def __init__(self, column: str, pos_column: str, lemma_column: str) -> None:
+        super().__init__()
+        self.column = column
+        self.pos_column = pos_column
+        self.lemma_column = lemma_column
+
+    # --- terminals -----------------------------------------------------
+
+    def WORD(self, token: Any) -> str:
+        pattern = wildcard_to_regex(_unescape(str(token)))
+        return _make_token(_make_constraint(self.column, pattern))
+
+    def ALT_LIST(self, token: Any) -> str:
+        inner = str(token)[1:-1]
+        alts = [wildcard_to_regex(_unescape(a)) for a in inner.split(",")]
+        combined = "|".join(alts)
+        return _make_token(_make_constraint(self.column, combined))
+
+    def GAPS(self, token: Any) -> str:
+        return _gap_tokens(str(token))
+
+    def POS_TAG(self, token: Any) -> str:
+        raw = str(token)
+        # Split on the first underscore that introduces the tag. The word part
+        # cannot contain a literal `_` (only wildcards/word chars/escapes), and
+        # the tag part starts with either `{` or a word/wildcard char.
+        idx = self._split_pos(raw)
+        word_part = raw[:idx]
+        tag_part = raw[idx + 1 :]
+        pos_pattern = _resolve_pos_tag(tag_part)
+        constraints = [
+            _make_constraint(self.pos_column, pos_pattern, case_sensitive=True)
+        ]
+        if word_part:
+            word_pattern = wildcard_to_regex(_unescape(word_part))
+            constraints.insert(0, _make_constraint(self.column, word_pattern))
+        return _make_token(*constraints)
+
+    @staticmethod
+    def _split_pos(raw: str) -> int:
+        # Find the first `_` that isn't part of an escape sequence.
+        i = 0
+        while i < len(raw):
+            ch = raw[i]
+            if ch == "\\" and i + 1 < len(raw):
+                i += 2
+                continue
+            if ch == "_":
+                return i
+            i += 1
+        raise ValueError(f"POS_TAG has no unescaped underscore: {raw!r}")
+
+    def LEMMA(self, token: Any) -> str:
+        raw = str(token)[1:-1]  # strip braces
+        lemma_part, _, pos_part = raw.partition("/")
+        lemma_pattern = wildcard_to_regex(_unescape(lemma_part))
+        constraints = [_make_constraint(self.lemma_column, lemma_pattern)]
         if pos_part:
             pos_pattern = _POS_MAPPING.get(pos_part.upper(), pos_part + ".*")
             constraints.append(
-                _make_constraint(pos_column, pos_pattern, case_sensitive=True)
+                _make_constraint(self.pos_column, pos_pattern, case_sensitive=True)
             )
         return _make_token(*constraints)
 
-    lemma_pattern.set_parse_action(make_lemma)
-
-    # Define pos_word_part_item for use in both patterns
-    pos_word_part_item = (
-        escaped_char | wildcard_char | pp.Char(pp.alphas + pp.nums + "!@#$%^&=\\-")
-    )
-
-    # Lemma+POS pattern: {lemma}_TAG or {lemma}_{SIMPLIFIED}
-    # Supports both exact POS tags (e.g., {walk}_VBD) and simplified tags (e.g., {walk}_{SUBST})
-    # Simplified tags are wrapped in braces and expanded using _POS_MAPPING
-    simplified_pos_tag = (
-        pp.Suppress("{")
-        + pp.Combine(pp.OneOrMore(pp.Char(pp.alphas)))
-        + pp.Suppress("}")
-    )
-    exact_pos_tag = pp.Combine(pp.OneOrMore(pos_word_part_item))
-
-    lemma_pos_tag_pattern = (
-        lemma_only_pattern + pp.Suppress("_") + (simplified_pos_tag | exact_pos_tag)
-    )
-
-    def make_lemma_pos_tag(t: pp.ParseResults) -> str:
-        lemma_part = t[0]
-        pos_part = t[-1]
-        lemma_pattern = wildcard_to_regex(lemma_part)
-
-        # Check if this is a simplified POS tag (would have been parsed from {TAG})
-        # We detect this by checking if pos_part is all alpha and matches a key in _POS_MAPPING
-        if pos_part.upper() in _POS_MAPPING:
-            # It's a simplified tag - expand it
-            pos_pattern = _POS_MAPPING[pos_part.upper()]
-        else:
-            # It's an exact tag - convert wildcards
-            pos_pattern = wildcard_to_regex(pos_part)
-
+    def LEMMA_POS_TAG(self, token: Any) -> str:
+        raw = str(token)
+        # Matches `{lemma[/POS]}_TAG` — find the `}_` boundary.
+        brace_end = raw.index("}")
+        lemma_inner = raw[1:brace_end]
+        tag_part = raw[brace_end + 2 :]  # skip `}_`
+        lemma_part, _, _ = lemma_inner.partition("/")
+        lemma_pattern = wildcard_to_regex(_unescape(lemma_part))
+        pos_pattern = _resolve_pos_tag(tag_part)
         return _make_token(
-            _make_constraint(lemma_column, lemma_pattern),
-            _make_constraint(pos_column, pos_pattern, case_sensitive=True),
+            _make_constraint(self.lemma_column, lemma_pattern),
+            _make_constraint(self.pos_column, pos_pattern, case_sensitive=True),
         )
 
-    lemma_pos_tag_pattern.set_parse_action(make_lemma_pos_tag)
+    # --- rules ---------------------------------------------------------
 
-    # POS tag pattern: word_TAG, _TAG, word_{TAG}, or _{TAG}
-    # Word part is optional (for _TAG pattern), POS part after underscore
-    # POS part can optionally be wrapped in braces for simplified tags
-    # Important: Use Combine to prevent consuming whitespace between elements
-    pos_word_char = pp.Char(pp.alphas + pp.nums + "!@#$%^&=\\-")
-    pos_word_part_item = escaped_char | wildcard_char | pos_word_char
-    pos_word_part_content = pp.ZeroOrMore(pos_word_part_item)
+    def seq(self, items: list[str]) -> str:
+        return " ".join(items)
 
-    # POS tag can be: {TAG} (simplified, in braces) or TAG (exact/wildcard)
-    braced_pos_tag = (
-        pp.Suppress("{")
-        + pp.Combine(pp.OneOrMore(pp.Char(pp.alphas)))
-        + pp.Suppress("}")
-    )
-    unbraced_pos_tag = pp.Combine(pp.OneOrMore(pos_word_part_item))
+    def group(self, items: list[Any]) -> str:
+        *alts, rparen_quant = items
+        closing = str(rparen_quant)
+        quant = closing[1:] if len(closing) > 1 else ""
+        body = "|".join(alts) if len(alts) > 1 else alts[0]
+        return f"({body}){quant}"
 
-    # Combine the entire pattern so it doesn't consume whitespace
-    pos_pattern = pp.Combine(pos_word_part_content + pp.Literal("_")) + (
-        braced_pos_tag | unbraced_pos_tag
-    )
+    def binding(self, items: list[Any]) -> str:
+        head = str(items[0])
+        var_name = head[1:-1]  # strip `$` and `:`
+        return f"${var_name}: ({items[1]})"
 
-    def make_pos_tag(t: pp.ParseResults) -> str:
-        # t[0] contains "word_" (with trailing underscore)
-        # t[1] contains the POS tag (with or without braces)
-        word_with_underscore = t[0]
-        word_part = word_with_underscore[:-1]  # Remove trailing underscore
-        pos_part = t[1]
+    def start(self, items: list[str]) -> str:
+        return items[0]
 
-        # Check if this was a braced tag by seeing if it's all alpha and in mapping
-        # (braced_pos_tag only matches alpha characters)
-        is_braced = pos_part.isalpha() and pos_part.upper() in _POS_MAPPING
 
-        if is_braced:
-            # Simplified tag in braces - expand using mapping
-            pos_pattern = _POS_MAPPING[pos_part.upper()]
-        else:
-            # Exact tag or wildcard pattern
-            pos_pattern = wildcard_to_regex(pos_part)
-
-        constraints = [_make_constraint(pos_column, pos_pattern, case_sensitive=True)]
-        if word_part:
-            word_pattern = wildcard_to_regex(word_part)
-            constraints.insert(0, _make_constraint(column, word_pattern))
-        return _make_token(*constraints)
-
-    pos_pattern.set_parse_action(make_pos_tag)
-
-    # Gap tokens - consecutive * or + characters, standalone (not part of a word)
-    # Multiple consecutive + or * represent multiple gaps
-    # Examples: ++ = 2 tokens, *** = 0-3 tokens, +++** = 3-5 tokens
-    # But: *able, +able, **oom should be parsed as word patterns, not gaps
-    # Solution: Match gap chars followed by whitespace, end, or special chars (not word chars)
-    # The negative lookahead ensures gaps aren't followed by word-forming characters
-    # Note: We exclude * and + from the negative lookahead so **oom is treated as a word
-    consecutive_gaps = pp.Regex(r"[+*]+(?![a-zA-Z0-9!@#$%^&=\\\-*+?])")
-
-    def make_consecutive_gaps(t: pp.ParseResults) -> str:
-        gap_str = t[0]
-        plus_count = gap_str.count("+")
-        star_count = gap_str.count("*")
-
-        # Calculate min and max tokens
-        min_tokens = plus_count  # Each + requires one token
-        max_tokens = plus_count + star_count  # Each * adds an optional token
-
-        if min_tokens == max_tokens:
-            # Exact count
-            return f"[]{{{min_tokens}}}"
-        elif max_tokens == min_tokens + 1:
-            # Single optional token - use ? for efficiency
-            if min_tokens == 0:
-                return "[]?"
-            else:
-                return f"[]{{{min_tokens}}}" + " []?"
-        else:
-            # Range of tokens
-            return f"[]{{{min_tokens},{max_tokens}}}"
-
-    consecutive_gaps.set_parse_action(make_consecutive_gaps)
-
-    # Base sequence item (without groups/quantifiers): lemma+POS, lemma, gaps, POS, alternative, or word
-    base_item = (
-        lemma_pos_tag_pattern
-        | lemma_pattern
-        | consecutive_gaps
-        | pos_pattern
-        | alternative_list
-        | word_with_content
-    )
-
-    # Forward declaration for recursive grammar (groups can contain sequences)
-    sequence_item = pp.Forward()
-    # Forward declaration for variable bindings
-    binding = pp.Forward()
-
-    # Group: (sequence) or (alternative1 | alternative2 | ...) with optional quantifier
-    # Each alternative is a sequence of items
-    # Disjunction (pipe-separated alternatives) is supported
-    # IMPORTANT: Quantifier must immediately follow ) with NO whitespace
-    # to disambiguate from gap tokens (e.g., "(x | y)+" vs "(x | y) +")
-    group_sequence = pp.Group(pp.OneOrMore(sequence_item))
-    group_content = group_sequence + pp.ZeroOrMore(pp.Suppress("|") + group_sequence)
-
-    # Match closing paren optionally followed immediately by quantifier (no whitespace)
-    # This regex captures ) and optional quantifier as a single token
-    closing_with_optional_quant = pp.Regex(r"\)(?:[?+*]|\{\d+(?:,\d+)?\})?")
-
-    group_pattern = (
-        pp.Suppress("(") + pp.Group(group_content) + closing_with_optional_quant
-    )
-
-    def make_group(t: pp.ParseResults) -> str:
-        content = t[0]  # The group content (may contain multiple alternatives)
-        closing = t[
-            1
-        ]  # The closing paren + optional quantifier (e.g., ")", ")+", ")?", etc.)
-        # Extract quantifier if present (everything after the ')')
-        quant = closing[1:] if len(closing) > 1 else None
-
-        # Check if we have disjunction (multiple alternatives)
-        # content is a list of sequences (each sequence is a list of items)
-        if len(content) > 1:
-            # Multiple alternatives - join each sequence and then join with |
-            alternatives = []
-            for sequence in content:
-                sequence_cqp = " ".join(sequence)
-                alternatives.append(sequence_cqp)
-            result_cqp = "|".join(alternatives)
-        else:
-            # Single sequence - just join the items
-            sequence_cqp = " ".join(content[0])
-            result_cqp = sequence_cqp
-
-        # Wrap in parentheses and add quantifier if present
-        if quant:
-            return f"({result_cqp}){quant}"
-        else:
-            return f"({result_cqp})"
-
-    group_pattern.set_parse_action(make_group)
-
-    # Variable binding: $varname: pattern (parentheses optional)
-    # The binding target can be a base_item or group_pattern
-    binding_target = group_pattern | base_item
-
-    binding_pattern = (
-        pp.Suppress("$") + variable_name + pp.Suppress(":") + binding_target
-    )
-
-    def make_binding(t: pp.ParseResults) -> str:
-        """Convert simple query binding to CQP binding syntax."""
-        var_name = t[0]
-        pattern = t[1]  # CQP pattern from nested parse action
-        # Wrap in parentheses for CQP binding syntax
-        return f"${var_name}: ({pattern})"
-
-    binding_pattern.set_parse_action(make_binding)
-    binding <<= binding_pattern
-
-    # A sequence item is: binding, group, or base_item
-    # Bindings and groups must come before base items to be matched first
-    sequence_item <<= binding | group_pattern | base_item
-
-    # A query is a sequence of items
-    return pp.OneOrMore(sequence_item)
+_parser = Lark(_GRAMMAR, start="start", parser="lalr", lexer="basic")
 
 
 def simple_to_cqp(
@@ -396,7 +269,7 @@ def simple_to_cqp(
 
     Raises
     ------
-    ParseException
+    lark.exceptions.LarkError
         If the query syntax is invalid
 
     Examples
@@ -449,10 +322,6 @@ def simple_to_cqp(
     >>> simple_to_cqp("$phrase: (quick brown)")
     '$phrase: ([token="quick"%c] [token="brown"%c])'
     """
-    # Build grammar with parse actions for the specified columns
-    grammar = _build_grammar(column, pos_column, lemma_column)
-
-    # Parse the query - parse actions generate CQP directly
-    cqp_tokens = grammar.parse_string(query, parse_all=True)
-
-    return " ".join(cqp_tokens)
+    tree = _parser.parse(query)
+    compiler = SimpleCompiler(column, pos_column, lemma_column)
+    return compiler.transform(tree)

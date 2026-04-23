@@ -324,9 +324,7 @@ pymdown-extensions==10.21.2
     #   mkdocs-material
     #   mkdocstrings
 pyparsing==3.3.2
-    # via
-    #   -r requirements.in
-    #   matplotlib
+    # via matplotlib
 pyrefly==0.62.0
     # via -r requirements-dev.in
 pytest==8.4.2
