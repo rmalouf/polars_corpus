@@ -1,0 +1,21 @@
+# io.CorpusReader { #polars_corpus.io.CorpusReader }
+
+```python
+io.CorpusReader(corpus_files)
+```
+
+
+
+## Methods
+
+| Name | Description |
+| --- | --- |
+| [scan_corpus](#polars_corpus.io.CorpusReader.scan_corpus) | Based on https://docs.pola.rs/user-guide/plugins/io_plugins/#writing-the-source |
+
+### scan_corpus { #polars_corpus.io.CorpusReader.scan_corpus }
+
+```python
+io.CorpusReader.scan_corpus()
+```
+
+Based on https://docs.pola.rs/user-guide/plugins/io_plugins/#writing-the-source

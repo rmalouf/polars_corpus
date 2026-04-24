@@ -1,0 +1,6 @@
+# visualizations.distribution_plot { #polars_corpus.visualizations.distribution_plot }
+
+```python
+visualizations.distribution_plot(df, expr, words, **kwargs)
+```
+

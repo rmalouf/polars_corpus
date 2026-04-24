@@ -1,0 +1,7 @@
+# matcher.get_matches { #polars_corpus.matcher.get_matches }
+
+```python
+matcher.get_matches(df, query)
+```
+
+Parse query and retrieve matching spans

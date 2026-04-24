@@ -76,7 +76,6 @@ dev = [
  "pip>=25.0.1",
  "pyrefly>=0.62",
  "pytest>=8.3.5",
- "zensical>=0.0.33",
- "mkdocstrings[python]>=0.27",
- "mkdocs-jupyter>=0.25",
+ "quartodoc>=0.7",
+ "griffe<2.0",
 ]

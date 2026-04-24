@@ -18,7 +18,7 @@ locks:
 
 # Serve docs locally
 docs:
-	zensical serve
+	quartodoc build && quarto preview
 
 # Build Rust extension for local development with native CPU optimizations
 develop:

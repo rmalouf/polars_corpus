@@ -1,0 +1,32 @@
+# assoc.crosstab { #polars_corpus.assoc.crosstab }
+
+```python
+assoc.crosstab(df, x, y, freqs_name='freqs')
+```
+
+Create a crosstabulation (contingency table) from two categorical variables.
+
+Computes a contingency table showing the joint frequency distribution
+of two categorical variables, along with marginal totals and grand total.
+Null values in either variable are automatically excluded from the analysis.
+
+## Parameters {.doc-section .doc-section-parameters}
+
+| Name       | Type    | Description                                                             | Default    |
+|------------|---------|-------------------------------------------------------------------------|------------|
+| df         | T_Frame | Input data as a Polars DataFrame or LazyFrame containing the variables. | _required_ |
+| x          | str     | Column name of the first categorical variable (row variable).           | _required_ |
+| y          | str     | Column name of the second categorical variable (column variable).       | _required_ |
+| freqs_name | str     | Name for the output frequencies struct column.                          | `"freqs"`  |
+
+## Returns {.doc-section .doc-section-returns}
+
+| Name   | Type    | Description                                                                                                                                                                                                                                                                                                                                                                                                     |
+|--------|---------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+|        | T_Frame | A DataFrame containing the contingency table with the following columns:  - x : Levels/categories of the first variable - y : Levels/categories of the second variable - freqs : Struct with fields {f12, f1, f2, n} where:     - f12: joint frequency (count of x,y pairs)     - f1: row marginal (total count for this x value)     - f2: column marginal (total count for this y value)     - n: grand total |
+
+## Raises {.doc-section .doc-section-raises}
+
+| Name   | Type                | Description                                                  |
+|--------|---------------------|--------------------------------------------------------------|
+|        | ColumnNotFoundError | If either column `x` or `y` does not exist in the DataFrame. |

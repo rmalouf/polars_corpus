@@ -26,3 +26,7 @@ site/
 stuff/
 .DS_Store
 *.parquet
+/.quarto/
+**/*.quarto_ipynb
+/_site/
+/objects.json

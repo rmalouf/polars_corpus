@@ -1,0 +1,321 @@
+# search.SearchResults { #polars_corpus.search.SearchResults }
+
+```python
+search.SearchResults(df, query, matches)
+```
+
+Results of a corpus search query.
+
+This class wraps the results of a corpus search and provides methods for
+generating concordances, extracting matches, and manipulating result sets.
+SearchResults objects are typically created by the search functions and
+provide a fluent interface for working with search matches.
+
+## Parameters {.doc-section .doc-section-parameters}
+
+| Name    | Type          | Description                                                                 | Default    |
+|---------|---------------|-----------------------------------------------------------------------------|------------|
+| df      | pl.DataFrame  | The source corpus DataFrame containing the original data.                   | _required_ |
+| query   | str           | The CQP query string that generated these results.                          | _required_ |
+| matches | list\[Match\] | List of Match objects representing the matched text positions and bindings. | _required_ |
+
+## Attributes {.doc-section .doc-section-attributes}
+
+| Name     | Type          | Description                           |
+|----------|---------------|---------------------------------------|
+| _df      | pl.DataFrame  | The source corpus DataFrame.          |
+| _query   | str           | The original search query.            |
+| _matches | list\[Match\] | The matched text spans with bindings. |
+
+## Examples {.doc-section .doc-section-examples}
+
+```python
+>>> import polars as pl
+>>> import polars_corpus as plc
+>>> corpus = pl.DataFrame({"token": ["The", "quick", "brown", "fox"]})
+>>> results = plc.search(corpus, '[token="quick"]')
+>>> print(results)
+SearchResults<'[token="quick"]'; 1 match>
+```
+
+## Methods
+
+| Name | Description |
+| --- | --- |
+| [collocates](#polars_corpus.search.SearchResults.collocates) | Generate a collocate DataFrame. |
+| [concordance](#polars_corpus.search.SearchResults.concordance) | Generate a KWIC (Key Word In Context) concordance DataFrame. |
+| [head](#polars_corpus.search.SearchResults.head) | Return the first n search results. |
+| [sample](#polars_corpus.search.SearchResults.sample) | Return a random sample of search results. |
+| [shuffle](#polars_corpus.search.SearchResults.shuffle) | Return search results in randomized order. |
+| [tail](#polars_corpus.search.SearchResults.tail) | Return the last n search results. |
+| [view](#polars_corpus.search.SearchResults.view) | Display an interactive concordance viewer in Jupyter. |
+| [with_spans_as_chunks](#polars_corpus.search.SearchResults.with_spans_as_chunks) | Add a column containing span information to the corpus DataFrame. |
+
+### collocates { #polars_corpus.search.SearchResults.collocates }
+
+```python
+search.SearchResults.collocates(
+    column='token',
+    window=5,
+    min_freq=5,
+    freqs_name='freqs',
+)
+```
+
+Generate a collocate DataFrame.
+
+Analyzes the tokens that appear near the search matches within a specified
+window and computes frequency statistics useful for collocation analysis.
+Returns a DataFrame with collocate frequencies and corpus frequencies.
+
+#### Parameters {.doc-section .doc-section-parameters}
+
+| Name       | Type   | Description                                                                                                                                       | Default   |
+|------------|--------|---------------------------------------------------------------------------------------------------------------------------------------------------|-----------|
+| column     | str    | Column name specifying which column to use for collocate analysis.                                                                                | `"token"` |
+| window     | int    | Number of tokens to include on both left and right sides of each match.                                                                           | `5`       |
+| min_freq   | int    | Minimum frequency of each node-collocate pair within the window span. Node-collocate pairs with lower frequencies are not displayed in DataFrame. | `5`       |
+| freqs_name | str    | Name for the output frequencies struct column.                                                                                                    | `"freqs"` |
+
+#### Returns {.doc-section .doc-section-returns}
+
+| Name   | Type         | Description                                                                                                                                                                                                                                                                                                                               |
+|--------|--------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+|        | pl.DataFrame | Collocate DataFrame with columns: - collocate: The collocating token - freqs: Struct with fields {f12, f1, f2, n} where:     - f12: observed node-collocate frequency     - f1: total frequency of node in window (corpus freq of node * window size * 2)     - f2: total frequency of collocate in corpus     - n: total words in corpus |
+
+#### Notes {.doc-section .doc-section-notes}
+
+The returned frequencies can be used to compute association measures
+like PMI, log-likelihood ratios, or other collocation statistics.
+
+#### Examples {.doc-section .doc-section-examples}
+
+```python
+>>> results.collocates("token")
+>>> results.collocates("token", window=3, min_freq=10)
+>>> collocs.with_columns(ll=pl.col("freqs").corpus.loglik())
+```
+
+### concordance { #polars_corpus.search.SearchResults.concordance }
+
+```python
+search.SearchResults.concordance(expr, window=None, chunk_tag=None)
+```
+
+Generate a KWIC (Key Word In Context) concordance DataFrame.
+
+Creates a concordance table showing the matched text with surrounding
+context. The concordance format includes left context, the matched
+keyword(s), and right context in separate columns.
+
+#### Parameters {.doc-section .doc-section-parameters}
+
+| Name      | Type           | Description                                                                                                                                                                                                                                             | Default    |
+|-----------|----------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|------------|
+| expr      | IntoExprColumn | Column name or Polars expression specifying which column(s) to use for generating the concordance display.                                                                                                                                              | _required_ |
+| window    | int            | Number of tokens to include on both left and right sides of each match. If None, returns matches with no context (equivalent to window=0). When chunk_tag is specified, this parameter is ignored.                                                      | `None`     |
+| chunk_tag | str            | Column name defining chunk boundaries for context extraction. When specified, context extends to chunk boundaries marked by "B" (begin) and "I" (inside) tags, ignoring the window parameter. Context stops at the first non-"I" tag in each direction. | `None`     |
+
+#### Returns {.doc-section .doc-section-returns}
+
+| Name   | Type         | Description                                                                                                                                                                                                                                                                                                                                    |
+|--------|--------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+|        | pl.DataFrame | Concordance DataFrame with columns named according to the input expression(s). For each column in expr, creates: - "{column}_left_context": List of tokens before the match - "{column}": List of matched tokens - "{column}_right_context": List of tokens after the match Context columns are omitted when window=0 or no context available. |
+
+#### Examples {.doc-section .doc-section-examples}
+
+```python
+>>> results.concordance("token", window=3)
+>>> results.concordance("token")  # No context, matches only
+>>> results.concordance("token", chunk_tag="sentence_tags")  # Chunk boundaries
+>>> results.concordance(["token", "pos"], window=5)  # Multiple columns
+```
+
+### head { #polars_corpus.search.SearchResults.head }
+
+```python
+search.SearchResults.head(n)
+```
+
+Return the first n search results.
+
+#### Parameters {.doc-section .doc-section-parameters}
+
+| Name   | Type   | Description                                                                                                    | Default    |
+|--------|--------|----------------------------------------------------------------------------------------------------------------|------------|
+| n      | int    | Number of results to return from the beginning. If n exceeds the total number of matches, returns all matches. | _required_ |
+
+#### Returns {.doc-section .doc-section-returns}
+
+| Name   | Type          | Description                                              |
+|--------|---------------|----------------------------------------------------------|
+|        | SearchResults | New SearchResults object containing the first n matches. |
+
+#### Examples {.doc-section .doc-section-examples}
+
+```python
+>>> first_10 = results.head(10)
+```
+
+### sample { #polars_corpus.search.SearchResults.sample }
+
+```python
+search.SearchResults.sample(k, seed=None)
+```
+
+Return a random sample of search results.
+
+#### Parameters {.doc-section .doc-section-parameters}
+
+| Name   | Type   | Description                                                                     | Default    |
+|--------|--------|---------------------------------------------------------------------------------|------------|
+| k      | int    | Number of results to sample. Must be between 0 and the total number of matches. | _required_ |
+| seed   | int    | Random seed for reproducible sampling. If None, uses the current random state.  | `None`     |
+
+#### Returns {.doc-section .doc-section-returns}
+
+| Name   | Type          | Description                                                     |
+|--------|---------------|-----------------------------------------------------------------|
+|        | SearchResults | New SearchResults object containing k randomly sampled matches. |
+
+#### Raises {.doc-section .doc-section-raises}
+
+| Name   | Type       | Description                                                  |
+|--------|------------|--------------------------------------------------------------|
+|        | ValueError | If k is negative or exceeds the number of available matches. |
+
+#### Notes {.doc-section .doc-section-notes}
+
+The random state is preserved, so this method does not affect
+the global random state.
+
+#### Examples {.doc-section .doc-section-examples}
+
+```python
+>>> sample_100 = results.sample(100, seed=42)
+```
+
+### shuffle { #polars_corpus.search.SearchResults.shuffle }
+
+```python
+search.SearchResults.shuffle(seed=None)
+```
+
+Return search results in randomized order.
+
+#### Parameters {.doc-section .doc-section-parameters}
+
+| Name   | Type   | Description                                                                     | Default   |
+|--------|--------|---------------------------------------------------------------------------------|-----------|
+| seed   | int    | Random seed for reproducible shuffling. If None, uses the current random state. | `None`    |
+
+#### Returns {.doc-section .doc-section-returns}
+
+| Name   | Type          | Description                                            |
+|--------|---------------|--------------------------------------------------------|
+|        | SearchResults | New SearchResults object with matches in random order. |
+
+#### Examples {.doc-section .doc-section-examples}
+
+```python
+>>> shuffled = results.shuffle(seed=123)
+```
+
+### tail { #polars_corpus.search.SearchResults.tail }
+
+```python
+search.SearchResults.tail(n)
+```
+
+Return the last n search results.
+
+#### Parameters {.doc-section .doc-section-parameters}
+
+| Name   | Type   | Description                                                                                                                | Default    |
+|--------|--------|----------------------------------------------------------------------------------------------------------------------------|------------|
+| n      | int    | Number of results to return from the end. Must be positive. If n exceeds the total number of matches, returns all matches. | _required_ |
+
+#### Returns {.doc-section .doc-section-returns}
+
+| Name   | Type          | Description                                             |
+|--------|---------------|---------------------------------------------------------|
+|        | SearchResults | New SearchResults object containing the last n matches. |
+
+#### Raises {.doc-section .doc-section-raises}
+
+| Name   | Type       | Description               |
+|--------|------------|---------------------------|
+|        | ValueError | If n is negative or zero. |
+
+#### Examples {.doc-section .doc-section-examples}
+
+```python
+>>> last_10 = results.tail(10)
+```
+
+### view { #polars_corpus.search.SearchResults.view }
+
+```python
+search.SearchResults.view(expr='token', window=5, chunk_tag=None, page_size=25)
+```
+
+Display an interactive concordance viewer in Jupyter.
+
+Creates and displays an interactive viewer for browsing concordance
+results with KWIC formatting, pagination, sorting, and filtering.
+
+#### Parameters {.doc-section .doc-section-parameters}
+
+| Name      | Type           | Description                                                                                                                                                                                        | Default   |
+|-----------|----------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|-----------|
+| expr      | IntoExprColumn | Column name or Polars expression specifying which column(s) to use for generating the concordance display.                                                                                         | `"token"` |
+| window    | int            | Number of tokens to include on both left and right sides of each match. If None, returns matches with no context (equivalent to window=0). When chunk_tag is specified, this parameter is ignored. | `5`       |
+| chunk_tag | str            | Column name defining chunk boundaries for context extraction. When specified, context extends to chunk boundaries marked by "B" (begin) and "I" (inside) tags, ignoring the window parameter.      | `None`    |
+| page_size | int            | Number of concordance lines to display per page.                                                                                                                                                   | `25`      |
+
+#### Examples {.doc-section .doc-section-examples}
+
+```python
+>>> results.view()  # Use defaults
+>>> results.view("token", window=10, page_size=50)
+>>> results.view("token", chunk_tag="sent_tag")
+```
+
+### with_spans_as_chunks { #polars_corpus.search.SearchResults.with_spans_as_chunks }
+
+```python
+search.SearchResults.with_spans_as_chunks(name='spans')
+```
+
+Add a column containing span information to the corpus DataFrame.
+
+Creates a new column in the corpus DataFrame that marks which tokens
+are part of search matches. The spans are represented as chunk tags
+where 'B' indicates the beginning of a match and 'I' indicates
+continuation of a match.
+
+#### Parameters {.doc-section .doc-section-parameters}
+
+| Name   | Type   | Description                                                    | Default   |
+|--------|--------|----------------------------------------------------------------|-----------|
+| name   | str    | Name of the new column to add containing the span information. | `'spans'` |
+
+#### Returns {.doc-section .doc-section-returns}
+
+| Name   | Type                   | Description                                       |
+|--------|------------------------|---------------------------------------------------|
+|        | DataFrame \| LazyFrame | The corpus DataFrame with the added spans column. |
+
+#### Notes {.doc-section .doc-section-notes}
+
+This method is useful for post-processing or visualization when you
+need to know which tokens in the corpus correspond to search matches.
+The span encoding follows the standard BIO (Begin-Inside-Outside)
+tagging scheme used in NLP.
+
+#### Examples {.doc-section .doc-section-examples}
+
+```python
+>>> df_with_spans = results.with_spans_as_chunks('match_tags')
+>>> df_with_spans = results.with_spans_as_chunks()  # Default name 'spans'
+```

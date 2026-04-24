@@ -1,0 +1,34 @@
+# assoc.pmi { #polars_corpus.assoc.pmi }
+
+```python
+assoc.pmi(f12, f1, f2, n)
+```
+
+Compute Pointwise Mutual Information (PMI) for contingency table data.
+
+Calculates PMI values measuring the association strength between two
+categorical variables based on their observed vs. expected co-occurrence
+frequencies. PMI quantifies how much more (or less) frequently two events
+co-occur compared to what would be expected under statistical independence.
+
+## Parameters {.doc-section .doc-section-parameters}
+
+| Name   | Type           | Description                                                                                  | Default    |
+|--------|----------------|----------------------------------------------------------------------------------------------|------------|
+| f12    | IntoExprColumn | Joint frequencies of variable pairs. Can be a column name (str) or Polars expression.        | _required_ |
+| f1     | IntoExprColumn | Marginal frequencies of first variable. Can be a column name (str) or Polars expression.     | _required_ |
+| f2     | IntoExprColumn | Marginal frequencies of second variable. Can be a column name (str) or Polars expression.    | _required_ |
+| n      | IntoExprColumn | Grand total (total number of observations). Can be a column name (str) or Polars expression. | _required_ |
+
+## Returns {.doc-section .doc-section-returns}
+
+| Name   | Type    | Description                                                              |
+|--------|---------|--------------------------------------------------------------------------|
+|        | pl.Expr | A Polars expression that computes the PMI values for each variable pair. |
+
+## Notes {.doc-section .doc-section-notes}
+
+PMI is calculated as:
+
+.. math::
+    PMI(x,y) = \log\frac{P(x,y)}{P(x)P(y)} = \log\frac{f_{12} \cdot n}{f_1 \cdot f_2}

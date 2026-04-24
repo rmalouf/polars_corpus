@@ -1,0 +1,37 @@
+# assoc.loglik { #polars_corpus.assoc.loglik }
+
+```python
+assoc.loglik(f12, f1, f2, n)
+```
+
+Compute log-likelihood ratio (G²) statistic for contingency table data.
+
+Calculates the log-likelihood ratio statistic (also known as G² or
+G-squared) which measures the association strength between two categorical
+variables by comparing observed frequencies to those expected under
+statistical independence.
+
+## Parameters {.doc-section .doc-section-parameters}
+
+| Name   | Type           | Description                                                                                  | Default    |
+|--------|----------------|----------------------------------------------------------------------------------------------|------------|
+| f12    | IntoExprColumn | Joint frequencies of variable pairs. Can be a column name (str) or Polars expression.        | _required_ |
+| f1     | IntoExprColumn | Marginal frequencies of first variable. Can be a column name (str) or Polars expression.     | _required_ |
+| f2     | IntoExprColumn | Marginal frequencies of second variable. Can be a column name (str) or Polars expression.    | _required_ |
+| n      | IntoExprColumn | Grand total (total number of observations). Can be a column name (str) or Polars expression. | _required_ |
+
+## Returns {.doc-section .doc-section-returns}
+
+| Name   | Type    | Description                                                                               |
+|--------|---------|-------------------------------------------------------------------------------------------|
+|        | pl.Expr | A Polars expression that computes the log-likelihood ratio values for each variable pair. |
+
+## Notes {.doc-section .doc-section-notes}
+
+The log-likelihood ratio statistic (G²) is calculated as:
+
+.. math::
+    G^2 = 2 \sum_{i,j} f_{ij} \log\frac{f_{ij}}{e_{ij}}
+
+where f_{ij} are the observed frequencies and e_{ij} are the expected
+frequencies under independence: e_{ij} = (f_{i·} × f_{·j}) / n

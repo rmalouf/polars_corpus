@@ -1,0 +1,6 @@
+# utils.ngrams { #polars_corpus.utils.ngrams }
+
+```python
+utils.ngrams(n, expr)
+```
+

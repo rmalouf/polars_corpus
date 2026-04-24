@@ -1,0 +1,104 @@
+project:
+  type: website
+  output-dir: _site
+
+website:
+  title: "polars-corpus"
+  description: "Corpus search, concordancing, and statistical measures for Polars"
+  navbar:
+    left:
+      - href: docs/index.qmd
+        text: Home
+      - text: User Guide
+        menu:
+          - href: docs/guide/installation.qmd
+            text: Installation
+          - href: docs/guide/data-format.qmd
+            text: Data Format
+          - href: docs/guide/query/simple.qmd
+            text: Simple Queries
+          - href: docs/guide/query/cqp.qmd
+            text: CQP Queries
+          - href: docs/guide/concordancing.qmd
+            text: Concordancing
+          - href: docs/guide/frequencies.qmd
+            text: Frequency Analysis
+          - href: docs/guide/collocations.qmd
+            text: Collocations
+      - text: Examples
+        menu:
+          - href: examples/concordance.ipynb
+            text: Concordance
+          - href: examples/concordance_cqp.ipynb
+            text: Concordance (CQP)
+          - href: examples/frequencies.ipynb
+            text: Frequencies
+          - href: examples/collocation.ipynb
+            text: Collocations
+          - href: examples/keywords.ipynb
+            text: Keywords
+          - href: examples/stylometry.ipynb
+            text: Stylometry
+          - href: examples/zipf.ipynb
+            text: "Zipf's Law"
+      - href: reference/index.qmd
+        text: API Reference
+
+format:
+  html:
+    theme: cosmo
+    toc: true
+
+execute:
+  freeze: true
+
+quartodoc:
+  package: polars_corpus
+  source_dir: python
+  dir: reference
+  title: API Reference
+  sections:
+    - title: Search
+      desc: "Corpus search and concordancing"
+      contents:
+        - search.SearchResults
+        - search.concordance
+        - search.collocates
+        - matcher.search
+        - matcher.search_cqp
+        - matcher.get_matches
+    - title: Association Measures
+      desc: "Collocation and co-occurrence statistics"
+      contents:
+        - assoc.crosstab
+        - assoc.pmi
+        - assoc.loglik
+        - assoc.minsens
+        - assoc.welchs_t
+    - title: Lexical Diversity
+      contents:
+        - lexical.ttr
+        - lexical.msttr
+        - lexical.mtld
+        - lexical.yules_k
+    - title: Productivity
+      contents:
+        - productivity.frequency_spectrum
+        - productivity.count_hapaxes
+    - title: I/O
+      contents:
+        - io.read_text_corpus
+        - io.scan_text_corpus
+        - io.CorpusReader
+    - title: Views
+      contents:
+        - view.ConcordanceWidget
+    - title: Visualizations
+      contents:
+        - visualizations.distribution_plot
+    - title: Utilities
+      contents:
+        - utils.ngrams
+        - chunk.chunk_id
+        - chunk.with_chunk_index
+        - convert.from_nltk

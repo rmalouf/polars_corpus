@@ -1,0 +1,6 @@
+# productivity.frequency_spectrum { #polars_corpus.productivity.frequency_spectrum }
+
+```python
+productivity.frequency_spectrum(expr, sort=False)
+```
+
