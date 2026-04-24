@@ -79,15 +79,15 @@ plc.search_cqp(c, '[token="the"] [pos="NN.*"]')
 ```
 
 ### Variable Bindings
-Capture subpatterns using `$varname: (pattern)` syntax:
+Capture subpatterns using `$varname: [node]` or `$varname: (pattern)` syntax:
 ```python
-# Basic binding
-plc.search_cqp(c, '$n: ([pos="NN"])')  # Capture noun
+# Bare node binding (single token)
+plc.search_cqp(c, '$n: [pos="NN"]')  # Capture noun
 
 # Multiple variables
-plc.search_cqp(c, '$det: ([pos="DT"]) $adj: ([pos="JJ"]) $noun: ([pos="NN"])')
+plc.search_cqp(c, '$det: [pos="DT"] $adj: [pos="JJ"] $noun: [pos="NN"]')
 
-# With quantifiers
+# With quantifiers — parentheses required
 plc.search_cqp(c, '$adjs: ([pos="JJ"]+) [pos="NN"]')  # Capture all consecutive adjectives
 
 # Optional patterns
@@ -97,11 +97,12 @@ plc.search_cqp(c, '$det: ([pos="DT"]?) [pos="JJ"] [pos="NN"]')  # May bind empty
 plc.search_cqp(c, '$target: ([pos="JJ"] | [pos="NN"])')  # Works with backtracking
 
 # Nested bindings
-plc.search_cqp(c, '$phrase: (($det: ([pos="DT"])) [pos="JJ"] [pos="NN"])')
+plc.search_cqp(c, '$phrase: (($det: [pos="DT"]) [pos="JJ"] [pos="NN"])')
 ```
 
 **Important notes:**
-- Parentheses are **required** around bound patterns: `$var: (pattern)`
+- Single-token bindings: `$var: [feature="value"]` (no parens needed)
+- Multi-token or quantified bindings: `$var: (pattern)` (parens required)
 - Variable names must be unique within a query
 - Bindings are accessible via `match.bindings[varname]` → `Span(start, end)`
 - Empty spans (start==end) for zero-width matches (e.g., optional patterns that didn't match)

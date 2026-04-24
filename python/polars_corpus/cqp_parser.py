@@ -31,7 +31,7 @@ concatenation: repetition+
         | "(" cqp ")"
         | binding
 
-binding: "$" NAME ":" "(" cqp ")"
+binding: "$" NAME ":" (node | "(" cqp ")")
 
 node: "[" constraint_formula? "]"
 

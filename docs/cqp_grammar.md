@@ -20,7 +20,8 @@
             | <node>
             | "(" <query> ")"
 
-<variable_binding> ::= "$" <identifier> ":" "(" <query> ")"
+<variable_binding> ::= "$" <identifier> ":" <node>
+                     | "$" <identifier> ":" "(" <query> ")"
 
 <identifier> ::= [a-zA-Z_][a-zA-Z0-9_]*
 
@@ -64,8 +65,9 @@
    - `{,n}` (up to n times)
 6. **Grouping**: Parentheses for grouping patterns
 7. **Disjunction**: `|` for alternative patterns at the top level
-8. **Variable Bindings**: `$varname: (pattern)` to capture and name subpatterns
-   - Parentheses are required around the bound pattern
+8. **Variable Bindings**: `$varname: [...]` or `$varname: (pattern)` to capture and name subpatterns
+   - Bare node form `$var: [feature="value"]` works for single-token bindings
+   - Parentheses are required for multi-token or quantified patterns: `$var: (pattern+)`
    - Variable names must be unique within a query
    - Accessible via `match.bindings[varname]` as a `Span(start, end)`
    - Supports quantifiers, alternation, and nesting
@@ -81,8 +83,8 @@
 - `([pos="ADJ"] | [pos="NOUN"])*` - Zero or more adjectives or nouns
 - `[pos="DT"] [c5="AJ.*"]* [pos="NOUN"]` - Determiner followed by optional adjectives and a noun
 - `[token="very"] [pos="ADV" | pos="ADJ"]` - "very" followed by adverb or adjective
-- `$n: ([pos="NOUN"])` - Capture noun in variable "n"
-- `$det: ([pos="DT"]) $adj: ([pos="JJ"]) $noun: ([pos="NOUN"])` - Capture multiple constituents
-- `$adjs: ([pos="JJ"]+) [pos="NOUN"]` - Capture sequence of adjectives
-- `$target: ([pos="JJ"] | [pos="NN"])` - Capture alternative patterns (with backtracking)
-- `$phrase: (($det: ([pos="DT"])) [pos="JJ"] [pos="NN"])` - Nested variable bindings
+- `$n: [pos="NOUN"]` - Capture noun in variable "n" (bare node form)
+- `$det: [pos="DT"] $adj: [pos="JJ"] $noun: [pos="NOUN"]` - Capture multiple constituents
+- `$adjs: ([pos="JJ"]+) [pos="NOUN"]` - Capture sequence of adjectives (grouped form required)
+- `$target: ([pos="JJ"] | [pos="NN"])` - Capture alternative patterns (grouped form required)
+- `$phrase: (($det: [pos="DT"]) [pos="JJ"] [pos="NN"])` - Nested variable bindings
