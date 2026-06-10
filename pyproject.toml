@@ -18,6 +18,7 @@ classifiers = [
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
     "Topic :: Scientific/Engineering :: Information Analysis",
     "Topic :: Text Processing",
     "Topic :: Text Processing :: General",
@@ -40,12 +41,9 @@ dependencies = [
 [tool.pyrefly.errors]
 bad-override-mutable-attribute = "ignore"
 
-#[project.urls]
-#Homepage = "https://example.com"
-#Documentation = "https://readthedocs.org"
-#Repository = "https://github.com/me/spam.git"
-#Issues = "https://github.com/me/spam/issues"
-#Changelog = "https://github.com/me/spam/blob/master/CHANGELOG.md"
+[project.urls]
+Repository = "https://github.com/rmalouf/polars_corpus"
+Issues = "https://github.com/rmalouf/polars_corpus/issues"
 
 [tool.uv]
 python-preference = "only-managed"
@@ -76,6 +74,5 @@ dev = [
  "pip>=25.0.1",
  "pyrefly>=0.62",
  "pytest>=8.3.5",
- "quartodoc>=0.7",
- "griffe<2.0",
+ "great-docs",
 ]

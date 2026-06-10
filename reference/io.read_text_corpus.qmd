@@ -1,6 +1,0 @@
-# io.read_text_corpus { #polars_corpus.io.read_text_corpus }
-
-```python
-io.read_text_corpus(corpus_files)
-```
-

@@ -57,7 +57,7 @@
 4. **Boolean Logic**: `&` (AND) and `|` (OR) operators within token constraints
 5. **Repetition Operators**:
    - `*` (zero or more)
-   - `+` (one or more)  
+   - `+` (one or more)
    - `?` (zero or one)
    - `{n}` (exactly n times)
    - `{m,n}` (between m and n times)

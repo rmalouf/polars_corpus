@@ -1,6 +1,0 @@
-# productivity.count_hapaxes { #polars_corpus.productivity.count_hapaxes }
-
-```python
-productivity.count_hapaxes(expr)
-```
-

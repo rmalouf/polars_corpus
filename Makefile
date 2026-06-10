@@ -18,7 +18,7 @@ locks:
 
 # Serve docs locally
 docs:
-	quartodoc build && quarto preview
+	great-docs preview
 
 # Build Rust extension for local development with native CPU optimizations
 develop:

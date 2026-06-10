@@ -1,0 +1,6 @@
+# Query Languages
+
+polars-corpus supports two query syntaxes:
+
+- **Simple** — BNCweb-style, case-insensitive, user-friendly
+- **CQP** — Corpus Query Processor, full token-level pattern matching

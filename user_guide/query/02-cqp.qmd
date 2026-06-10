@@ -101,4 +101,4 @@ for match in results._matches:
 
 ## Full Grammar Reference
 
-See [CQP grammar BNF](../../cqp_grammar.md) for the complete formal specification.
+See [CQP Grammar](03-grammar.qmd) for the complete formal specification.
