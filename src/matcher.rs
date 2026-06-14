@@ -8,7 +8,7 @@ use pyo3_polars::PySeries;
 
 use crate::span::Span;
 
-#[pyclass(module = "polars_corpus")]
+#[pyclass(module = "polars_corpus", from_py_object)]
 #[derive(Clone)]
 pub enum Opcode {
     Token(Vec<u8>),
@@ -23,7 +23,7 @@ pub enum Opcode {
     Fail(),
 }
 
-#[pyclass(module = "polars_corpus")]
+#[pyclass(module = "polars_corpus", from_py_object)]
 #[derive(Clone)]
 pub struct Match {
     #[pyo3(get)]

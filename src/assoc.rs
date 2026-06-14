@@ -18,7 +18,7 @@ fn py_loglik(inputs: &[Series]) -> PolarsResult<Series> {
     let f2_ca = get_f64_chunked_array(&inputs[2])?;
     let n_ca = get_f64_chunked_array(&inputs[3])?;
 
-    let ll: Float64Chunked = izip!(&f12_ca, &f1_ca, &f2_ca, &n_ca)
+    let ll: Float64Chunked = izip!(f12_ca.iter(), f1_ca.iter(), f2_ca.iter(), n_ca.iter())
         .map(|(f12, f1, f2, n)| match (f12, f1, f2, n) {
             (Some(f12), Some(f1), Some(f2), Some(n)) => loglik_row(f12, f1, f2, n),
             _ => None,
@@ -182,12 +182,12 @@ fn py_welchs_t_from_stats(inputs: &[Series], kwargs: AlternativeKwargs) -> Polar
     let mut d_v = Vec::with_capacity(n);
 
     for (s1, ss1, n1, s2, ss2, n2) in izip!(
-        &sums1_ca,
-        &sumsqs1_ca,
-        &n1_ca,
-        &sums2_ca,
-        &sumsqs2_ca,
-        &n2_ca
+        sums1_ca.iter(),
+        sumsqs1_ca.iter(),
+        n1_ca.iter(),
+        sums2_ca.iter(),
+        sumsqs2_ca.iter(),
+        n2_ca.iter()
     ) {
         let (t, pval, df) =
             welchs_t_from_stats(s1, ss1, n1.unwrap(), s2, ss2, n2.unwrap(), &kwargs);
