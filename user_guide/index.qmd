@@ -1,0 +1,14 @@
+# User Guide
+
+polars-corpus is a Python/Rust extension for Polars that brings corpus linguistics workflows
+into the DataFrame ecosystem. It is designed to handle large corpora (100M+ words) on
+modest hardware without requiring external servers or databases.
+
+## Sections
+
+- [Installation](01-installation.qmd) — system requirements and setup
+- [Data Format](02-data-format.qmd) — how corpora are structured as Parquet files
+- [Concordancing](03-concordancing.qmd) — keyword-in-context search and KWIC output
+- [Frequency Analysis](04-frequencies.qmd) — word and n-gram frequency counts
+- [Collocations](05-collocations.qmd) — co-occurrence statistics and association measures
+- [Query Languages](query/index.qmd) — Simple and CQP query syntax reference
