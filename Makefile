@@ -4,17 +4,17 @@ VENV_DIR = ${HOME}/.venvs/polars-corpus
 
 .PHONY: install dev lock clean docs
 
-venv:
-	uv venv --allow-existing --quiet $(VENV_DIR)
-	source $(VENV_DIR)/bin/activate
-	uv pip sync requirements-examples.txt
-
-# Regenerate all requirement lock files from .in sources
-# Three levels: runtime (requirements.txt) → dev → examples
-locks:
-	uv pip compile requirements.in >requirements.txt
-	uv pip compile requirements.in requirements-dev.in >requirements-dev.txt
-	uv pip compile requirements.in requirements-examples.in requirements-dev.in >requirements-examples.txt
+#venv:
+#	uv venv --allow-existing --quiet $(VENV_DIR)
+#	source $(VENV_DIR)/bin/activate
+#	uv pip sync requirements-examples.txt
+#
+## Regenerate all requirement lock files from .in sources
+## Three levels: runtime (requirements.txt) → dev → examples
+#locks:
+#	uv pip compile requirements.in >requirements.txt
+#	uv pip compile requirements.in requirements-dev.in >requirements-dev.txt
+#	uv pip compile requirements.in requirements-examples.in requirements-dev.in >requirements-examples.txt
 
 # Serve docs locally
 docs:
