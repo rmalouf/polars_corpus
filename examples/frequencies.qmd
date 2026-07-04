@@ -8,17 +8,15 @@ Using polars to do basic corpus searching
 
 
 ```{python}
-#| ExecuteTime: {end_time: '2026-06-14T22:25:54.829140Z', start_time: '2026-06-14T22:25:54.135387Z'}
+#| ExecuteTime: {end_time: '2026-06-14T22:02:13.589586Z', start_time: '2026-06-14T22:02:13.576710Z'}
 import polars as pl
 import polars.selectors as cs
 import seaborn as sns
 import matplotlib.pyplot as plt
-
-pl.Config.set_float_precision(2)
 ```
 
 ```{python}
-#| ExecuteTime: {end_time: '2026-06-14T22:25:55.714624Z', start_time: '2026-06-14T22:25:55.576160Z'}
+#| ExecuteTime: {end_time: '2026-06-14T22:02:17.616045Z', start_time: '2026-06-14T22:02:16.775037Z'}
 bnc = pl.read_parquet("../../bnc.parquet")
 bnc.head(10)
 ```
@@ -78,6 +76,7 @@ r2.head()
 Brezina pg. 26
 
 ```{python}
+#| ExecuteTime: {end_time: '2025-09-25T18:09:12.764671Z', start_time: '2025-09-25T18:09:12.341109Z'}
 the = (
     bnc.filter(mode="spoken")
     .group_by("file_id")
@@ -126,7 +125,7 @@ sns.pairplot(
 ```{python}
 #| ExecuteTime: {end_time: '2025-09-25T18:09:18.113950Z', start_time: '2025-09-25T18:09:17.287934Z'}
 hits = bnc.filter(
-    pl.col("lemma").is_in(["very", "really", "rather", "quite"]), pl.col("tag") == "AV0"
+    pl.col("lemma").is_in(["very", "really", "rather", "quite"]), pl.col("c5") == "AV0"
 )
 counts = (
     hits.group_by("lemma", "text_type")

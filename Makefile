@@ -18,7 +18,8 @@ locks:
 
 # Serve docs locally
 docs:
-	great-docs preview
+	quarto convert user_guide/04-frequencies.ipynb
+	great-docs build
 
 # Build Rust extension for local development with native CPU optimizations
 develop:

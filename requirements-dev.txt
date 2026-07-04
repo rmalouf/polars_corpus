@@ -67,7 +67,7 @@ fonttools==4.63.0
     # via matplotlib
 fqdn==1.5.1
     # via jsonschema
-great-docs==0.13.0
+great-docs==0.13.1
     # via -r requirements-dev.in
 griffe==1.15.0
     # via great-docs
@@ -85,7 +85,7 @@ idna==3.18
     #   requests
 iniconfig==2.3.0
     # via pytest
-ipykernel==7.2.0
+ipykernel==7.3.0
     # via
     #   jupyter
     #   jupyter-console
@@ -180,7 +180,7 @@ markupsafe==3.0.3
     # via
     #   jinja2
     #   nbconvert
-matplotlib==3.10.9
+matplotlib==3.11.0
     # via seaborn
 matplotlib-inline==0.2.2
     # via
@@ -205,7 +205,7 @@ nbformat==5.10.4
     #   jupyter-server
     #   nbclient
     #   nbconvert
-nest-asyncio==1.6.0
+nest-asyncio2==1.7.2
     # via ipykernel
 nltk==3.9.4
     # via -r requirements.in
@@ -334,7 +334,7 @@ rpds-py==2026.5.1
     # via
     #   jsonschema
     #   referencing
-ruff==0.15.16
+ruff==0.15.17
     # via great-docs
 seaborn==0.13.2
     # via -r requirements-dev.in
