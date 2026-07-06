@@ -4,7 +4,20 @@ import polars as pl
 import pytest
 from polars.exceptions import ColumnNotFoundError
 from polars.testing import assert_frame_equal
-from polars_corpus import crosstab, loglik, smp, welchs_t
+from polars_corpus import chisq, crosstab, loglik, smp, welchs_t
+
+
+def _chisq_ref(f12: int, f1: int, f2: int, n: int, yates: bool = False) -> float:
+    """Reference chi-squared from the generic sum-of-(O-E)^2/E formula."""
+    obs = [f12, f1 - f12, f2 - f12, n - f1 - f2 + f12]
+    exp = [
+        f1 * f2 / n,
+        f1 * (n - f2) / n,
+        (n - f1) * f2 / n,
+        (n - f1) * (n - f2) / n,
+    ]
+    c = 0.5 if yates else 0.0
+    return sum((abs(o - e) - c) ** 2 / e for o, e in zip(obs, exp))
 
 
 def test_crosstab_basic() -> None:
@@ -157,6 +170,38 @@ def test_smp() -> None:
     assert result["SMP"].to_list() == pytest.approx([1.5, 1 / 6])
 
 
+@pytest.mark.parametrize("yates", [False, True])
+def test_chisq(yates: bool) -> None:
+    # Same tables as test_compute_loglik; the f12=6 row is perfect independence.
+    test_data = {
+        "f12": [6, 20, 0],
+        "f1": [12, 30, 10],
+        "f2": [10, 25, 20],
+        "n": [20, 50, 50],
+    }
+    for dtype in [pl.Int64, pl.UInt32]:
+        table = pl.DataFrame(test_data).cast(dtype)
+        result = table.with_columns(X2=chisq("f12", "f1", "f2", "n", yates=yates))
+
+        expected = [
+            _chisq_ref(row["f12"], row["f1"], row["f2"], row["n"], yates)
+            for row in table.iter_rows(named=True)
+        ]
+        assert result["X2"].to_list() == pytest.approx(expected)
+
+        # Perfect independence (f12=6) is exactly 0 without correction.
+        if not yates:
+            assert result.filter(pl.col("f12") == 6)["X2"].item() == pytest.approx(0.0)
+
+
+def test_chisq_default_uncorrected() -> None:
+    # Default must omit Yates' correction (matches loglik-style raw statistic).
+    df = pl.DataFrame({"f12": [20], "f1": [30], "f2": [25], "n": [50]})
+    default = df.select(chisq("f12", "f1", "f2", "n")).item()
+    assert default == pytest.approx(_chisq_ref(20, 30, 25, 50, yates=False))
+    assert default != pytest.approx(_chisq_ref(20, 30, 25, 50, yates=True))
+
+
 # Tests for struct-based expression namespace API
 
 
@@ -171,6 +216,7 @@ def test_struct_assoc_measures() -> None:
         pl.col("freqs").corpus.pmi().alias("pmi"),
         pl.col("freqs").corpus.minsens().alias("minsens"),
         pl.col("freqs").corpus.smp(1.0).alias("smp"),
+        pl.col("freqs").corpus.chisq().alias("chisq"),
     )
 
     # Verify row C, y=1: f12=2, f1=3, f2=4, n=7
@@ -188,3 +234,6 @@ def test_struct_assoc_measures() -> None:
     # smp = (f12 + k) / ((f1 - f12) + k)
     expected_smp = (f12 + 1.0) / ((f1 - f12) + 1.0)
     assert row["smp"].item() == pytest.approx(expected_smp)
+
+    # chisq matches the generic sum-of-(O-E)^2/E reference
+    assert row["chisq"].item() == pytest.approx(_chisq_ref(f12, f1, f2, n))

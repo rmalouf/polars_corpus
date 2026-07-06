@@ -4,7 +4,7 @@ from typing import Any, Optional
 
 import polars as pl
 
-from .assoc import crosstab, loglik, minsens, pmi, smp
+from .assoc import chisq, crosstab, loglik, minsens, pmi, smp
 from .chunk import chunk_id, with_chunk_index
 from .lexical import msttr, mtld, ttr, yules_k
 from .matcher import search, search_cqp
@@ -106,6 +106,16 @@ class CorpusExpr:
             self._expr.struct.field("f2"),
             self._expr.struct.field("n"),
             k,
+        )
+
+    def chisq(self, yates: bool = False) -> pl.Expr:
+        """Compute Pearson's chi-squared statistic from a freqs struct column."""
+        return chisq(
+            self._expr.struct.field("f12"),
+            self._expr.struct.field("f1"),
+            self._expr.struct.field("f2"),
+            self._expr.struct.field("n"),
+            yates,
         )
 
 

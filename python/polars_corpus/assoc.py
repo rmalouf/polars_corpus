@@ -13,6 +13,7 @@ __all__ = [
     "pmi",
     "minsens",
     "smp",
+    "chisq",
     "loglik",
     "welchs_t",
     "welchs_t_from_stats",
@@ -20,7 +21,9 @@ __all__ = [
 LIB = Path(__file__).parent
 
 
-def crosstab(df: T_Frame, x: IntoExprColumn, y: IntoExprColumn, freqs_name: str = "freqs") -> T_Frame:
+def crosstab(
+    df: T_Frame, x: IntoExprColumn, y: IntoExprColumn, freqs_name: str = "freqs"
+) -> T_Frame:
     """
     Create a crosstabulation (contingency table) from two categorical variables.
 
@@ -135,6 +138,78 @@ def pmi(
     n = pl.col(n) if isinstance(n, str) else n
 
     return ((f12 * n) / (f1 * f2)).log()
+
+
+def chisq(
+    f12: IntoExprColumn,
+    f1: IntoExprColumn,
+    f2: IntoExprColumn,
+    n: IntoExprColumn,
+    yates: bool = False,
+) -> pl.Expr:
+    """
+    Compute Pearson's chi-squared (χ²) statistic for contingency table data.
+
+    Calculates the chi-squared statistic measuring the association strength
+    between two categorical variables by comparing observed frequencies to
+    those expected under statistical independence, using the closed-form
+    expression for a 2×2 table.
+
+    Parameters
+    ----------
+    f12 : IntoExprColumn
+        Joint frequencies of variable pairs. Can be a column name (str) or
+        Polars expression.
+    f1 : IntoExprColumn
+        Marginal frequencies of first variable. Can be a column name (str) or
+        Polars expression.
+    f2 : IntoExprColumn
+        Marginal frequencies of second variable. Can be a column name (str) or
+        Polars expression.
+    n : IntoExprColumn
+        Grand total (total number of observations). Can be a column name (str) or
+        Polars expression.
+    yates : bool, default False
+        Whether to apply Yates' continuity correction. When True, matches the
+        default behaviour of :func:`scipy.stats.chi2_contingency` for 2×2 tables.
+
+    Returns
+    -------
+    pl.Expr
+        A Polars expression that computes the chi-squared values for each
+        variable pair.
+
+    Notes
+    -----
+    For a 2×2 contingency table the statistic reduces to:
+
+    .. math::
+        \\chi^2 = \\frac{n\\,(|O_{11} O_{22} - O_{12} O_{21}| - c)^2}
+                       {f_1\\,f_2\\,(n - f_1)\\,(n - f_2)}
+
+    where the observed cells are derived from the margins as
+    :math:`O_{11} = f_{12}`, :math:`O_{12} = f_1 - f_{12}`,
+    :math:`O_{21} = f_2 - f_{12}`, :math:`O_{22} = n - f_1 - f_2 + f_{12}`,
+    and the continuity-correction term is :math:`c = n / 2` when `yates` is
+    True and :math:`c = 0` otherwise.
+    """
+
+    # Cast to Float64 first: the cross-product difference below can go negative,
+    # which would underflow for the unsigned integer counts crosstab produces.
+    f12 = (pl.col(f12) if isinstance(f12, str) else f12).cast(pl.Float64)
+    f1 = (pl.col(f1) if isinstance(f1, str) else f1).cast(pl.Float64)
+    f2 = (pl.col(f2) if isinstance(f2, str) else f2).cast(pl.Float64)
+    n = (pl.col(n) if isinstance(n, str) else n).cast(pl.Float64)
+
+    o11 = f12
+    o12 = f1 - f12
+    o21 = f2 - f12
+    o22 = n - f1 - f2 + f12
+
+    det = o11 * o22 - o12 * o21
+    if yates:
+        det = det.abs() - n / 2
+    return n * det.pow(2) / (f1 * f2 * (n - f1) * (n - f2))
 
 
 def loglik(

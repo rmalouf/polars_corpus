@@ -18,6 +18,9 @@ PART_FIELD = "_part"
 
 # Scott, M. (1997). PC analysis of key words—and key key words. System, 25(2), 233-245.
 # Kilgarriff, A. (2009, July). Simple maths for keywords. In Proceedings of the Corpus Linguistics Conference. Liverpool, UK.
+# Leech, G., & Fallon, R. (1992). Computer corpora: What do they tell us about culture? ICAMEJournal,16,29–50.
+
+# TODO: Add Gries's (2001) KL divergence method?
 
 
 def keywords(
@@ -27,7 +30,7 @@ def keywords(
     method: str,
     min_target_tf: int = 0,
     min_target_df: int = 0,
-    k: Optional[int] = None
+    k: Optional[int] = None,
 ) -> pl.DataFrame:
     """
     Identify keywords by comparing frequencies in a target corpus against a reference corpus.
@@ -40,12 +43,13 @@ def keywords(
         Reference corpus (DataFrame or LazyFrame) that `target` is compared against.
     term : IntoExprColumn
         Column identifying the word/type to compute keyness for (e.g. token or lemma).
-    method : {'ttest', 'pmi', 'll', 'smp', 'minsens'}
+    method : {'ttest', 'pmi', 'll', 'chisq', 'smp', 'minsens'}
         Association measure used to rank keywords:
 
         - 'ttest' : Welch's t-test on per-file relative frequencies
         - 'pmi' : Pointwise Mutual Information
         - 'll' : Log-likelihood ratio (G²)
+        - 'chisq' : Pearson's chi-squared (χ²)
         - 'smp' : Kilgarriff's simple maths parameter (requires `k`)
         - 'minsens' : Minimum sensitivity
     min_target_tf : int, default 0
@@ -105,7 +109,11 @@ def keywords(
 
 
 def keywords_assoc(
-    freq_table: pl.LazyFrame, method: str, min_target_tf: int, min_target_df: int, k: Optional[int]
+    freq_table: pl.LazyFrame,
+    method: str,
+    min_target_tf: int,
+    min_target_df: int,
+    k: Optional[int],
 ) -> pl.LazyFrame:
     """
     Rank keywords from a crosstab frequency table using PMI or log-likelihood.
@@ -116,7 +124,7 @@ def keywords_assoc(
         Crosstab of word by corpus part (see `polars_corpus.crosstab`), with a
         `freqs` struct column and a `PART_FIELD` column identifying target vs.
         reference rows.
-    method : {'pmi', 'll', 'smp', 'minsens'}
+    method : {'pmi', 'll', 'chisq', 'smp', 'minsens'}
         Association measure to compute.
     min_target_tf : int
         Minimum term frequency in the target corpus required for a word to
@@ -134,13 +142,15 @@ def keywords_assoc(
     Raises
     ------
     ValueError
-        If `method` is not 'pmi', 'll', 'smp', or 'minsens'.
+        If `method` is not 'pmi', 'll', 'chisq', 'smp', or 'minsens'.
     """
     match method:
         case "pmi":
             assoc_expr = pl.col("freqs").corpus.pmi().alias("PMI")
         case "ll":
             assoc_expr = pl.col("freqs").corpus.loglik().alias("LogLik")
+        case "chisq":
+            assoc_expr = pl.col("freqs").corpus.chisq().alias("ChiSq")
         case "minsens":
             assoc_expr = pl.col("freqs").corpus.minsens().alias("MinSens")
         case "smp":
@@ -222,19 +232,6 @@ def keywords_ttest(
         .sort(by="pval")
     )
     return result
-
-
-# #%%
-# ttest
-# #%%
-# male = (
-#     ttest.filter(pl.col("stat") > 0)
-#     .select("norm", "stat", "pval")
-#     .join(lex, on="norm", how="left")
-#     .head(25)
-#     .select(pl.all().name.suffix("_m"))
-# )
-#
 
 
 # # import sys

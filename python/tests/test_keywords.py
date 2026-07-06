@@ -27,7 +27,9 @@ REFERENCE = pl.DataFrame(
 TARGET_DF = {"cat": 2, "dog": 1, "fish": 1, "the": 3}
 
 
-@pytest.mark.parametrize("method,col", [("ll", "LogLik"), ("pmi", "PMI")])
+@pytest.mark.parametrize(
+    "method,col", [("ll", "LogLik"), ("pmi", "PMI"), ("chisq", "ChiSq")]
+)
 def test_keywords_assoc_structure(method: str, col: str) -> None:
     result = keywords(TARGET, REFERENCE, pl.col("norm"), method)
 
@@ -135,7 +137,7 @@ def test_keywords_ttest() -> None:
     assert pvals == sorted(pvals)
 
 
-@pytest.mark.parametrize("method", ["ll", "pmi", "ttest"])
+@pytest.mark.parametrize("method", ["ll", "pmi", "chisq", "ttest"])
 def test_keywords_lazy_matches_eager(method: str) -> None:
     eager = keywords(TARGET, REFERENCE, pl.col("norm"), method)
     lazy = keywords(TARGET.lazy(), REFERENCE.lazy(), pl.col("norm"), method)
