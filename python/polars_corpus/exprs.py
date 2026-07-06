@@ -4,7 +4,7 @@ from typing import Any, Optional
 
 import polars as pl
 
-from .assoc import crosstab, loglik, minsens, pmi
+from .assoc import crosstab, loglik, minsens, pmi, smp
 from .chunk import chunk_id, with_chunk_index
 from .lexical import msttr, mtld, ttr, yules_k
 from .matcher import search, search_cqp
@@ -96,6 +96,16 @@ class CorpusExpr:
             self._expr.struct.field("f1"),
             self._expr.struct.field("f2"),
             self._expr.struct.field("n"),
+        )
+
+    def smp(self, k: float) -> pl.Expr:
+        """Compute Kilgarriff's simple maths parameter from a freqs struct column."""
+        return smp(
+            self._expr.struct.field("f12"),
+            self._expr.struct.field("f1"),
+            self._expr.struct.field("f2"),
+            self._expr.struct.field("n"),
+            k,
         )
 
 

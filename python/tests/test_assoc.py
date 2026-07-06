@@ -4,7 +4,7 @@ import polars as pl
 import pytest
 from polars.exceptions import ColumnNotFoundError
 from polars.testing import assert_frame_equal
-from polars_corpus import crosstab, loglik, welchs_t
+from polars_corpus import crosstab, loglik, smp, welchs_t
 
 
 def test_crosstab_basic() -> None:
@@ -149,6 +149,14 @@ def test_compute_loglik() -> None:
         assert all(math.isfinite(v) for v in ll_values)
 
 
+def test_smp() -> None:
+    # word 1: f12=2, f1=3 -> reference freq = f1-f12 = 1; (2+1)/(1+1) = 1.5
+    # word 2: f12=0, f1=5 -> reference freq = 5; (0+1)/(5+1) = 1/6
+    df = pl.DataFrame({"f12": [2, 0], "f1": [3, 5], "f2": [4, 4], "n": [7, 7]})
+    result = df.with_columns(SMP=smp("f12", "f1", "f2", "n", 1.0))
+    assert result["SMP"].to_list() == pytest.approx([1.5, 1 / 6])
+
+
 # Tests for struct-based expression namespace API
 
 
@@ -162,6 +170,7 @@ def test_struct_assoc_measures() -> None:
         pl.col("freqs").corpus.loglik().alias("ll"),
         pl.col("freqs").corpus.pmi().alias("pmi"),
         pl.col("freqs").corpus.minsens().alias("minsens"),
+        pl.col("freqs").corpus.smp(1.0).alias("smp"),
     )
 
     # Verify row C, y=1: f12=2, f1=3, f2=4, n=7
@@ -175,3 +184,7 @@ def test_struct_assoc_measures() -> None:
     # minsens = min(f12/f1, f12/f2)
     expected_minsens = min(f12 / f1, f12 / f2)
     assert row["minsens"].item() == pytest.approx(expected_minsens)
+
+    # smp = (f12 + k) / ((f1 - f12) + k)
+    expected_smp = (f12 + 1.0) / ((f1 - f12) + 1.0)
+    assert row["smp"].item() == pytest.approx(expected_smp)

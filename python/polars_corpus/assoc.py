@@ -12,6 +12,7 @@ __all__ = [
     "crosstab",
     "pmi",
     "minsens",
+    "smp",
     "loglik",
     "welchs_t",
     "welchs_t_from_stats",
@@ -242,6 +243,70 @@ def minsens(
     n = pl.col(n) if isinstance(n, str) else n
 
     return pl.min_horizontal(f12 / f1, f12 / f2)
+
+
+def smp(
+    f12: IntoExprColumn,
+    f1: IntoExprColumn,
+    f2: IntoExprColumn,
+    n: IntoExprColumn,
+    k: float,
+) -> pl.Expr:
+    """
+    Compute Kilgarriff's "simple maths" parameter for contingency table data.
+
+    Calculates the ratio of a word's frequency in the target corpus to its
+    frequency in the reference corpus, with a smoothing constant `k` added to
+    both frequencies to avoid division by zero and to damp the effect of rare
+    words.
+
+    Parameters
+    ----------
+    f12 : IntoExprColumn
+        Joint frequencies of variable pairs (target frequency). Can be a
+        column name (str) or Polars expression.
+    f1 : IntoExprColumn
+        Marginal frequencies of first variable (target + reference frequency).
+        Can be a column name (str) or Polars expression.
+    f2 : IntoExprColumn
+        Marginal frequencies of second variable. Can be a column name (str) or
+        Polars expression. Note: This parameter is not used in the calculation
+        but is kept for consistency with other association measures.
+    n : IntoExprColumn
+        Grand total (total number of observations). Can be a column name (str) or
+        Polars expression. Note: This parameter is not used in the calculation
+        but is kept for consistency with other association measures.
+    k : float
+        Smoothing constant added to both the target and reference frequencies.
+
+    Returns
+    -------
+    pl.Expr
+        A Polars expression that computes the simple maths values for each
+        variable pair.
+
+    Notes
+    -----
+    Simple maths is calculated as:
+
+    .. math::
+        \\text{smp}(x,y) = \\frac{f_{12} + k}{(f_1 - f_{12}) + k}
+
+    where :math:`f_1 - f_{12}` is the frequency of the word in the reference
+    corpus.
+
+    References
+    ----------
+    Kilgarriff, A. (2009, July). Simple maths for keywords. In Proceedings of
+    the Corpus Linguistics Conference. Liverpool, UK.
+    """
+
+    f12 = pl.col(f12) if isinstance(f12, str) else f12
+    f1 = pl.col(f1) if isinstance(f1, str) else f1
+    f2 = pl.col(f2) if isinstance(f2, str) else f2
+    n = pl.col(n) if isinstance(n, str) else n
+
+    return (f12 + k) / (f1 - f12 + k)
 
 
 def welchs_t(x1: IntoExprColumn, x2: IntoExprColumn, alt: str = "twosided") -> pl.Expr:

@@ -109,6 +109,21 @@ def test_keywords_min_target_df(min_target_df: int, expected: set[str]) -> None:
     assert set(result["norm"]) == expected
 
 
+def test_keywords_smp() -> None:
+    result = keywords(TARGET, REFERENCE, pl.col("norm"), "smp", k=1)
+
+    assert result.columns == ["norm", "freqs", "target_df", "SMP"]
+    assert set(result["norm"]) == {"cat", "dog", "fish", "the"}
+    # Ranked by association strength, descending.
+    vals = result["SMP"].to_list()
+    assert vals == sorted(vals, reverse=True)
+
+
+def test_keywords_smp_requires_k() -> None:
+    with pytest.raises(ValueError):
+        keywords(TARGET, REFERENCE, pl.col("norm"), "smp")
+
+
 def test_keywords_ttest() -> None:
     result = keywords(TARGET, REFERENCE, pl.col("norm"), "ttest")
 

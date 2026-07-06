@@ -16,6 +16,9 @@ __all__ = [
 
 PART_FIELD = "_part"
 
+# Scott, M. (1997). PC analysis of key words—and key key words. System, 25(2), 233-245.
+# Kilgarriff, A. (2009, July). Simple maths for keywords. In Proceedings of the Corpus Linguistics Conference. Liverpool, UK.
+
 
 def keywords(
     target: T_Frame,
@@ -24,6 +27,7 @@ def keywords(
     method: str,
     min_target_tf: int = 0,
     min_target_df: int = 0,
+    k: Optional[int] = None
 ) -> pl.DataFrame:
     """
     Identify keywords by comparing frequencies in a target corpus against a reference corpus.
@@ -36,18 +40,23 @@ def keywords(
         Reference corpus (DataFrame or LazyFrame) that `target` is compared against.
     term : IntoExprColumn
         Column identifying the word/type to compute keyness for (e.g. token or lemma).
-    method : {'ttest', 'pmi', 'll'}
+    method : {'ttest', 'pmi', 'll', 'smp', 'minsens'}
         Association measure used to rank keywords:
 
         - 'ttest' : Welch's t-test on per-file relative frequencies
         - 'pmi' : Pointwise Mutual Information
         - 'll' : Log-likelihood ratio (G²)
+        - 'smp' : Kilgarriff's simple maths parameter (requires `k`)
+        - 'minsens' : Minimum sensitivity
     min_target_tf : int, default 0
         Minimum term frequency in the target corpus required for a word to be
         included in the results. Ignored when `method` is 'ttest'.
     min_target_df : int, default 0
         Minimum document frequency in the target corpus required for a word to be
         included in the results. Ignored when `method` is 'ttest'.
+    k: int, default None
+        Constant to be add in Kilgarriff's "simple maths parameter". Only used
+        if `method` is 'smp'.
 
     Returns
     -------
@@ -90,13 +99,13 @@ def keywords(
             .agg(pl.col("file_id").n_unique().alias("target_df"))
         )
         freq_table = freq_table.join(target_df, on=term_name, how="left")
-        result = keywords_assoc(freq_table, method, min_target_tf, min_target_df)
+        result = keywords_assoc(freq_table, method, min_target_tf, min_target_df, k)
 
     return result.collect()
 
 
 def keywords_assoc(
-    freq_table: pl.LazyFrame, method: str, min_target_tf: int, min_target_df: int
+    freq_table: pl.LazyFrame, method: str, min_target_tf: int, min_target_df: int, k: Optional[int]
 ) -> pl.LazyFrame:
     """
     Rank keywords from a crosstab frequency table using PMI or log-likelihood.
@@ -107,7 +116,7 @@ def keywords_assoc(
         Crosstab of word by corpus part (see `polars_corpus.crosstab`), with a
         `freqs` struct column and a `PART_FIELD` column identifying target vs.
         reference rows.
-    method : {'pmi', 'll'}
+    method : {'pmi', 'll', 'smp', 'minsens'}
         Association measure to compute.
     min_target_tf : int
         Minimum term frequency in the target corpus required for a word to
@@ -125,15 +134,21 @@ def keywords_assoc(
     Raises
     ------
     ValueError
-        If `method` is not 'pmi' or 'll'.
+        If `method` is not 'pmi', 'll', 'smp', or 'minsens'.
     """
     match method:
         case "pmi":
             assoc_expr = pl.col("freqs").corpus.pmi().alias("PMI")
         case "ll":
             assoc_expr = pl.col("freqs").corpus.loglik().alias("LogLik")
+        case "minsens":
+            assoc_expr = pl.col("freqs").corpus.minsens().alias("MinSens")
+        case "smp":
+            if k is None:
+                raise ValueError("k is required for smp")
+            assoc_expr = pl.col("freqs").corpus.smp(k).alias("SMP")
         case _:
-            raise ValueError()
+            raise ValueError(f"Unknown method {method}")
 
     result = (
         freq_table.filter(
