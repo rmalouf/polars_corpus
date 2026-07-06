@@ -69,6 +69,16 @@ def test_keywords_computed_term(term: pl.Expr) -> None:
     assert got == {"cat": 2, "dog": 1}
 
 
+@pytest.mark.parametrize("method", ["ll", "pmi", "ttest"])
+def test_keywords_string_term(method: str) -> None:
+    # A bare column name must work on every method, including ttest, and match
+    # passing the equivalent pl.col() expression.
+    from_str = keywords(TARGET, REFERENCE, "norm", method)
+    from_expr = keywords(TARGET, REFERENCE, pl.col("norm"), method)
+    assert from_str.columns[0] == "norm"
+    assert_frame_equal(from_str, from_expr, check_row_order=False)
+
+
 @pytest.mark.parametrize(
     "min_target_tf,expected",
     [

@@ -68,6 +68,8 @@ def keywords(
 
     target = target.lazy()
     reference = reference.lazy()
+    if isinstance(term, str):
+        term = pl.col(term)
 
     combined = pl.concat(
         [
@@ -79,7 +81,7 @@ def keywords(
     if method == "ttest":
         result = keywords_ttest(combined, term, min_target_tf)
     else:
-        term_name = term if isinstance(term, str) else term.meta.output_name()
+        term_name = term.meta.output_name()
         combined = combined.with_columns(term)
         freq_table = plc.crosstab(combined, term_name, PART_FIELD)
         target_df = (
