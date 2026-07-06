@@ -19,7 +19,7 @@ __all__ = [
 LIB = Path(__file__).parent
 
 
-def crosstab(df: T_Frame, x: str, y: str, freqs_name: str = "freqs") -> T_Frame:
+def crosstab(df: T_Frame, x: IntoExprColumn, y: IntoExprColumn, freqs_name: str = "freqs") -> T_Frame:
     """
     Create a crosstabulation (contingency table) from two categorical variables.
 
@@ -31,9 +31,9 @@ def crosstab(df: T_Frame, x: str, y: str, freqs_name: str = "freqs") -> T_Frame:
     ----------
     df : T_Frame
         Input data as a Polars DataFrame or LazyFrame containing the variables.
-    x : str
+    x : IntoExprColumn
         Column name of the first categorical variable (row variable).
-    y : str
+    y : IntoExprColumn
         Column name of the second categorical variable (column variable).
     freqs_name : str, default "freqs"
         Name for the output frequencies struct column.
@@ -57,16 +57,22 @@ def crosstab(df: T_Frame, x: str, y: str, freqs_name: str = "freqs") -> T_Frame:
         If either column `x` or `y` does not exist in the DataFrame.
     """
     f12 = pl.len().cast(pl.UInt64)
+    if isinstance(x, str):
+        x = pl.col(x)
+    if isinstance(y, str):
+        y = pl.col(y)
+    x_name = x.meta.output_name()
+    y_name = y.meta.output_name()
     return (
         df.select(x, y)
-        .drop_nulls([x, y])
-        .group_by(x, y)
+        .drop_nulls([x_name, y_name])
+        .group_by(x_name, y_name)
         .agg(f12.alias("f12"))
         .with_columns(
             pl.struct(
                 pl.col("f12"),
-                pl.col("f12").sum().over(x).alias("f1"),
-                pl.col("f12").sum().over(y).alias("f2"),
+                pl.col("f12").sum().over(x_name).alias("f1"),
+                pl.col("f12").sum().over(y_name).alias("f2"),
                 pl.col("f12").sum().alias("n"),
             ).alias(freqs_name)
         )
