@@ -23,7 +23,8 @@ def keywords(
     reference: T_Frame,
     field: IntoExprColumn,
     method: str,
-    min_freq: int = 0,
+    min_target_tf: int = 0,
+    min_target_df: int = 0,
 ) -> pl.DataFrame:
     """
     Identify keywords by comparing frequencies in a target corpus against a reference corpus.
@@ -42,8 +43,11 @@ def keywords(
         - 'ttest' : Welch's t-test on per-file relative frequencies
         - 'pmi' : Pointwise Mutual Information
         - 'll' : Log-likelihood ratio (G²)
-    min_freq : int, default 0
-        Minimum joint frequency in the target corpus required for a word to be
+    min_target_tf : int, default 0
+        Minimum term frequency in the target corpus required for a word to be
+        included in the results. Ignored when `method` is 'ttest'.
+    min_target_df : int, default 0
+        Minimum document frequency in the target corpus required for a word to be
         included in the results. Ignored when `method` is 'ttest'.
 
     Returns
@@ -74,16 +78,16 @@ def keywords(
     )
 
     if method == "ttest":
-        result = keywords_ttest(combined, field, min_freq)
+        result = keywords_ttest(combined, field, min_target_tf)
     else:
         freq_table = plc.crosstab(combined, field, PART_FIELD)
-        result = keywords_assoc(freq_table, method, min_freq)
+        result = keywords_assoc(freq_table, method, min_target_tf)
 
     return result.collect()
 
 
 def keywords_assoc(
-    freq_table: pl.LazyFrame, method: str, min_freq: int
+    freq_table: pl.LazyFrame, method: str, min_target_tf: int, min_target_df: int
 ) -> pl.LazyFrame:
     """
     Rank keywords from a crosstab frequency table using PMI or log-likelihood.
@@ -96,9 +100,13 @@ def keywords_assoc(
         reference rows.
     method : {'pmi', 'll'}
         Association measure to compute.
-    min_freq : int
-        Minimum joint frequency (`freqs.f12`) in the target corpus required
-        for a word to be included.
+    min_target_tf : int
+        Minimum term frequency in the target corpus required for a word to
+        be included.
+    min_target_df : int
+        Minimum document frequency in the target corpus required for a word to
+        be included.
+
 
     Returns
     -------
@@ -120,7 +128,7 @@ def keywords_assoc(
 
     result = (
         freq_table.filter(
-            pl.col("freqs").struct.field("f12") > min_freq,
+            pl.col("freqs").struct.field("f12") > min_target_tf,
             pl.col(PART_FIELD) == "target",
         )
         .with_columns(assoc_expr)
@@ -161,41 +169,18 @@ def keywords_ttest(
     result = (
         combined.group_by("file_id", PART_FIELD, field)
         .agg(pl.len().alias("freq"))
-        .with_columns(n=pl.sum("freq").over(["file_id", PART_FIELD]))
         .with_columns(
-            (pl.col("freq") / pl.sum("freq").over(["file_id", PART_FIELD])).alias(
-                "rel_freq"
-            )
+            rel_freq=pl.col("freq") / pl.sum("freq").over("file_id", PART_FIELD),
+            n=pl.col("file_id").n_unique().over(PART_FIELD),
         )
-        .with_columns(
-            n_target=pl.col("file_id")
-            .filter(pl.col(PART_FIELD) == "target")
-            .n_unique(),
-            n_reference=pl.col("file_id")
-            .filter(pl.col(PART_FIELD) == "reference")
-            .n_unique(),
-        )
-        .group_by(PART_FIELD, field_name, "n_target", "n_reference")
+        .group_by(PART_FIELD, field_name)
         .agg(
+            n=pl.first("n"),
             s=pl.col("rel_freq").sum(),
-            ss=(pl.col("rel_freq") * pl.col("rel_freq")).sum(),
+            ss=(pl.col("rel_freq") ** 2).sum(),
         )
-        .pivot(on=PART_FIELD, on_columns=["target", "reference"], index=[field_name])
+        .pivot(on=PART_FIELD, on_columns=["target", "reference"], index=field_name)
         .drop_nulls()
-        .with_columns(
-            pl.col("n_target_target").alias("n_target"),
-            pl.col("n_reference_reference").alias("n_reference"),
-        )
-        .select(
-            pl.exclude(
-                [
-                    "n_target_target",
-                    "n_target_reference",
-                    "n_reference_reference",
-                    "n_reference_target",
-                ]
-            )
-        )
         .with_columns(
             plc.welchs_t_from_stats(
                 "s_target",
