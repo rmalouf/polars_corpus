@@ -17,11 +17,10 @@ __all__ = [
 PART_FIELD = "_part"
 
 
-# TODO: add min_files
 def keywords(
     target: T_Frame,
     reference: T_Frame,
-    field: IntoExprColumn,
+    term: IntoExprColumn,
     method: str,
     min_target_tf: int = 0,
     min_target_df: int = 0,
@@ -35,7 +34,7 @@ def keywords(
         Target corpus (DataFrame or LazyFrame) whose keywords are being extracted.
     reference : DataFrame | LazyFrame
         Reference corpus (DataFrame or LazyFrame) that `target` is compared against.
-    field : IntoExprColumn
+    term : IntoExprColumn
         Column identifying the word/type to compute keyness for (e.g. token or lemma).
     method : {'ttest', 'pmi', 'll'}
         Association measure used to rank keywords:
@@ -78,10 +77,18 @@ def keywords(
     )
 
     if method == "ttest":
-        result = keywords_ttest(combined, field, min_target_tf)
+        result = keywords_ttest(combined, term, min_target_tf)
     else:
-        freq_table = plc.crosstab(combined, field, PART_FIELD)
-        result = keywords_assoc(freq_table, method, min_target_tf)
+        term_name = term if isinstance(term, str) else term.meta.output_name()
+        combined = combined.with_columns(term)
+        freq_table = plc.crosstab(combined, term_name, PART_FIELD)
+        target_df = (
+            combined.filter(pl.col(PART_FIELD) == "target")
+            .group_by(term_name)
+            .agg(pl.col("file_id").n_unique().alias("target_df"))
+        )
+        freq_table = freq_table.join(target_df, on=term_name, how="left")
+        result = keywords_assoc(freq_table, method, min_target_tf, min_target_df)
 
     return result.collect()
 
@@ -128,7 +135,8 @@ def keywords_assoc(
 
     result = (
         freq_table.filter(
-            pl.col("freqs").struct.field("f12") > min_target_tf,
+            pl.col("freqs").struct.field("f12") >= min_target_tf,
+            pl.col("target_df") >= min_target_df,
             pl.col(PART_FIELD) == "target",
         )
         .with_columns(assoc_expr)
@@ -139,7 +147,7 @@ def keywords_assoc(
 
 
 def keywords_ttest(
-    combined: pl.LazyFrame, field: IntoExprColumn, min_freq: int
+    combined: pl.LazyFrame, term: IntoExprColumn, min_freq: int
 ) -> pl.LazyFrame:
     """
     Rank keywords by Welch's t-test on per-file relative frequencies.
@@ -153,7 +161,7 @@ def keywords_ttest(
     combined : pl.LazyFrame
         Target and reference corpora concatenated, with a `file_id` column and
         a `PART_FIELD` column identifying target vs. reference rows.
-    field : IntoExprColumn
+    term : IntoExprColumn
         Column identifying the word/type to compute keyness for.
     min_freq : int
         Unused; present for API symmetry with `keywords_assoc`.
@@ -164,22 +172,22 @@ def keywords_ttest(
         Words with a higher mean relative frequency in the target corpus
         (`stat` > 0), sorted by p-value ascending.
     """
-    field_name = field.meta.output_name()
+    term_name = term.meta.output_name()
 
     result = (
-        combined.group_by("file_id", PART_FIELD, field)
+        combined.group_by("file_id", PART_FIELD, term)
         .agg(pl.len().alias("freq"))
         .with_columns(
             rel_freq=pl.col("freq") / pl.sum("freq").over("file_id", PART_FIELD),
             n=pl.col("file_id").n_unique().over(PART_FIELD),
         )
-        .group_by(PART_FIELD, field_name)
+        .group_by(PART_FIELD, term_name)
         .agg(
             n=pl.first("n"),
             s=pl.col("rel_freq").sum(),
             ss=(pl.col("rel_freq") ** 2).sum(),
         )
-        .pivot(on=PART_FIELD, on_columns=["target", "reference"], index=field_name)
+        .pivot(on=PART_FIELD, on_columns=["target", "reference"], index=term_name)
         .drop_nulls()
         .with_columns(
             plc.welchs_t_from_stats(
@@ -191,7 +199,7 @@ def keywords_ttest(
                 "n_reference",
             )
         )
-        .select(field_name, "t_test")
+        .select(term_name, "t_test")
         .unnest("t_test")
         .filter(pl.col("stat") > 0)
         .sort(by="pval")
