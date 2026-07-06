@@ -37,12 +37,15 @@ dependencies = [
     "ipywidgets>=8.1"
 ]
 
-[tool.pyrefly.errors]
-bad-override-mutable-attribute = "ignore"
+[project.optional-dependencies]
+examples = ["great_tables", "scipy"]
 
 [project.urls]
 Repository = "https://github.com/rmalouf/polars_corpus"
 Issues = "https://github.com/rmalouf/polars_corpus/issues"
+
+[tool.pyrefly.errors]
+bad-override-mutable-attribute = "ignore"
 
 [tool.uv]
 python-preference = "only-managed"
