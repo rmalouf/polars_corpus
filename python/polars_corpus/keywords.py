@@ -31,7 +31,7 @@ def keywords(
     min_target_tf: int = 0,
     min_target_df: int = 0,
     k: Optional[int] = None,
-) -> pl.DataFrame:
+) -> pl.LazyFrame:
     """
     Identify keywords by comparing frequencies in a target corpus against a reference corpus.
 
@@ -105,7 +105,7 @@ def keywords(
         freq_table = freq_table.join(target_df, on=term_name, how="left")
         result = keywords_assoc(freq_table, method, min_target_tf, min_target_df, k)
 
-    return result.collect()
+    return result #.collect()
 
 
 def keywords_assoc(
