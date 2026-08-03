@@ -69,6 +69,7 @@ class SearchResults:
         expr: IntoExprColumn,
         window: Optional[int] = None,
         chunk_tag: Optional[str] = None,
+        metadata: Optional[str | list[str]] = None,
     ) -> pl.DataFrame:
         """Generate a KWIC (Key Word In Context) concordance DataFrame.
 
@@ -90,6 +91,10 @@ class SearchResults:
             When specified, context extends to chunk boundaries marked by
             "B" (begin) and "I" (inside) tags, ignoring the window parameter.
             Context stops at the first non-"I" tag in each direction.
+        metadata : str or list[str], optional
+            Column name(s) from the source corpus to attach to each match as
+            plain (non-list) columns, e.g. file_id or category. The value is
+            taken from the first token of each match.
 
         Returns
         -------
@@ -100,6 +105,7 @@ class SearchResults:
             - "{column}": List of matched tokens
             - "{column}_right_context": List of tokens after the match
             Context columns are omitted when window=0 or no context available.
+            Each name in metadata adds a single scalar column with that name.
 
         Examples
         --------
@@ -107,7 +113,15 @@ class SearchResults:
         >>> results.concordance("token")  # No context, matches only
         >>> results.concordance("token", chunk_tag="sentence_tags")  # Chunk boundaries
         >>> results.concordance(["token", "pos"], window=5)  # Multiple columns
+        >>> results.concordance("token", window=5, metadata=["file_id", "category"])
         """
+
+        if metadata is None:
+            metadata_df = None
+        else:
+            if isinstance(metadata, str):
+                metadata = [metadata]
+            metadata_df = self._df.select(metadata)
 
         if chunk_tag is not None:
             chunk_tag_column = self._df.get_column(chunk_tag)
@@ -115,6 +129,7 @@ class SearchResults:
                 self._df.select(expr),
                 self._matches,
                 chunk_tag_column,
+                metadata_df,
             )
         else:
             if window is None:
@@ -128,6 +143,7 @@ class SearchResults:
                 self._matches,
                 left_window,
                 right_window,
+                metadata_df,
             )
 
     def collocates(
@@ -211,6 +227,7 @@ class SearchResults:
         expr: IntoExprColumn = "token",
         window: Optional[int] = 5,
         chunk_tag: Optional[str] = None,
+        metadata: Optional[str | list[str]] = None,
         page_size: int = 25,
     ) -> None:
         """Display an interactive concordance viewer in Jupyter.
@@ -231,6 +248,9 @@ class SearchResults:
             Column name defining chunk boundaries for context extraction.
             When specified, context extends to chunk boundaries marked by
             "B" (begin) and "I" (inside) tags, ignoring the window parameter.
+        metadata : str or list[str], optional
+            Column name(s) from the source corpus to attach to each match as
+            plain (non-list) columns, e.g. file_id or category.
         page_size : int, default 25
             Number of concordance lines to display per page.
 
@@ -243,7 +263,9 @@ class SearchResults:
         from .view import ConcordanceWidget
 
         # Generate concordance
-        conc = self.concordance(expr, window=window, chunk_tag=chunk_tag)
+        conc = self.concordance(
+            expr, window=window, chunk_tag=chunk_tag, metadata=metadata
+        )
 
         # Determine the column name
         if isinstance(expr, str):
@@ -435,11 +457,12 @@ def concordance(
     expr: IntoExprColumn,
     window: Optional[int] = None,
     chunk_tag: Optional[str] = None,
+    metadata: Optional[str | list[str]] = None,
 ) -> pl.DataFrame:
     """Generate a concordance from search results (functional interface).
 
     This function provides a functional interface to SearchResults.concordance().
-    It's equivalent to calling search_results.concordance(expr, window, chunk_tag).
+    It's equivalent to calling search_results.concordance(expr, window, chunk_tag, metadata).
 
     Parameters
     ----------
@@ -455,6 +478,9 @@ def concordance(
         Column name defining chunk boundaries for context extraction.
         When specified, context extends to chunk boundaries marked by
         "B" (begin) and "I" (inside) tags, ignoring the window parameter.
+    metadata : str or list[str], optional
+        Column name(s) from the source corpus to attach to each match as
+        plain (non-list) columns, e.g. file_id or category.
 
     Returns
     -------
@@ -470,7 +496,7 @@ def concordance(
     >>> conc = concordance(results, "token", window=5)
     >>> conc = concordance(results, "token", chunk_tag="sentence_tags")
     """
-    return search_results.concordance(expr, window, chunk_tag)
+    return search_results.concordance(expr, window, chunk_tag, metadata)
 
 
 def collocates(

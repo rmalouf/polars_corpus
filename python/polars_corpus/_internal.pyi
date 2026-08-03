@@ -8,12 +8,14 @@ def py_concordance(
     df: pl.DataFrame,
     matches: list[Match],
     chunk_tag: pl.Series,
+    metadata: pl.DataFrame | None,
 ) -> pl.DataFrame: ...
 def py_kwic(
     df: pl.DataFrame,
     matches: list[Match],
     left_window: int,
     right_window: int,
+    metadata: pl.DataFrame | None,
 ) -> pl.DataFrame: ...
 def spans_to_chunks(spans: list[Span], n: int) -> pl.Series: ...
 

@@ -37,11 +37,14 @@ pub fn py_concordance(
     py_df: PyDataFrame,
     matches: Vec<Match>,
     py_chunk_tag: PySeries,
+    metadata: Option<PyDataFrame>,
 ) -> PyResult<PyDataFrame> {
     let df: DataFrame = py_df.0;
     let chunk_tag = py_chunk_tag.0;
+    let metadata_df = metadata.map(|m| m.0);
     let matched_spans: Vec<Span> = matches.into_iter().map(|m| m.span).collect();
-    let out_df = concordance_df(&df, &matched_spans, &chunk_tag).map_err(PyPolarsErr::from)?;
+    let out_df = concordance_df(&df, &matched_spans, &chunk_tag, metadata_df.as_ref())
+        .map_err(PyPolarsErr::from)?;
     Ok(PyDataFrame(out_df))
 }
 
@@ -49,6 +52,7 @@ fn concordance_df(
     df: &DataFrame,
     matched_spans: &[Span],
     chunk_tag: &Series,
+    metadata: Option<&DataFrame>,
 ) -> PolarsResult<DataFrame> {
     let mut result_columns: Vec<Column> = Vec::new();
     for column in df.columns() {
@@ -62,7 +66,23 @@ fn concordance_df(
             &mut result_columns,
         )?;
     }
+    add_metadata_columns(metadata, matched_spans, &mut result_columns)?;
     DataFrame::new_infer_height(result_columns)
+}
+
+fn add_metadata_columns(
+    metadata: Option<&DataFrame>,
+    matched_spans: &[Span],
+    result_columns: &mut Vec<Column>,
+) -> PolarsResult<()> {
+    let Some(metadata) = metadata else {
+        return Ok(());
+    };
+    let idx: Vec<IdxSize> = matched_spans.iter().map(|sp| sp.start as IdxSize).collect();
+    let idx_ca = IdxCa::from_vec(PlSmallStr::EMPTY, idx);
+    let taken = metadata.take(&idx_ca)?;
+    result_columns.extend(taken.into_columns());
+    Ok(())
 }
 
 fn add_columns(
@@ -133,11 +153,19 @@ pub fn py_kwic(
     matches: Vec<Match>,
     left_window: i32,
     right_window: i32,
+    metadata: Option<PyDataFrame>,
 ) -> PyResult<PyDataFrame> {
     let matched_spans: Vec<Span> = matches.into_iter().map(|m| m.span).collect();
     let df: DataFrame = py_df.0;
-    let out_df =
-        kwic_df(&df, &matched_spans, left_window, right_window).map_err(PyPolarsErr::from)?;
+    let metadata_df = metadata.map(|m| m.0);
+    let out_df = kwic_df(
+        &df,
+        &matched_spans,
+        left_window,
+        right_window,
+        metadata_df.as_ref(),
+    )
+    .map_err(PyPolarsErr::from)?;
     Ok(PyDataFrame(out_df))
 }
 
@@ -146,6 +174,7 @@ fn kwic_df(
     matched_spans: &[Span],
     left_window: i32,
     right_window: i32,
+    metadata: Option<&DataFrame>,
 ) -> PolarsResult<DataFrame> {
     let mut result_columns: Vec<Column> = Vec::new();
     for column in df.columns() {
@@ -167,6 +196,7 @@ fn kwic_df(
             &mut result_columns,
         )?;
     }
+    add_metadata_columns(metadata, matched_spans, &mut result_columns)?;
     DataFrame::new_infer_height(result_columns)
 }
 

@@ -353,6 +353,55 @@ class TestWithSpans:
         assert "spans" in result.columns
 
 
+class TestConcordanceMetadata:
+    """Tests for the metadata parameter of SearchResults.concordance."""
+
+    def _df(self):
+        return pl.DataFrame(
+            {
+                "token": ["The", "quick", "brown", "fox", "jumps"],
+                "file_id": ["doc1", "doc1", "doc1", "doc2", "doc2"],
+                "category": ["news", "news", "news", "fiction", "fiction"],
+            }
+        )
+
+    def test_metadata_list_of_columns(self):
+        df = self._df()
+        results = SearchResults(
+            df, "", [Match(Span(1, 2), {}), Match(Span(4, 5), {})]
+        )  # "quick" and "jumps"
+
+        conc = results.concordance("token", window=1, metadata=["file_id", "category"])
+
+        assert conc["file_id"].to_list() == ["doc1", "doc2"]
+        assert conc["category"].to_list() == ["news", "fiction"]
+
+    def test_metadata_single_column_as_string(self):
+        df = self._df()
+        results = SearchResults(df, "", [Match(Span(1, 2), {})])  # "quick"
+
+        conc = results.concordance("token", window=1, metadata="file_id")
+
+        assert conc["file_id"].to_list() == ["doc1"]
+        assert "category" not in conc.columns
+
+    def test_no_metadata_by_default(self):
+        df = self._df()
+        results = SearchResults(df, "", [Match(Span(1, 2), {})])
+
+        conc = results.concordance("token", window=1)
+
+        assert "file_id" not in conc.columns
+
+    def test_metadata_with_chunk_tag(self):
+        df = self._df().with_columns(pl.Series("chunks", ["O", "B", "I", "B", "I"]))
+        results = SearchResults(df, "", [Match(Span(3, 5), {})])  # "fox jumps"
+
+        conc = results.concordance("token", chunk_tag="chunks", metadata="file_id")
+
+        assert conc["file_id"].to_list() == ["doc2"]
+
+
 # class TestIntegration:
 #     """Integration tests using both functions together."""
 #
