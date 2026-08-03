@@ -129,6 +129,7 @@ def search(
     column: str = "token",
     pos_column: str = "pos",
     lemma_column: str = "lemma",
+    file_id_column: str = "file_id",
 ) -> Optional[SearchResults]:
     """Search corpus using simple query language (BNCweb-style).
 
@@ -149,6 +150,8 @@ def search(
         Column name for POS tag searches (default: "pos")
     lemma_column : str, optional
         Column name for lemma searches (default: "lemma")
+    file_id_column : str, optional
+        Column name for file_ids (default: "file_id"). Matches won't span file boundaries.
 
     Returns
     -------
@@ -224,6 +227,9 @@ def search(
     >>> search(corpus, "NN*", column="pos")  # Find noun POS tags
 
     """
+    # TODO: file_id_column is accepted and documented but not yet honored --
+    # matches can still span file boundaries. Wire it through simple_to_cqp /
+    # get_matches so the matcher stops at a change in file_id.
     # Translate simple query to CQP
     cqp_query = simple_to_cqp(query, column, pos_column, lemma_column)
 
@@ -232,6 +238,3 @@ def search(
         return SearchResults(df, query, matched_spans)
     else:
         return None
-
-
-## CQP parsing logic has been moved to cqp_parser.py
