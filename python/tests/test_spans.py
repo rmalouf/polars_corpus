@@ -402,6 +402,36 @@ class TestConcordanceMetadata:
         assert conc["file_id"].to_list() == ["doc2"]
 
 
+class TestDictionaryEncodedColumns:
+    """Categorical and Enum columns must survive the trip through Rust.
+
+    Requires the dtype-categorical feature in Cargo.toml; without it the
+    extension module panics converting dictionary arrays.
+    """
+
+    def _df(self, dtype):
+        return pl.DataFrame(
+            {
+                "token": ["The", "quick", "brown", "fox", "jumps"],
+                "pos": ["DT", "JJ", "JJ", "NN", "VBZ"],
+                "file_id": ["doc1", "doc1", "doc1", "doc2", "doc2"],
+            }
+        ).with_columns(pl.col("pos").cast(dtype), pl.col("file_id").cast(dtype))
+
+    @pytest.mark.parametrize(
+        "dtype",
+        [pl.Categorical, pl.Enum(["DT", "JJ", "NN", "VBZ", "doc1", "doc2"])],
+    )
+    def test_concordance_over_dictionary_column(self, dtype):
+        results = SearchResults(self._df(dtype), "", [Match(Span(1, 3), {})])
+
+        conc = results.concordance("pos", window=1, metadata="file_id")
+
+        assert conc["pos"].to_list() == [["JJ", "JJ"]]
+        assert conc["pos_left_context"].to_list() == [["DT"]]
+        assert conc["file_id"].to_list() == ["doc1"]
+
+
 # class TestIntegration:
 #     """Integration tests using both functions together."""
 #

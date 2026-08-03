@@ -69,8 +69,22 @@ def propagate_masks(df: pl.DataFrame, opcodes: list[Opcode], pc: int) -> pl.Data
     return df
 
 
-def get_matches(df: pl.DataFrame, query: str) -> Optional[list[Match]]:
-    """Parse query and retrieve matching spans"""
+def get_matches(
+    df: pl.DataFrame, query: str, file_id_column: Optional[str] = None
+) -> Optional[list[Match]]:
+    """Parse query and retrieve matching spans.
+
+    If `file_id_column` is given, matches are confined to runs of equal values
+    in it; otherwise they may span the whole corpus.
+    """
+    # Checked ahead of the empty-corpus shortcut so a bad column name is
+    # reported the same way whether or not the corpus happens to be empty.
+    if file_id_column is not None and file_id_column not in df.columns:
+        raise ValueError(
+            f"file_id_column {file_id_column!r} not found in corpus. "
+            f"Available columns: {', '.join(df.columns)}"
+        )
+
     if df.is_empty():
         return None
 
@@ -80,12 +94,16 @@ def get_matches(df: pl.DataFrame, query: str) -> Optional[list[Match]]:
     check_bindings(opcodes)
     mask_df = compute_masks(df, opcodes)
     masks = [mask_df.get_column(col) for col in mask_df.columns]
-    opcode_matcher = OpcodeMatcher(opcodes, masks)
+
+    file_ids = None if file_id_column is None else df.get_column(file_id_column)
+    opcode_matcher = OpcodeMatcher(opcodes, masks, file_ids)
 
     return opcode_matcher.matchall()
 
 
-def search_cqp(df: pl.DataFrame, query: str) -> Optional[SearchResults]:
+def search_cqp(
+    df: pl.DataFrame, query: str, file_id_column: Optional[str] = None
+) -> Optional[SearchResults]:
     """Search corpus using a CQP-style query.
 
     Parameters
@@ -94,6 +112,9 @@ def search_cqp(df: pl.DataFrame, query: str) -> Optional[SearchResults]:
          Corpus to be searched.
     query: str
         CQP query string
+    file_id_column : str, optional
+        Column name holding file ids. When given, matches won't span a change
+        in its value. Raises if the named column isn't in `df`.
 
     Returns
     -------
@@ -117,7 +138,7 @@ def search_cqp(df: pl.DataFrame, query: str) -> Optional[SearchResults]:
     >>> search_cqp(corpus, '[pos="NN.*"]+ [pos="VB.*"]')
 
     """
-    if matched_spans := get_matches(df, query):
+    if matched_spans := get_matches(df, query, file_id_column):
         return SearchResults(df, query, matched_spans)
     else:
         return None
@@ -129,7 +150,7 @@ def search(
     column: str = "token",
     pos_column: str = "pos",
     lemma_column: str = "lemma",
-    file_id_column: str = "file_id",
+    file_id_column: Optional[str] = None,
 ) -> Optional[SearchResults]:
     """Search corpus using simple query language (BNCweb-style).
 
@@ -151,7 +172,8 @@ def search(
     lemma_column : str, optional
         Column name for lemma searches (default: "lemma")
     file_id_column : str, optional
-        Column name for file_ids (default: "file_id"). Matches won't span file boundaries.
+        Column name holding file ids. When given, matches won't span a change
+        in its value. Raises if the named column isn't in `df`.
 
     Returns
     -------
@@ -226,15 +248,15 @@ def search(
     >>> # Search in a different column
     >>> search(corpus, "NN*", column="pos")  # Find noun POS tags
 
+    >>> # Keep matches from spanning file boundaries
+    >>> search(corpus, "quick brown", file_id_column="file_id")
+
     """
-    # TODO: file_id_column is accepted and documented but not yet honored --
-    # matches can still span file boundaries. Wire it through simple_to_cqp /
-    # get_matches so the matcher stops at a change in file_id.
     # Translate simple query to CQP
     cqp_query = simple_to_cqp(query, column, pos_column, lemma_column)
 
     # Use the CQP search function
-    if matched_spans := get_matches(df, cqp_query):
+    if matched_spans := get_matches(df, cqp_query, file_id_column):
         return SearchResults(df, query, matched_spans)
     else:
         return None

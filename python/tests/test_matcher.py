@@ -692,5 +692,116 @@ class TestVariableBindings:
             get_matches(sample_corpus, query)
 
 
+@pytest.fixture
+def two_file_corpus():
+    """Corpus where 'brown fox' occurs across a file boundary and within a file"""
+    return pl.DataFrame(
+        {
+            "word": ["the", "quick", "brown", "fox", "brown", "fox", "jumps"],
+            "file_id": ["d1", "d1", "d1", "d2", "d2", "d2", "d2"],
+        }
+    )
+
+
+class TestFileBoundaries:
+    """Matches must not span a change in the file_id column"""
+
+    def test_unrestricted_by_default(self, two_file_corpus):
+        """Without a file_id column the straddling match is still found"""
+        query = '[word="brown"] [word="fox"]'
+        assert match_spans(get_matches(two_file_corpus, query)) == [
+            Span(2, 4),
+            Span(4, 6),
+        ]
+
+    def test_straddling_match_suppressed(self, two_file_corpus):
+        query = '[word="brown"] [word="fox"]'
+        matches = get_matches(two_file_corpus, query, "file_id")
+        assert match_spans(matches) == [Span(4, 6)]
+
+    def test_match_may_start_on_file_initial_token(self, two_file_corpus):
+        """A boundary blocks crossing, not starting"""
+        query = '[word="fox"] [word="brown"]'
+        matches = get_matches(two_file_corpus, query, "file_id")
+        assert match_spans(matches) == [Span(3, 5)]
+
+    @pytest.mark.parametrize(
+        "query,expected,description",
+        [
+            ('[word="quick"] [] [word="fox"]', [], "gap cannot cross a boundary"),
+            ('[word="fox"] [] [word="fox"]', [Span(3, 6)], "gap within a file is ok"),
+            ('[word="brown"] []* [word="jumps"]', [Span(4, 7)], "quantified gap"),
+        ],
+    )
+    def test_wildcards_confined(self, two_file_corpus, query, expected, description):
+        """Skip opcodes are limited by the boundary too"""
+        matches = get_matches(two_file_corpus, query, "file_id")
+        assert match_spans(matches or []) == expected, description
+
+    def test_missing_column_raises(self, two_file_corpus):
+        """Naming an absent column is an error, not a silent no-op"""
+        query = '[word="brown"] [word="fox"]'
+        with pytest.raises(ValueError, match="not_a_column"):
+            get_matches(two_file_corpus, query, "not_a_column")
+
+    def test_missing_column_raises_on_empty_corpus(self):
+        """The check precedes the empty-corpus shortcut"""
+        empty = pl.DataFrame({"word": []})
+        with pytest.raises(ValueError, match="not_a_column"):
+            get_matches(empty, '[word="fox"]', "not_a_column")
+
+    @pytest.mark.parametrize(
+        "dtype",
+        [pl.String, pl.Categorical, pl.Enum(["d1", "d2"]), pl.UInt32],
+    )
+    def test_file_id_dtypes(self, two_file_corpus, dtype):
+        """Boundaries are found regardless of how file_id is stored"""
+        if dtype == pl.UInt32:
+            corpus = two_file_corpus.with_columns(
+                pl.col("file_id").str.strip_prefix("d").cast(dtype)
+            )
+        else:
+            corpus = two_file_corpus.with_columns(pl.col("file_id").cast(dtype))
+        query = '[word="brown"] [word="fox"]'
+        assert match_spans(get_matches(corpus, query, "file_id")) == [Span(4, 6)]
+
+    def test_nulls_form_their_own_file(self):
+        """A run of nulls is a run like any other"""
+        corpus = pl.DataFrame(
+            {
+                "word": ["brown", "fox", "brown", "fox"],
+                "file_id": [None, None, "d1", "d1"],
+            }
+        )
+        query = '[word="brown"] [word="fox"]'
+        matches = get_matches(corpus, query, "file_id")
+        assert match_spans(matches) == [Span(0, 2), Span(2, 4)]
+
+    def test_every_token_its_own_file(self):
+        corpus = pl.DataFrame(
+            {"word": ["brown", "fox"], "file_id": ["a", "b"]},
+        )
+        query = '[word="brown"] [word="fox"]'
+        assert get_matches(corpus, query, "file_id") is None
+
+    def test_single_token_corpus(self):
+        """n < 2 takes the early return in run_starts"""
+        corpus = pl.DataFrame({"word": ["fox"], "file_id": ["d1"]})
+        matches = get_matches(corpus, '[word="fox"]', "file_id")
+        assert match_spans(matches) == [Span(0, 1)]
+
+    def test_unsorted_file_ids(self):
+        """Boundaries are defined by adjacency, so no sort order is required"""
+        corpus = pl.DataFrame(
+            {
+                "word": ["brown", "fox", "brown", "fox", "brown", "fox"],
+                "file_id": ["d2", "d2", "d1", "d1", "d2", "d2"],
+            }
+        )
+        query = '[word="brown"] [word="fox"]'
+        matches = get_matches(corpus, query, "file_id")
+        assert match_spans(matches) == [Span(0, 2), Span(2, 4), Span(4, 6)]
+
+
 if __name__ == "__main__":
     pytest.main([__file__])

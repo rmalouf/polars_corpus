@@ -9,7 +9,11 @@ crate-type= ["cdylib"]
 
 [dependencies]
 pyo3 = { version = "0.28", default-features = false, features = ["extension-module", "abi3-py39"] }
-polars = { version = "0.54", default-features = false, features = ["dtype-struct", "dtype-array", "performant", "cse"] }
+polars = { version = "0.54", default-features = false, features = ["dtype-struct", "dtype-array", "dtype-categorical", "performant", "cse"] }
+# polars' own `rle` feature only forwards to polars-lazy, which this crate
+# doesn't build, so enable it on polars-ops directly. Re-exported through
+# polars::prelude.
+polars-ops = { version = "0.54", default-features = false, features = ["rle"] }
 pyo3-polars = { version = "0.27", default-features = false, features = ["derive"] }
 statrs = { version = "0.19", default-features = false }
 itertools = "0.15.0"

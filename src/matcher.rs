@@ -5,6 +5,7 @@ use pyo3::exceptions::PyRuntimeError;
 use pyo3::prelude::*;
 use pyo3::types::PyList;
 use pyo3_polars::PySeries;
+use pyo3_polars::error::PyPolarsErr;
 
 use crate::span::Span;
 
@@ -65,16 +66,40 @@ impl MatchBuffers {
     }
 }
 
+/// One-past-the-end offset of each run of equal values, ascending. The last
+/// entry is the length of `values`.
+fn run_ends(values: &Series) -> PolarsResult<Vec<usize>> {
+    // rle_lengths walks the column once, without materializing a comparison
+    // mask, and handles the physical-representation conversion itself.
+    let mut lengths = Vec::new();
+    rle_lengths(&values.clone().into_column(), &mut lengths)?;
+    // scan can stop early, so its size hint floor is 0 and collect would grow
+    // the vec by reallocation; size it up front instead.
+    let mut ends = Vec::with_capacity(lengths.len());
+    ends.extend(lengths.iter().scan(0usize, |end, len| {
+        *end += *len as usize;
+        Some(*end)
+    }));
+    Ok(ends)
+}
+
 #[pyclass(module = "polars_corpus")]
 pub struct OpcodeMatcher {
     opcodes: Vec<Opcode>,
     mask_vec: Vec<BooleanChunked>,
+    /// Ascending file end offsets, the last of which is the corpus length.
+    file_ends: Vec<usize>,
 }
 
 #[pymethods]
 impl OpcodeMatcher {
     #[new]
-    fn new<'py>(opcodes: Vec<Opcode>, py_masks: &Bound<'py, PyList>) -> PyResult<Self> {
+    #[pyo3(signature = (opcodes, py_masks, file_ids=None))]
+    fn new<'py>(
+        opcodes: Vec<Opcode>,
+        py_masks: &Bound<'py, PyList>,
+        file_ids: Option<PySeries>,
+    ) -> PyResult<Self> {
         let mask_vec = py_masks
             .iter()
             .map(|item| -> PyResult<_> {
@@ -87,7 +112,24 @@ impl OpcodeMatcher {
             })
             .collect::<PyResult<Vec<_>>>()?;
 
-        Ok(Self { opcodes, mask_vec })
+        let n = mask_vec[0].len();
+        // Unrestricted matching is one file spanning the corpus, so the matcher
+        // needs no special case for it.
+        let file_ends = match &file_ids {
+            Some(ids) => run_ends(ids.as_ref()).map_err(PyPolarsErr::from)?,
+            None => vec![n],
+        };
+        debug_assert_eq!(
+            file_ends.last().copied().unwrap_or(0),
+            n,
+            "file ids must cover the corpus"
+        );
+
+        Ok(Self {
+            opcodes,
+            mask_vec,
+            file_ends,
+        })
     }
 
     fn matchall(&self) -> PyResult<Option<Vec<Match>>> {
@@ -95,15 +137,20 @@ impl OpcodeMatcher {
         let starts = &self.mask_vec[0];
         let mut matches = Vec::with_capacity(1000);
         let mut buffers = MatchBuffers::new();
-        while cursor < starts.len() {
-            if starts.get(cursor).unwrap()
-                && let Some(m) = self._match_opcodes(cursor, &mut buffers)?
-            {
-                cursor = m.span.end;
-                matches.push(m);
-            } else {
-                cursor += 1;
-            };
+        // One file at a time, so a match can never be built across a boundary.
+        // Each file's scan ends with the cursor exactly on its end offset,
+        // which is where the next file begins.
+        for &limit in &self.file_ends {
+            while cursor < limit {
+                if starts.get(cursor).unwrap()
+                    && let Some(m) = self._match_opcodes(cursor, limit, &mut buffers)?
+                {
+                    cursor = m.span.end;
+                    matches.push(m);
+                } else {
+                    cursor += 1;
+                };
+            }
         }
 
         if matches.is_empty() {
@@ -115,13 +162,19 @@ impl OpcodeMatcher {
 }
 
 impl OpcodeMatcher {
-    fn _match_opcodes(&self, cursor: usize, buffers: &mut MatchBuffers) -> PyResult<Option<Match>> {
+    /// `limit` is the end of the file containing `cursor`: no branch may consume
+    /// a token at or past it.
+    fn _match_opcodes(
+        &self,
+        cursor: usize,
+        limit: usize,
+        buffers: &mut MatchBuffers,
+    ) -> PyResult<Option<Match>> {
         let match_start = cursor;
         let mut match_end = cursor;
 
         buffers.clear();
 
-        let n = self.mask_vec[0].len();
         buffers.stack.push((cursor, 0));
         while let Some(task) = buffers.stack.pop() {
             let (mut cursor, mut pc) = task;
@@ -131,7 +184,7 @@ impl OpcodeMatcher {
                 };
                 match &self.opcodes[pc] {
                     Opcode::Token(_) | Opcode::Skip() => {
-                        if cursor < n && self.mask_vec[pc].get(cursor).unwrap() {
+                        if cursor < limit && self.mask_vec[pc].get(cursor).unwrap() {
                             cursor += 1;
                             pc += 1;
                         } else {

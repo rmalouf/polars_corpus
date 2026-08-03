@@ -1669,6 +1669,7 @@ dependencies = [
  "itertools 0.15.0",
  "polars",
  "polars-arrow",
+ "polars-ops",
  "pyo3",
  "pyo3-polars",
  "serde",
