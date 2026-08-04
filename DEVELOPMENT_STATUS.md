@@ -51,8 +51,8 @@ tests.
 
 - **`productivity.py`** — frequency spectrum, Yule's K, hapax counts. Written
   but not wired into `__init__.py` and not expected to work.
-- **`visualizations.py`** — entirely commented out.
-- **`embed.py`** — empty stub.
+- **`visualizations.py`** — entirely commented out, kept deliberately; the
+  seaborn distribution plot is intended to come back.
 
 ### Not implemented
 
@@ -65,7 +65,8 @@ tests.
 
 ## Known Issues
 
-1. **No CI.** Nothing runs ruff, clippy, pyrefly, or pytest automatically.
+1. **No CI**, deliberately, for now. Nothing runs ruff, clippy, pyrefly, or
+   pytest automatically; run them by hand. Worth revisiting closer to a release.
 2. **No Rust unit tests.** The engine is exercised only through Python
    integration tests.
 3. **`pyrefly check` reports 20 errors.** Three clusters: `T_Frame` variance in
@@ -74,28 +75,28 @@ tests.
    is invisible to the checker; and the unfinished `productivity.py`. Note that
    `[tool.pyrefly] ignore-missing-imports` currently contains `"*"`, which
    disables that check globally.
-4. **`ruff check` fails on tracked notebooks** — undefined names in
-   `user_guide/04-frequencies.ipynb` and `examples/concordance.ipynb`, an unused
-   import in `examples/keywords.ipynb`. All `.py` and `.rs` source is clean.
-5. **`__init__.py` leaks names.** Modules without `__all__` are star-imported,
+4. **`__init__.py` leaks names.** Modules without `__all__` are star-imported,
    so `polars_corpus.pl`, `.Any`, `.Optional` and most submodule names are bound
    at top level. The `keywords` function also shadows the `keywords` module.
-6. **No published wheels or PyPI release.**
+5. **No published wheels or PyPI release.**
+
+Notebooks are excluded from ruff (`[tool.ruff] extend-exclude`). They are
+working scratchpads and are expected to sit in unfinished states, so linting
+them produced only noise.
 
 ---
 
 ## Roadmap
 
 **Before a release**
-1. Add CI running ruff, clippy, pyrefly, and pytest.
-2. Resolve or explicitly suppress the pyrefly errors.
-3. Decide the fate of `productivity.py`, `visualizations.py`, and `embed.py`:
-   finish or delete.
-4. Emit `file_id` from the text corpus readers.
+1. Resolve or explicitly suppress the pyrefly errors.
+2. Finish `productivity.py` or drop it.
+3. Emit `file_id` from the text corpus readers.
 
 **Before 1.0**
-5. Proximity operators.
-6. Publish to PyPI.
+4. Proximity operators.
+5. Publish to PyPI.
+6. Add CI, deferred until closer to release.
 
 **Quality**
 7. Rust unit tests for the matcher.
