@@ -72,9 +72,10 @@ tests.
 3. **`pyrefly check` reports 20 errors.** Three clusters: `T_Frame` variance in
    `keywords.py` (returning `DataFrame | LazyFrame` where `T_Frame` is
    declared); `Expr has no attribute corpus`, because the registered namespace
-   is invisible to the checker; and the unfinished `productivity.py`. Note that
-   `[tool.pyrefly] ignore-missing-imports` currently contains `"*"`, which
-   disables that check globally.
+   is invisible to the checker; and the unfinished `productivity.py`. The
+   largest cluster, `.corpus`, is a checker-visibility problem rather than a
+   code problem: `pl.api.register_expr_namespace` is invisible to static
+   analysis, so it wants a stub or a Protocol, not a refactor.
 4. **`__init__.py` leaks names.** Modules without `__all__` are star-imported,
    so `polars_corpus.pl`, `.Any`, `.Optional` and most submodule names are bound
    at top level. The `keywords` function also shadows the `keywords` module.

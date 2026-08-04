@@ -67,10 +67,9 @@ module-name = "polars_corpus._internal"
 python-source = "python"
 
 [tool.pyrefly]
-ignore-missing-imports = [
-    "polars_corpus._internal",
-    "*",
-]
+# _internal is the compiled Rust extension; its stubs live in _internal.pyi but
+# the module itself is only importable after `make develop`.
+ignore-missing-imports = ["polars_corpus._internal"]
 
 [dependency-groups]
 dev = [
