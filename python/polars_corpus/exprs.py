@@ -29,12 +29,6 @@ class CorpusExpr:
     def mtld(self, **kwargs: Any) -> pl.Expr:
         return mtld(self._expr, **kwargs)
 
-    def chunk_index(self, format: str = "IOB2") -> pl.Expr:
-        if format == "IOB2":
-            return (self._expr != "O" & self._expr == "B").cum_sum()
-        else:
-            raise NotImplementedError
-
     def ngrams(self, n: int) -> pl.Expr:
         return ngrams(n, self._expr)
 
