@@ -31,7 +31,7 @@ def keywords(
     min_target_tf: int = 0,
     min_target_df: int = 0,
     k: Optional[int] = None,
-) -> pl.LazyFrame:
+) -> T_Frame:
     """
     Identify keywords by comparing frequencies in a target corpus against a reference corpus.
 
@@ -64,8 +64,9 @@ def keywords(
 
     Returns
     -------
-    pl.DataFrame
+    T_Frame
         Keywords ranked by association strength, most target-specific first.
+        Eager if `target` is a DataFrame, lazy if it is a LazyFrame.
 
     Raises
     ------
@@ -79,6 +80,7 @@ def keywords(
     ):
         raise ValueError()
 
+    eager = isinstance(target, pl.DataFrame)
     target = target.lazy()
     reference = reference.lazy()
     if isinstance(term, str):
@@ -105,7 +107,7 @@ def keywords(
         freq_table = freq_table.join(target_df, on=term_name, how="left")
         result = keywords_assoc(freq_table, method, min_target_tf, min_target_df, k)
 
-    return result #.collect()
+    return result.collect() if eager else result
 
 
 def keywords_assoc(

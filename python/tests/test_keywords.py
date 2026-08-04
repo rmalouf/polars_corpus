@@ -140,7 +140,7 @@ def test_keywords_ttest() -> None:
 @pytest.mark.parametrize("method", ["ll", "pmi", "chisq", "ttest"])
 def test_keywords_lazy_matches_eager(method: str) -> None:
     eager = keywords(TARGET, REFERENCE, pl.col("norm"), method)
-    lazy = keywords(TARGET.lazy(), REFERENCE.lazy(), pl.col("norm"), method)
+    lazy = keywords(TARGET.lazy(), REFERENCE.lazy(), pl.col("norm"), method).collect()
     # Tie-break order between engines isn't guaranteed (e.g. words with equal PMI).
     assert_frame_equal(eager, lazy, check_row_order=False)
 
