@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Optional
+from typing import Optional, cast
 
 import polars as pl
 import polars_corpus as plc
@@ -85,15 +85,15 @@ def keywords(
         raise ValueError()
 
     eager = isinstance(target, pl.DataFrame)
-    target = target.lazy()
-    reference = reference.lazy()
+    target_lf = target.lazy()
+    reference_lf = reference.lazy()
     if isinstance(expr, str):
         expr = pl.col(expr)
 
     combined = pl.concat(
         [
-            target.with_columns(pl.lit("target").alias(PART_FIELD)),
-            reference.with_columns(pl.lit("reference").alias(PART_FIELD)),
+            target_lf.with_columns(pl.lit("target").alias(PART_FIELD)),
+            reference_lf.with_columns(pl.lit("reference").alias(PART_FIELD)),
         ]
     )
 
@@ -111,7 +111,9 @@ def keywords(
         freq_table = freq_table.join(target_df, on=expr_name, how="left")
         result = keywords_assoc(freq_table, method, min_target_tf, min_target_df, k)
 
-    return result.collect() if eager else result
+    # The eager/lazy correlation is real but not expressible: T_Frame is bound
+    # by the argument types, while this branch is chosen at runtime.
+    return cast(T_Frame, result.collect() if eager else result)
 
 
 def keywords_assoc(
