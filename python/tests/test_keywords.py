@@ -106,9 +106,29 @@ def test_keywords_frequency_thresholds(
     assert set(result["norm"]) == expected
 
 
-def test_keywords_smp_requires_k() -> None:
-    with pytest.raises(ValueError):
-        keywords(TARGET, REFERENCE, pl.col("norm"), "smp")
+@pytest.mark.parametrize(
+    "k,match",
+    [
+        (None, "needs a value for k"),
+        (0, "positive"),
+        (-1, "positive"),
+    ],
+)
+def test_keywords_smp_k(k: int | None, match: str) -> None:
+    with pytest.raises(ValueError, match=match):
+        keywords(TARGET, REFERENCE, pl.col("norm"), "smp", k=k)
+
+
+def test_keywords_k_ignored_by_other_methods() -> None:
+    with pytest.warns(UserWarning, match="only used when method='smp'"):
+        keywords(TARGET, REFERENCE, pl.col("norm"), "ll", k=1)
+
+
+@pytest.mark.parametrize("threshold", ["min_target_tf", "min_target_df"])
+def test_keywords_ttest_ignores_thresholds(threshold: str) -> None:
+    # ttest can't apply them, so say so rather than silently returning everything.
+    with pytest.warns(UserWarning, match="not applied when method='ttest'"):
+        keywords(TARGET, REFERENCE, pl.col("norm"), "ttest", **{threshold: 2})
 
 
 def test_keywords_ttest() -> None:
@@ -148,13 +168,65 @@ def test_keywords_file_id_column(method: str) -> None:
 
 
 def test_keywords_invalid_method() -> None:
-    with pytest.raises(ValueError):
+    # check_choice's own behaviour is covered in test_utils; here, that the
+    # message offers every method keywords() actually implements.
+    with pytest.raises(ValueError, match="ttest, pmi, ll, chisq, smp, minsens"):
         keywords(TARGET, REFERENCE, pl.col("norm"), "bogus")
 
 
-@pytest.mark.parametrize("bad", [[1, 2, 3], "corpus", None])
-def test_keywords_invalid_input(bad: object) -> None:
-    with pytest.raises(ValueError):
+@pytest.mark.parametrize("method", ["LL", " ll ", "TTest"])
+def test_keywords_method_case_insensitive(method: str) -> None:
+    got = keywords(TARGET, REFERENCE, pl.col("norm"), method)
+    expected = keywords(TARGET, REFERENCE, pl.col("norm"), method.strip().lower())
+    assert_frame_equal(got, expected)
+
+
+@pytest.mark.parametrize("bad", [[1, 2, 3], "corpus", None, TARGET["norm"]])
+def test_keywords_invalid_corpus(bad: object) -> None:
+    with pytest.raises(ValueError, match="the target corpus must be a polars"):
         keywords(bad, REFERENCE, pl.col("norm"), "ll")
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="the reference corpus must be a polars"):
         keywords(TARGET, bad, pl.col("norm"), "ll")
+
+
+@pytest.mark.parametrize("empty", ["target", "reference"])
+def test_keywords_empty_corpus(empty: str) -> None:
+    # An empty reference would otherwise give every word a keyness of 0.
+    frames = {"target": TARGET, "reference": REFERENCE}
+    frames[empty] = frames[empty].clear()
+    with pytest.raises(ValueError, match=f"the {empty} corpus is empty"):
+        keywords(frames["target"], frames["reference"], pl.col("norm"), "ll")
+
+
+@pytest.mark.parametrize("method", ["ll", "ttest"])
+@pytest.mark.parametrize("missing", ["target", "reference"])
+def test_keywords_missing_term_column(method: str, missing: str) -> None:
+    # A typo, or two corpora that name the same annotation differently.
+    frames = {"target": TARGET, "reference": REFERENCE}
+    frames[missing] = frames[missing].rename({"norm": "lemma"})
+    with pytest.raises(ValueError, match=f"the {missing} corpus has no column 'norm'"):
+        keywords(frames["target"], frames["reference"], "norm", method)
+
+
+@pytest.mark.parametrize("method", ["ll", "ttest"])
+def test_keywords_missing_file_id_column(method: str) -> None:
+    with pytest.raises(ValueError, match="Use file_id_column= to point at"):
+        keywords(TARGET.drop("file_id"), REFERENCE, pl.col("norm"), method)
+
+
+def test_keywords_invalid_term() -> None:
+    with pytest.raises(ValueError, match="not a Series"):
+        keywords(TARGET, REFERENCE, TARGET["norm"], "ll")
+    with pytest.raises(ValueError, match="got int"):
+        keywords(TARGET, REFERENCE, 3, "ll")
+
+
+@pytest.mark.parametrize("method", ["ll", "ttest"])
+def test_keywords_ignores_other_columns(method: str) -> None:
+    # Corpora annotated differently still compare: only the columns `expr` and
+    # `file_id_column` name are read, so the schemas need not match.
+    target = TARGET.with_columns(pos=pl.lit("N"))
+    reference = REFERENCE.with_columns(genre=pl.lit("news"), c5=pl.lit("NN1"))
+    expected = keywords(TARGET, REFERENCE, pl.col("norm"), method)
+    got = keywords(target, reference, pl.col("norm"), method)
+    assert_frame_equal(expected, got, check_row_order=False)

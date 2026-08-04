@@ -8,6 +8,7 @@ from ._internal import Match, Opcode, OpcodeMatcher, Span
 from .cqp_parser import cqp
 from .search import SearchResults
 from .simple_parser import simple_to_cqp
+from .utils import check_columns
 
 __all__ = ["search", "search_cqp", "Match", "Span"]
 
@@ -79,11 +80,8 @@ def get_matches(
     """
     # Checked ahead of the empty-corpus shortcut so a bad column name is
     # reported the same way whether or not the corpus happens to be empty.
-    if file_id_column is not None and file_id_column not in df.columns:
-        raise ValueError(
-            f"file_id_column {file_id_column!r} not found in corpus. "
-            f"Available columns: {', '.join(df.columns)}"
-        )
+    if file_id_column is not None:
+        check_columns(df, [file_id_column], param="file_id_column")
 
     if df.is_empty():
         return None

@@ -59,6 +59,22 @@ The package supports Simple (BNCweb-style) and CQP query syntaxes. See [QUERY_LA
     - Internal functions: Trust invariants - skip redundant checks
     - Use assertions for debugging, not runtime validation of established invariants
 
+### Public functions
+Student-facing functions share a shape, with the pieces in `utils.py`
+(internal, so not in its `__all__`):
+```python
+def analyze(corpus, expr, method="ll", file_id_column="file_id"):
+    method = check_choice(method, METHODS)       # names the options, suggests near misses
+    term = as_expr(expr)                         # column name or expression
+    lf = as_corpus(corpus)                       # rejects non-frames and empty frames
+    check_columns(lf, [file_id_column], param="file_id_column")
+    ...                                          # all internal work lazy
+    return collect_like(result, corpus)          # eager in, eager out
+```
+Read only the columns the arguments name, so corpora annotated differently
+still work together and column errors surface here rather than out of a
+query plan.
+
 ### Rust-Specific
 - **Minimize allocations**: Use `&str` over `String`, `&[T]` over `Vec<T>`; avoid `.clone()` in hot paths
 - **Use iterators** without collecting when possible

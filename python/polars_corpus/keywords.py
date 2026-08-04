@@ -1,18 +1,28 @@
 from __future__ import annotations
 
-from typing import Optional, cast
+import warnings
+from typing import Optional
 
 import polars as pl
 
 from ._typing import IntoExpr, T_Frame
 from .assoc import chisq, crosstab, loglik, minsens, pmi, smp, welchs_t_from_stats
-from .utils import output_name
+from .utils import (
+    as_corpus,
+    as_expr,
+    check_choice,
+    check_columns,
+    collect_like,
+    output_name,
+)
 
 __all__ = [
     "keywords",
 ]
 
 PART_FIELD = "_part"
+
+METHODS = ("ttest", "pmi", "ll", "chisq", "smp", "minsens")
 
 # Scott, M. (1997). PC analysis of key words—and key key words. System, 25(2), 233-245.
 # Kilgarriff, A. (2009, July). Simple maths for keywords. In Proceedings of the Corpus Linguistics Conference. Liverpool, UK.
@@ -28,7 +38,7 @@ def keywords(
     method: str,
     min_target_tf: int = 0,
     min_target_df: int = 0,
-    k: Optional[int] = None,
+    k: Optional[float] = None,
     file_id_column: str = "file_id",
 ) -> T_Frame:
     """
@@ -59,9 +69,10 @@ def keywords(
     min_target_df : int, default 0
         Minimum document frequency in the target corpus required for a word to be
         included in the results. Ignored when `method` is 'ttest'.
-    k: int, default None
-        Constant to be add in Kilgarriff's "simple maths parameter". Only used
-        if `method` is 'smp'.
+    k: float, default None
+        Constant added to both frequencies in Kilgarriff's "simple maths
+        parameter"; larger values favor more frequent words. Required when
+        `method` is 'smp' and unused otherwise.
     file_id_column : str, default "file_id"
         Column holding file ids, used for document frequencies and for the
         per-file relative frequencies underlying 'ttest'.
@@ -72,48 +83,90 @@ def keywords(
         Keywords ranked by association strength, most target-specific first.
         Eager if `target` is a DataFrame, lazy if it is a LazyFrame.
 
+    Examples
+    --------
+    >>> import polars_corpus as plc
+    >>> plc.keywords(target, reference, "lemma", "ll", min_target_df=5)
+    >>> # A corpus whose file ids live in another column:
+    >>> plc.keywords(target, reference, "lemma", "ttest", file_id_column="text_id")
+
     Raises
     ------
     ValueError
-        If `target` or `reference` is not a Polars DataFrame or LazyFrame.
-    """
-    if not isinstance(target, pl.DataFrame) and not isinstance(target, pl.LazyFrame):
-        raise ValueError()
-    if not isinstance(reference, pl.DataFrame) and not isinstance(
-        reference, pl.LazyFrame
-    ):
-        raise ValueError()
+        If `target` or `reference` is not a Polars DataFrame or LazyFrame, is
+        empty, or is missing a column `keywords` needs; if `expr` is not a
+        column name or expression; if `method` is not one of the measures
+        listed above; or if `method` is 'smp' and `k` is missing or not
+        positive.
 
-    eager = isinstance(target, pl.DataFrame)
-    target_lf = target.lazy()
-    reference_lf = reference.lazy()
-    if isinstance(expr, str):
-        expr = pl.col(expr)
+    Notes
+    -----
+    Only the columns `expr` and `file_id_column` name are read, so the target
+    and reference corpora need not have matching schemas otherwise.
+    """
+    method = check_choice(method, METHODS)
+    keyword_expr = as_expr(
+        expr,
+        hint=" It is evaluated over the target and reference corpora together,"
+        " so a Series taken from one of them would not line up.",
+    )
+    if method == "smp":
+        if k is None:
+            raise ValueError(
+                "method 'smp' needs a value for k: pass k=1 for Kilgarriff's "
+                "default, or a larger value to favor more frequent words"
+            )
+        if k <= 0:
+            raise ValueError(f"k must be a positive number, got {k}")
+    elif k is not None:
+        warnings.warn(
+            f"k={k} is only used when method='smp'; ignoring it", stacklevel=2
+        )
+    if method == "ttest" and (min_target_tf or min_target_df):
+        warnings.warn(
+            "min_target_tf and min_target_df are not applied when method='ttest'",
+            stacklevel=2,
+        )
+
+    target_lf = as_corpus(target, "target corpus")
+    reference_lf = as_corpus(reference, "reference corpus")
+
+    # Reading only the columns in play keeps corpora with different annotation
+    # columns concatenable, and keeps the error messages about missing columns
+    # in this function rather than deep in a query plan.
+    term_columns = keyword_expr.meta.root_names()
+    columns = list(dict.fromkeys([*term_columns, file_id_column]))
+    for corpus, name in (
+        (target_lf, "target corpus"),
+        (reference_lf, "reference corpus"),
+    ):
+        check_columns(corpus, [file_id_column], name, param="file_id_column")
+        check_columns(corpus, term_columns, name)
 
     combined = pl.concat(
         [
-            target_lf.with_columns(pl.lit("target").alias(PART_FIELD)),
-            reference_lf.with_columns(pl.lit("reference").alias(PART_FIELD)),
+            target_lf.select(columns).with_columns(pl.lit("target").alias(PART_FIELD)),
+            reference_lf.select(columns).with_columns(
+                pl.lit("reference").alias(PART_FIELD)
+            ),
         ]
     )
 
     if method == "ttest":
-        result = keywords_ttest(combined, expr, min_target_tf, file_id_column)
+        result = keywords_ttest(combined, keyword_expr, file_id_column)
     else:
-        expr_name = output_name(expr)
-        combined = combined.with_columns(expr)
-        freq_table = crosstab(combined, expr_name, PART_FIELD)
+        expr_name = output_name(keyword_expr)
+        scored = combined.with_columns(keyword_expr)
+        freq_table = crosstab(scored, expr_name, PART_FIELD)
         target_df = (
-            combined.filter(pl.col(PART_FIELD) == "target")
+            scored.filter(pl.col(PART_FIELD) == "target")
             .group_by(expr_name)
             .agg(pl.col(file_id_column).n_unique().alias("target_df"))
         )
         freq_table = freq_table.join(target_df, on=expr_name, how="left")
         result = keywords_assoc(freq_table, method, min_target_tf, min_target_df, k)
 
-    # The eager/lazy correlation is real but not expressible: T_Frame is bound
-    # by the argument types, while this branch is chosen at runtime.
-    return cast(T_Frame, result.collect() if eager else result)
+    return collect_like(result, target)
 
 
 def keywords_assoc(
@@ -121,7 +174,7 @@ def keywords_assoc(
     method: str,
     min_target_tf: int,
     min_target_df: int,
-    k: Optional[int],
+    k: Optional[float],
 ) -> pl.LazyFrame:
     """
     Rank keywords from a crosstab frequency table using PMI or log-likelihood.
@@ -140,17 +193,13 @@ def keywords_assoc(
     min_target_df : int
         Minimum document frequency in the target corpus required for a word to
         be included.
-
+    k : float, optional
+        Smoothing constant for 'smp'; required by that method only.
 
     Returns
     -------
     pl.LazyFrame
         Target-corpus rows sorted by association strength, descending.
-
-    Raises
-    ------
-    ValueError
-        If `method` is not 'pmi', 'll', 'chisq', 'smp', or 'minsens'.
     """
     # Call the measures directly rather than through the `.corpus` namespace,
     # which is registered at runtime and so is invisible to type checkers.
@@ -170,11 +219,11 @@ def keywords_assoc(
         case "minsens":
             assoc_expr = minsens(f12, f1, f2, n).alias("MinSens")
         case "smp":
-            if k is None:
-                raise ValueError("k is required for smp")
+            # keywords() has already rejected a missing k.
+            assert k is not None
             assoc_expr = smp(f12, f1, f2, n, k).alias("SMP")
         case _:
-            raise ValueError(f"Unknown method {method}")
+            raise ValueError(f"Unknown method {method!r}")
 
     result = (
         freq_table.filter(
@@ -192,7 +241,6 @@ def keywords_assoc(
 def keywords_ttest(
     combined: pl.LazyFrame,
     expr: IntoExpr,
-    min_freq: int,
     file_id_column: str = "file_id",
 ) -> pl.LazyFrame:
     """
@@ -209,8 +257,6 @@ def keywords_ttest(
         a `PART_FIELD` column identifying target vs. reference rows.
     expr : IntoExpr
         Column name or expression identifying the word/type to compute keyness for.
-    min_freq : int
-        Unused; present for API symmetry with `keywords_assoc`.
     file_id_column : str, default "file_id"
         Column holding file ids, defining the units the t-test compares.
 
