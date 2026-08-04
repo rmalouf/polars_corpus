@@ -12,8 +12,8 @@ from .utils import (
     as_expr,
     check_choice,
     check_columns,
+    check_expr,
     collect_like,
-    output_name,
 )
 
 __all__ = [
@@ -131,35 +131,39 @@ def keywords(
     target_lf = as_corpus(target, "target corpus")
     reference_lf = as_corpus(reference, "reference corpus")
 
-    # Reading only the columns in play keeps corpora with different annotation
-    # columns concatenable, and keeps the error messages about missing columns
-    # in this function rather than deep in a query plan.
-    term_columns = keyword_expr.meta.root_names()
-    columns = list(dict.fromkeys([*term_columns, file_id_column]))
-    for corpus, name in (
-        (target_lf, "target corpus"),
-        (reference_lf, "reference corpus"),
-    ):
-        check_columns(corpus, [file_id_column], name, param="file_id_column")
-        check_columns(corpus, term_columns, name)
+    # Resolving the term against each schema keeps the errors about missing
+    # columns in this function rather than deep in a query plan.
+    parts = (("target", target_lf), ("reference", reference_lf))
+    names = []
+    for part, corpus in parts:
+        check_columns(
+            corpus, [file_id_column], f"{part} corpus", param="file_id_column"
+        )
+        names.append(check_expr(corpus, keyword_expr, f"{part} corpus"))
+    if names[0] != names[1]:
+        raise ValueError(
+            f"expr names a different column in each corpus: {names[0]!r} in the "
+            f"target corpus but {names[1]!r} in the reference corpus"
+        )
+    expr_name = names[0]
 
+    # Selecting the term itself rather than the columns behind it keeps corpora
+    # with different annotation columns concatenable, whatever shape `expr` takes.
     combined = pl.concat(
         [
-            target_lf.select(columns).with_columns(pl.lit("target").alias(PART_FIELD)),
-            reference_lf.select(columns).with_columns(
-                pl.lit("reference").alias(PART_FIELD)
-            ),
+            corpus.select(keyword_expr, file_id_column).with_columns(
+                pl.lit(part).alias(PART_FIELD)
+            )
+            for part, corpus in parts
         ]
     )
 
     if method == "ttest":
-        result = keywords_ttest(combined, keyword_expr, file_id_column)
+        result = keywords_ttest(combined, expr_name, file_id_column)
     else:
-        expr_name = output_name(keyword_expr)
-        scored = combined.with_columns(keyword_expr)
-        freq_table = crosstab(scored, expr_name, PART_FIELD)
+        freq_table = crosstab(combined, expr_name, PART_FIELD)
         target_df = (
-            scored.filter(pl.col(PART_FIELD) == "target")
+            combined.filter(pl.col(PART_FIELD) == "target")
             .group_by(expr_name)
             .agg(pl.col(file_id_column).n_unique().alias("target_df"))
         )
@@ -240,7 +244,7 @@ def keywords_assoc(
 
 def keywords_ttest(
     combined: pl.LazyFrame,
-    expr: IntoExpr,
+    expr_name: str,
     file_id_column: str = "file_id",
 ) -> pl.LazyFrame:
     """
@@ -255,8 +259,8 @@ def keywords_ttest(
     combined : pl.LazyFrame
         Target and reference corpora concatenated, with a `file_id` column and
         a `PART_FIELD` column identifying target vs. reference rows.
-    expr : IntoExpr
-        Column name or expression identifying the word/type to compute keyness for.
+    expr_name : str
+        Column identifying the word/type to compute keyness for.
     file_id_column : str, default "file_id"
         Column holding file ids, defining the units the t-test compares.
 
@@ -266,10 +270,8 @@ def keywords_ttest(
         Words with a higher mean relative frequency in the target corpus
         (`stat` > 0), sorted by p-value ascending.
     """
-    expr_name = output_name(expr)
-
     result = (
-        combined.group_by(file_id_column, PART_FIELD, expr)
+        combined.group_by(file_id_column, PART_FIELD, expr_name)
         .agg(pl.len().alias("freq"))
         .with_columns(
             rel_freq=pl.col("freq") / pl.sum("freq").over(file_id_column, PART_FIELD),

@@ -5,6 +5,7 @@ from polars_corpus.utils import (
     as_expr,
     check_choice,
     check_columns,
+    check_expr,
     collect_like,
 )
 
@@ -66,6 +67,47 @@ def test_check_columns_reports_missing_and_available() -> None:
 def test_check_columns_names_the_parameter_to_change() -> None:
     with pytest.raises(ValueError, match="Use file_id_column= to point at"):
         check_columns(CORPUS, ["text_id"], param="file_id_column")
+
+
+@pytest.mark.parametrize("frame", [CORPUS, CORPUS.lazy()])
+@pytest.mark.parametrize(
+    "expr,expected",
+    [
+        (pl.col("token"), "token"),
+        (pl.col("token").str.to_uppercase(), "token"),  # keeps its root name
+        (pl.col("token").alias("word"), "word"),
+        (pl.col("^tok.*$"), "token"),  # names its column by pattern
+        (pl.first(), "token"),  # names it by position
+        (pl.col("token") + pl.col("file_id"), "token"),  # more than one root
+    ],
+)
+def test_check_expr_resolves_the_output_column(
+    frame: pl.DataFrame | pl.LazyFrame, expr: pl.Expr, expected: str
+) -> None:
+    assert check_expr(frame, expr) == expected
+
+
+def test_check_expr_reports_a_missing_column_like_check_columns() -> None:
+    with pytest.raises(ValueError) as excinfo:
+        check_expr(CORPUS, pl.col("lemma").str.to_uppercase(), "reference corpus")
+    assert "the reference corpus has no column 'lemma'" in str(excinfo.value)
+    assert "its columns are: token, file_id" in str(excinfo.value)
+
+
+@pytest.mark.parametrize(
+    "expr,match",
+    [
+        (pl.col("token", "file_id"), "it selects token, file_id"),
+        (pl.exclude("token", "file_id"), "it selects none"),
+    ],
+)
+def test_check_expr_rejects_expressions_naming_other_than_one_column(
+    expr: pl.Expr, match: str
+) -> None:
+    with pytest.raises(
+        ValueError, match=f"term must identify a single column.*{match}"
+    ):
+        check_expr(CORPUS, expr, param="term")
 
 
 @pytest.mark.parametrize("expr", ["token", pl.col("token")])

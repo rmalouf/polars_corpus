@@ -132,6 +132,56 @@ def check_columns(
         )
 
 
+def check_expr(
+    frame: pl.DataFrame | pl.LazyFrame,
+    expr: pl.Expr,
+    name: str = "corpus",
+    param: str = "expr",
+) -> str:
+    """Check that `frame` can evaluate `expr`, and return the column it produces.
+
+    Asks Polars to resolve `expr` against the schema, which reads no data but
+    settles what a column name alone cannot: regular expressions, selectors and
+    positional references all name their columns indirectly.
+
+    Parameters
+    ----------
+    frame : DataFrame | LazyFrame
+        Corpus the expression will be evaluated against.
+    expr : pl.Expr
+        The expression to check.
+    name : str, default "corpus"
+        How to refer to `frame` in error messages, e.g. "reference corpus".
+    param : str, default "expr"
+        Name of the parameter `expr` came from, used in error messages.
+
+    Returns
+    -------
+    str
+        The name of the column `expr` evaluates to.
+
+    Raises
+    ------
+    ValueError
+        If `frame` is missing a column `expr` needs, or if `expr` resolves to
+        anything other than a single column.
+    """
+    try:
+        resolved = frame.lazy().select(expr).collect_schema().names()
+    except pl.exceptions.ColumnNotFoundError as err:
+        # An expression that names its columns plainly -- which is what gets
+        # here in practice -- can say which one is missing, and say it the way
+        # every other missing column is reported.
+        check_columns(frame, expr.meta.root_names(), name)
+        raise ValueError(f"the {name} cannot evaluate {param}: {err}") from err
+    if len(resolved) != 1:
+        raise ValueError(
+            f"{param} must identify a single column, but against the {name} it "
+            f"selects {', '.join(resolved) or 'none'}"
+        )
+    return resolved[0]
+
+
 def as_expr(expr: object, param: str = "expr", hint: str = "") -> pl.Expr:
     """Turn a column name into an expression, or pass one through.
 

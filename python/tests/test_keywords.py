@@ -77,6 +77,27 @@ def test_keywords_computed_term(term: pl.Expr) -> None:
     assert got == {"cat": 2, "dog": 1}
 
 
+@pytest.mark.parametrize("method", ["ll", "ttest"])
+def test_keywords_indirect_term(method: str) -> None:
+    # An expression need not name its column outright: the schema settles it.
+    expected = keywords(TARGET, REFERENCE, "norm", method)
+    got = keywords(TARGET, REFERENCE, pl.col("^nor.*$"), method)
+    assert_frame_equal(expected, got, check_row_order=False)
+
+
+def test_keywords_term_naming_different_columns() -> None:
+    # A pattern that matches a differently named column in each corpus would
+    # otherwise fail as a schema mismatch when the two are concatenated.
+    reference = REFERENCE.rename({"norm": "normalized"})
+    with pytest.raises(ValueError, match="expr names a different column"):
+        keywords(TARGET, reference, pl.col("^nor.*$"), "ll")
+
+
+def test_keywords_multi_column_term() -> None:
+    with pytest.raises(ValueError, match="expr must identify a single column"):
+        keywords(TARGET, REFERENCE, pl.col("norm", "file_id"), "ll")
+
+
 @pytest.mark.parametrize("method", ["ll", "pmi", "ttest"])
 def test_keywords_string_term(method: str) -> None:
     # A bare column name must work on every method, including ttest, and match
