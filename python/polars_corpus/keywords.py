@@ -1,12 +1,10 @@
 from __future__ import annotations
 
-from pathlib import Path
 from typing import Optional
 
 import polars as pl
 import polars_corpus as plc
 from polars._typing import IntoExprColumn
-from polars.plugins import register_plugin_function
 
 from ._typing import T_Frame
 
