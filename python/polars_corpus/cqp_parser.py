@@ -169,14 +169,16 @@ class CQPCompiler(Transformer):
         return opcodes
 
     def disjunction(self, items: list[list[Opcode]]) -> list[Opcode]:
-        if len(items) == 1:
-            return items[0]
-        opcodes: list[Opcode] = []
-        for i in range(len(items) - 1):
-            opcodes.append(Opcode.Split(1, len(items[i]) + 2))
-            opcodes.extend(items[i])
-            opcodes.append(Opcode.Jump(len(items[i + 1]) + 1))
-        opcodes.extend(items[-1])
+        # Wrap each branch around the whole remaining alternation, so the jump
+        # past a branch always skips every branch that follows it.
+        opcodes: list[Opcode] = items[-1]
+        for body in reversed(items[:-1]):
+            opcodes = [
+                Opcode.Split(1, len(body) + 2),
+                *body,
+                Opcode.Jump(len(opcodes) + 1),
+                *opcodes,
+            ]
         return opcodes
 
     def cqp(self, items: list[list[Opcode]]) -> list[Opcode]:

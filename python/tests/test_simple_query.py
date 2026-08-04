@@ -294,11 +294,6 @@ def test_disjunction_of_pos_tags(sample_corpus):
     assert found(sample_corpus, plc.search(sample_corpus, "(_NN | _VBD)")) == expected
 
 
-@pytest.mark.xfail(
-    reason="alternation with more than two branches drops the middle branches; "
-    "(a | b | c) matches only a and c",
-    strict=True,
-)
 @pytest.mark.parametrize(
     "query,expected",
     [
@@ -309,6 +304,15 @@ def test_disjunction_of_pos_tags(sample_corpus):
         (
             "(fox | dog | car | truck)",
             [(3, 4, "fox"), (8, 9, "dog"), (21, 22, "car"), (24, 25, "truck")],
+        ),
+        # branches of unequal length: each jump must skip all the branches after it
+        (
+            "(red car | blue truck | dog)",
+            [(8, 9, "dog"), (20, 22, "red car"), (23, 25, "blue truck")],
+        ),
+        (
+            "(car | (truck | dog))",
+            [(8, 9, "dog"), (21, 22, "car"), (24, 25, "truck")],
         ),
     ],
 )
