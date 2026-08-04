@@ -6,6 +6,7 @@ from .assoc import *  # noqa: F403
 from .chunk import *  # noqa: F403
 from .convert import *  # noqa: F403
 from .cqp_parser import *  # noqa: F403
+from .dispersion import *  # noqa: F403
 from .exprs import *  # noqa: F403
 from .io import *  # noqa: F403
 from .keywords import *  # noqa: F403
