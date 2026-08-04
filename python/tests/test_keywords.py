@@ -28,10 +28,16 @@ TARGET_DF = {"cat": 2, "dog": 1, "fish": 1, "the": 3}
 
 
 @pytest.mark.parametrize(
-    "method,col", [("ll", "LogLik"), ("pmi", "PMI"), ("chisq", "ChiSq")]
+    "method,col,kwargs",
+    [
+        ("ll", "LogLik", {}),
+        ("pmi", "PMI", {}),
+        ("chisq", "ChiSq", {}),
+        ("smp", "SMP", {"k": 1}),
+    ],
 )
-def test_keywords_assoc_structure(method: str, col: str) -> None:
-    result = keywords(TARGET, REFERENCE, pl.col("norm"), method)
+def test_keywords_assoc_structure(method: str, col: str, kwargs: dict) -> None:
+    result = keywords(TARGET, REFERENCE, pl.col("norm"), method, **kwargs)
 
     assert result.columns == ["norm", "freqs", "target_df", col]
     # Only target-corpus words appear, and the part marker is dropped.
@@ -82,43 +88,22 @@ def test_keywords_string_term(method: str) -> None:
 
 
 @pytest.mark.parametrize(
-    "min_target_tf,expected",
+    "threshold,value,expected",
     [
-        (0, {"cat", "dog", "fish", "the"}),
-        (2, {"cat", "dog", "the"}),  # fish (tf=1) excluded
-        (3, {"cat", "the"}),  # dog (tf=2) also excluded
+        # Thresholds are inclusive lower bounds (>=).
+        ("min_target_tf", 0, {"cat", "dog", "fish", "the"}),
+        ("min_target_tf", 2, {"cat", "dog", "the"}),  # fish (tf=1) excluded
+        ("min_target_tf", 3, {"cat", "the"}),  # dog (tf=2) also excluded
+        ("min_target_df", 0, {"cat", "dog", "fish", "the"}),
+        ("min_target_df", 2, {"cat", "the"}),  # dog/fish (df=1) excluded
+        ("min_target_df", 3, {"the"}),  # only "the" reaches df=3
     ],
 )
-def test_keywords_min_target_tf(min_target_tf: int, expected: set[str]) -> None:
-    result = keywords(
-        TARGET, REFERENCE, pl.col("norm"), "ll", min_target_tf=min_target_tf
-    )
+def test_keywords_frequency_thresholds(
+    threshold: str, value: int, expected: set[str]
+) -> None:
+    result = keywords(TARGET, REFERENCE, pl.col("norm"), "ll", **{threshold: value})
     assert set(result["norm"]) == expected
-
-
-@pytest.mark.parametrize(
-    "min_target_df,expected",
-    [
-        (0, {"cat", "dog", "fish", "the"}),
-        (2, {"cat", "the"}),  # dog/fish (df=1) excluded; cat kept at df==2 (>=)
-        (3, {"the"}),  # only "the" reaches df=3
-    ],
-)
-def test_keywords_min_target_df(min_target_df: int, expected: set[str]) -> None:
-    result = keywords(
-        TARGET, REFERENCE, pl.col("norm"), "ll", min_target_df=min_target_df
-    )
-    assert set(result["norm"]) == expected
-
-
-def test_keywords_smp() -> None:
-    result = keywords(TARGET, REFERENCE, pl.col("norm"), "smp", k=1)
-
-    assert result.columns == ["norm", "freqs", "target_df", "SMP"]
-    assert set(result["norm"]) == {"cat", "dog", "fish", "the"}
-    # Ranked by association strength, descending.
-    vals = result["SMP"].to_list()
-    assert vals == sorted(vals, reverse=True)
 
 
 def test_keywords_smp_requires_k() -> None:

@@ -20,6 +20,11 @@ class CorpusReader:
         raise NotImplementedError()
 
     def read_files(self) -> Generator[dict[str, str]]:
+        # TODO: emit a file_id column here (and add it to the scan_corpus schema).
+        # Without it a multi-file corpus is indistinguishable from one long file,
+        # so search() cannot confine matches to a single file and a pattern will
+        # happily match across the boundary between two documents. from_nltk()
+        # already provides file_id; these readers should agree with it.
         for file in self._corpus_files:
             yield from self.read_file(file)
 
@@ -28,7 +33,9 @@ class CorpusReader:
 
     def scan_corpus(self) -> pl.LazyFrame:
         """Based on https://docs.pola.rs/user-guide/plugins/io_plugins/#writing-the-source"""
-        schema = pl.Schema({"token": pl.String, "tag": pl.String, "sent": pl.String})
+        schema = pl.Schema(
+            {"token": pl.String, "pos": pl.String, "sentence_tag": pl.String}
+        )
 
         def source_generator(
             with_columns: Optional[list[str]],
@@ -79,10 +86,14 @@ class TextCorpusReader(CorpusReader):
                 tokens = line.strip().split()
                 for token in tokens:
                     try:
-                        tok, tag = token.rsplit("/", 1)
+                        tok, pos = token.rsplit("/", 1)
                     except ValueError:
                         raise ValueError(f'Malformed token "{token}"')
-                    yield {"token": tok, "tag": tag, "sent": "B" if bos else "I"}
+                    yield {
+                        "token": tok,
+                        "pos": pos,
+                        "sentence_tag": "B" if bos else "I",
+                    }
                     bos = False
 
 

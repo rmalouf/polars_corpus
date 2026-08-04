@@ -29,7 +29,7 @@ def from_nltk(corpus: CorpusReader) -> pl.DataFrame:
     The resulting DataFrame contains the following columns (depending on corpus type):
 
     * token (str): The word/token text
-    * tag (str, optional): Part-of-speech tag (if corpus provides tagged data)
+    * pos (str, optional): Part-of-speech tag (if corpus provides tagged data)
     * sentence_tag (str, optional): Sentence boundary marker ("B" for beginning, "I" for inside)
     * file_id (str): Source file identifier
     * category (str, optional): Corpus category (if corpus is categorized)
@@ -78,7 +78,7 @@ def convert_token(tokens: list[Any]) -> Generator[dict[str, str]]:
         token_dict = {}
         if type(token) is tuple:
             token_dict["token"] = token[0]
-            token_dict["tag"] = token[1]
+            token_dict["pos"] = token[1]
         else:
             token_dict["token"] = token
         yield token_dict

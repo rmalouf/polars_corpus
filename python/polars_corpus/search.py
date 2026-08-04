@@ -112,7 +112,7 @@ class SearchResults:
         --------
         >>> results.concordance("token", window=3)
         >>> results.concordance("token")  # No context, matches only
-        >>> results.concordance("token", chunk_column="sentence_tags")  # Chunk boundaries
+        >>> results.concordance("token", chunk_column="sentence_tag")  # Chunk boundaries
         >>> results.concordance(["token", "pos"], window=5)  # Multiple columns
         >>> results.concordance("token", window=5, metadata=["file_id", "category"])
         """
@@ -499,7 +499,7 @@ def concordance(
     Examples
     --------
     >>> conc = concordance(results, "token", window=5)
-    >>> conc = concordance(results, "token", chunk_column="sentence_tags")
+    >>> conc = concordance(results, "token", chunk_column="sentence_tag")
     """
     return search_results.concordance(expr, window, chunk_column, metadata)
 

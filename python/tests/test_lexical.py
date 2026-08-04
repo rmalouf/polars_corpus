@@ -5,221 +5,150 @@ import polars_corpus as plc
 import pytest
 
 
-class TestTTR:
-    """Test type-token ratio calculation."""
+@pytest.mark.parametrize(
+    "tokens,expected",
+    [
+        pytest.param(["the", "cat", "sat", "on", "the", "mat"], 5 / 6, id="mixed"),
+        pytest.param(list("abcde"), 1.0, id="all-unique"),
+        pytest.param(["the"] * 10, 0.1, id="all-identical"),
+        # Polars counts null as a distinct type: a, b, None out of 6 tokens.
+        pytest.param(["a", "b", None, "a", "b", None], 0.5, id="nulls-are-a-type"),
+    ],
+)
+def test_ttr(tokens, expected):
+    df = pl.DataFrame({"words": tokens}, schema={"words": pl.String})
+    assert df.select(plc.ttr("words")).item() == pytest.approx(expected)
 
-    def test_basic_ttr(self):
-        """Test TTR with simple data."""
-        df = pl.DataFrame({"words": ["the", "cat", "sat", "on", "the", "mat"]})
-        result = df.select(plc.ttr("words")).item()
-        # 5 unique words out of 6 total = 5/6 ≈ 0.833
-        assert result == pytest.approx(5 / 6)
 
-    def test_ttr_all_unique(self):
-        """Test TTR when all tokens are unique."""
-        df = pl.DataFrame({"words": ["a", "b", "c", "d", "e"]})
-        result = df.select(plc.ttr("words")).item()
-        assert result == 1.0
-
-    def test_ttr_all_same(self):
-        """Test TTR when all tokens are identical."""
-        df = pl.DataFrame({"words": ["the"] * 10})
-        result = df.select(plc.ttr("words")).item()
-        assert result == 0.1
-
-    def test_ttr_empty(self):
-        """Test TTR with empty data."""
-        df = pl.DataFrame({"words": []}, schema={"words": pl.String})
-        result = df.select(plc.ttr("words")).item()
-        # 0/0 = NaN
-        assert result != result  # NaN != NaN
-
-    def test_ttr_with_nulls(self):
-        """Test TTR treats null as a distinct type (Polars default)."""
-        # Nulls should count as a unique type
-        df = pl.DataFrame({"words": ["a", "b", None, "a", "b", None]})
-        result = df.select(plc.ttr("words")).item()
-        # 3 unique values (a, b, None) out of 6 total = 0.5
-        assert result == pytest.approx(0.5)
+def test_ttr_empty_is_nan():
+    df = pl.DataFrame({"words": []}, schema={"words": pl.String})
+    result = df.select(plc.ttr("words")).item()
+    assert result != result  # 0/0 is NaN
 
 
 class TestMSTTR:
-    """Test mean segmental type-token ratio calculation."""
+    """Mean segmental type-token ratio: TTR averaged over fixed-size segments."""
 
-    def test_basic_msttr(self):
-        """Test MSTTR with known values."""
-        # Create 3 complete segments of 10 tokens each
-        # Segment 1: all unique (TTR = 1.0)
-        # Segment 2: all same (TTR = 0.1)
-        # Segment 3: half unique (TTR = 0.5)
-        tokens = (
-            ["a", "b", "c", "d", "e", "f", "g", "h", "i", "j"]  # 10 unique
-            + ["x"] * 10  # 1 unique
-            + ["p", "q", "r", "s", "t", "p", "q", "r", "s", "t"]  # 5 unique
-        )
-        df = pl.DataFrame({"tokens": tokens})
-        result = df.select(plc.msttr("tokens", n=10)).item()
-        expected = (1.0 + 0.1 + 0.5) / 3
-        assert result == pytest.approx(expected)
+    @pytest.mark.parametrize(
+        "tokens,n,expected",
+        [
+            pytest.param(
+                list("abcdefghij")  # segment TTR 1.0
+                + ["x"] * 10  # segment TTR 0.1
+                + list("pqrstpqrst"),  # segment TTR 0.5
+                10,
+                (1.0 + 0.1 + 0.5) / 3,
+                id="three-segments",
+            ),
+            pytest.param(
+                list("abcde")  # 1.0
+                + ["x"] * 5  # 0.2
+                + list("pqrpq")  # 0.6
+                + list("mnmnm"),  # 0.4
+                5,
+                (1.0 + 0.2 + 0.6 + 0.4) / 4,
+                id="varying-diversity",
+            ),
+            pytest.param(list("abcdefghij"), 10, 1.0, id="exactly-one-segment"),
+            pytest.param(list("abcde"), 1, 1.0, id="segment-size-1"),
+            # 25 tokens at n=10 yields two complete segments; the tail is dropped.
+            pytest.param(["a"] * 10 + ["b"] * 10 + ["c"] * 5, 10, 0.1, id="drops-tail"),
+            # Null counts as a type: a, b, None appear in each 10-token segment.
+            pytest.param(
+                ["a", "b", None, "a", "b"] * 4, 10, 0.3, id="nulls-are-a-type"
+            ),
+        ],
+    )
+    def test_msttr(self, tokens, n, expected):
+        df = pl.DataFrame({"tokens": tokens}, schema={"tokens": pl.String})
+        assert df.select(plc.msttr("tokens", n=n)).item() == pytest.approx(expected)
 
-    def test_msttr_default_n(self):
-        """Test MSTTR with default segment size."""
-        # Create 2 complete segments of 1000 tokens
-        tokens = list(range(500)) * 4  # 500 unique repeated, 2000 total
-        df = pl.DataFrame({"tokens": tokens})
-        result = df.select(plc.msttr("tokens")).item()
-        # Each 1000-token segment has 500 unique tokens
-        assert result == pytest.approx(0.5)
+    def test_default_segment_size(self):
+        """The default n is 1000."""
+        df = pl.DataFrame({"tokens": list(range(500)) * 4})  # 2000 tokens, 500 types
+        assert df.select(plc.msttr("tokens")).item() == pytest.approx(0.5)
 
-    def test_msttr_drops_incomplete_segment(self):
-        """Test that incomplete final segment is dropped."""
-        # 25 tokens with n=10 should give 2 complete segments
-        tokens = ["a"] * 10 + ["b"] * 10 + ["c"] * 5
-        df = pl.DataFrame({"tokens": tokens})
-        result = df.select(plc.msttr("tokens", n=10)).item()
-        # Only first two segments: (0.1 + 0.1) / 2 = 0.1
-        assert result == pytest.approx(0.1)
-
-    def test_msttr_single_segment(self):
-        """Test MSTTR with exactly one complete segment."""
-        tokens = list("abcdefghij")  # 10 unique tokens
-        df = pl.DataFrame({"tokens": tokens})
-        result = df.select(plc.msttr("tokens", n=10)).item()
-        assert result == 1.0
-
-    def test_msttr_no_complete_segments(self):
-        """Test MSTTR when there are no complete segments."""
-        tokens = ["a", "b", "c"]  # Only 3 tokens with n=10
-        df = pl.DataFrame({"tokens": tokens})
-        result = df.select(plc.msttr("tokens", n=10)).item()
-        assert result is None
-
-    def test_msttr_empty(self):
-        """Test MSTTR with empty data."""
-        df = pl.DataFrame({"tokens": []}, schema={"tokens": pl.String})
-        result = df.select(plc.msttr("tokens", n=10)).item()
-        assert result is None
-
-    def test_msttr_various_types(self):
-        """Test MSTTR works with different data types."""
-        # Should work with integers, strings, etc.
+    def test_non_string_tokens(self):
         df = pl.DataFrame({"nums": [1, 2, 3, 4, 5] * 4})
-        result = df.select(plc.msttr("nums", n=10)).item()
-        # Each segment of 10 has 5 unique values
-        assert result == pytest.approx(0.5)
+        assert df.select(plc.msttr("nums", n=10)).item() == pytest.approx(0.5)
 
-    def test_msttr_segment_size_1(self):
-        """Test MSTTR with segment size of 1."""
-        tokens = ["a", "b", "c", "d", "e"]
-        df = pl.DataFrame({"tokens": tokens})
-        result = df.select(plc.msttr("tokens", n=1)).item()
-        # Each segment has 1 token, all unique, so TTR = 1.0 for each
-        assert result == 1.0
+    @pytest.mark.parametrize(
+        "tokens",
+        [
+            pytest.param(["a", "b", "c"], id="fewer-tokens-than-n"),
+            pytest.param([], id="empty"),
+        ],
+    )
+    def test_no_complete_segments_is_null(self, tokens):
+        df = pl.DataFrame({"tokens": tokens}, schema={"tokens": pl.String})
+        assert df.select(plc.msttr("tokens", n=10)).item() is None
 
-    def test_msttr_multiple_segments_varying_diversity(self):
-        """Test MSTTR correctly averages across segments with varying diversity."""
-        # 4 segments of 5 tokens each
-        # Segment 1: TTR = 1.0 (all unique)
-        # Segment 2: TTR = 0.2 (1 unique)
-        # Segment 3: TTR = 0.6 (3 unique)
-        # Segment 4: TTR = 0.4 (2 unique)
-        tokens = (
-            ["a", "b", "c", "d", "e"]
-            + ["x", "x", "x", "x", "x"]
-            + ["p", "q", "r", "p", "q"]
-            + ["m", "n", "m", "n", "m"]
-        )
-        df = pl.DataFrame({"tokens": tokens})
-        result = df.select(plc.msttr("tokens", n=5)).item()
-        expected = (1.0 + 0.2 + 0.6 + 0.4) / 4
-        assert result == pytest.approx(expected)
-
-    def test_msttr_with_nulls(self):
-        """Test MSTTR handles null values appropriately."""
-        # Polars n_unique() counts null as a distinct value
-        tokens = ["a", "b", None, "a", "b"] * 4
-        df = pl.DataFrame({"tokens": tokens})
-        result = df.select(plc.msttr("tokens", n=10)).item()
-        # Each segment has "a", "b", None appearing - 3 unique out of 10
-        assert result == pytest.approx(0.3)
-
-    def test_msttr_invalid_n(self):
-        """Test MSTTR raises error for invalid n values."""
-        with pytest.raises(ValueError, match="must be greater than 0"):
-            plc.msttr("tokens", n=0)
-
-        with pytest.raises(ValueError, match="must be greater than 0"):
-            plc.msttr("tokens", n=-10)
-
-        with pytest.raises(TypeError, match="must be an integer"):
-            plc.msttr("tokens", n=10.5)
+    @pytest.mark.parametrize(
+        "n,exc,message",
+        [
+            (0, ValueError, "must be greater than 0"),
+            (-10, ValueError, "must be greater than 0"),
+            (10.5, TypeError, "must be an integer"),
+        ],
+    )
+    def test_invalid_n(self, n, exc, message):
+        with pytest.raises(exc, match=message):
+            plc.msttr("tokens", n=n)
 
 
 class TestMTLD:
-    """Test Measure of Textual Lexical Diversity calculation."""
+    """Measure of Textual Lexical Diversity."""
 
-    def test_mtld_basic(self):
-        """Test MTLD with varying diversity levels."""
-        # High diversity (all unique) = high MTLD
-        df_high = pl.DataFrame({"tokens": [f"word{i}" for i in range(100)]})
-        assert df_high.select(plc.mtld("tokens")).item() > 50
+    @pytest.mark.parametrize(
+        "tokens,predicate",
+        [
+            pytest.param(
+                [f"word{i}" for i in range(100)], lambda v: v > 50, id="high-diversity"
+            ),
+            pytest.param(["the"] * 100, lambda v: v < 10, id="low-diversity"),
+        ],
+    )
+    def test_tracks_diversity(self, tokens, predicate):
+        df = pl.DataFrame({"tokens": tokens})
+        assert predicate(df.select(plc.mtld("tokens")).item())
 
-        # Low diversity (repetitive) = low MTLD
-        df_low = pl.DataFrame({"tokens": ["the"] * 100})
-        assert df_low.select(plc.mtld("tokens")).item() < 10
+    @pytest.mark.parametrize(
+        "n_tokens,defined",
+        [(10, True), (9, False)],
+        ids=["at-minimum", "below-minimum"],
+    )
+    def test_requires_ten_tokens(self, n_tokens, defined):
+        df = pl.DataFrame({"tokens": [f"w{i}" for i in range(n_tokens)]})
+        assert (df.select(plc.mtld("tokens")).item() is not None) is defined
 
-    def test_mtld_minimum_tokens(self):
-        """Test MTLD requires at least 10 tokens."""
-        df_valid = pl.DataFrame({"tokens": [f"w{i}" for i in range(10)]})
-        assert df_valid.select(plc.mtld("tokens")).item() is not None
-
-        df_invalid = pl.DataFrame({"tokens": [f"w{i}" for i in range(9)]})
-        assert df_invalid.select(plc.mtld("tokens")).item() is None
-
-    def test_mtld_with_nulls(self):
-        """Test MTLD treats null as a distinct token (Polars default)."""
+    def test_nulls_are_a_token(self):
         tokens = [f"word{i}" for i in range(10)] + [None, None]
         df = pl.DataFrame({"tokens": tokens})
-        result = df.select(plc.mtld("tokens")).item()
-        assert result is not None and result > 0
+        assert df.select(plc.mtld("tokens")).item() > 0
 
-    def test_mtld_custom_threshold(self):
-        """Test MTLD accepts custom threshold parameter."""
+    def test_custom_threshold(self):
         df = pl.DataFrame({"tokens": ["the"] * 100})
-        result_default = df.select(plc.mtld("tokens")).item()
-        result_custom = df.select(plc.mtld("tokens", threshold=0.800)).item()
-        assert result_default > 0
-        assert result_custom > 0
+        assert df.select(plc.mtld("tokens", threshold=0.800)).item() > 0
 
-    def test_mtld_invalid_threshold(self):
-        """Test MTLD raises error for invalid threshold values."""
+    @pytest.mark.parametrize("threshold", [0.0, 1.0, -0.5, 1.5])
+    def test_invalid_threshold(self, threshold):
         with pytest.raises(ValueError, match="strictly between 0 and 1"):
-            plc.mtld("tokens", threshold=0.0)
-
-        with pytest.raises(ValueError, match="strictly between 0 and 1"):
-            plc.mtld("tokens", threshold=1.0)
-
-        with pytest.raises(ValueError, match="strictly between 0 and 1"):
-            plc.mtld("tokens", threshold=-0.5)
-
-        with pytest.raises(ValueError, match="strictly between 0 and 1"):
-            plc.mtld("tokens", threshold=1.5)
+            plc.mtld("tokens", threshold=threshold)
 
 
-class TestYulesK:
-    """Test Yule's K characteristic calculation."""
-
-    def test_yules_k_basic(self):
-        """Test Yule's K with varying diversity levels."""
-        # All unique = K = 0
-        df_unique = pl.DataFrame({"tokens": list("abcdefghij")})
-        assert df_unique.select(plc.yules_k("tokens")).item() == pytest.approx(0.0)
-
-        # Repetitive = high K (low diversity)
-        df_repetitive = pl.DataFrame({"tokens": ["the"] * 50 + ["cat"] * 30})
-        assert df_repetitive.select(plc.yules_k("tokens")).item() > 100
-
-    def test_yules_k_with_nulls(self):
-        """Test Yule's K treats null as a distinct type (Polars default)."""
-        df = pl.DataFrame({"tokens": ["a", "b", None, "a", "b", None]})
-        assert df.select(plc.yules_k("tokens")).item() > 0
+@pytest.mark.parametrize(
+    "tokens,predicate",
+    [
+        pytest.param(
+            list("abcdefghij"), lambda v: v == pytest.approx(0.0), id="all-unique"
+        ),
+        pytest.param(["the"] * 50 + ["cat"] * 30, lambda v: v > 100, id="repetitive"),
+        pytest.param(
+            ["a", "b", None, "a", "b", None], lambda v: v > 0, id="with-nulls"
+        ),
+    ],
+)
+def test_yules_k(tokens, predicate):
+    """Yule's K is 0 for maximal diversity and grows as repetition increases."""
+    df = pl.DataFrame({"tokens": tokens}, schema={"tokens": pl.String})
+    assert predicate(df.select(plc.yules_k("tokens")).item())

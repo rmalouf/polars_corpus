@@ -1,102 +1,92 @@
-import tempfile
 from pathlib import Path
 
 import polars as pl
+import polars_corpus as plc
 import pytest
 from polars_corpus import read_text_corpus, scan_text_corpus
 from polars_corpus.io import TextCorpusReader
 
-
-@pytest.fixture
-def sample_file():
-    content = """The/DT quick/JJ brown/NN fox/NN
+SAMPLE = """The/DT quick/JJ brown/NN fox/NN
 jumps/VBZ over/IN the/DT lazy/JJ dog/NN
 
 Another/DT sentence/NN here/RB
 """
-    path = create_temp_file_with_content(content)
-    yield path
-    path.unlink()
 
 
 @pytest.fixture
-def malformed_file():
-    # Missing a tag on one token
-    content = """Good/JJ morning/NN everyone
-MalformedLine noSlashHere
-"""
-    path = create_temp_file_with_content(content)
-    yield path
-    path.unlink()
+def write_corpus(tmp_path: Path):
+    """Write each string to its own file and hand back the paths."""
+
+    def write(*contents: str) -> list[Path]:
+        paths = []
+        for i, content in enumerate(contents):
+            path = tmp_path / f"corpus{i}.txt"
+            path.write_text(content)
+            paths.append(path)
+        return paths
+
+    return write
 
 
 @pytest.fixture
-def multiple_files():
-    files = []
-    contents = ["First/DT file/NN\n", "Second/DT one/CD\nThird/JJ one/NN too/RB\n"]
-    for content in contents:
-        f = create_temp_file_with_content(content)
-        files.append(f)
-
-    yield files
-
-    for f in files:
-        f.unlink()
+def sample_file(write_corpus):
+    return write_corpus(SAMPLE)[0]
 
 
-def create_temp_file_with_content(content: str) -> Path:
-    with tempfile.NamedTemporaryFile(mode="w+", delete=False) as f:
-        f.write(content)
-        f.flush()
-        return Path(f.name)
+@pytest.mark.parametrize(
+    "load", [read_text_corpus, lambda p: scan_text_corpus(p).collect()]
+)
+def test_read_text_corpus(load, sample_file):
+    """The eager and lazy entry points produce the same frame."""
+    df = load([sample_file])
+
+    assert df.columns == ["token", "pos", "sentence_tag"]
+    # Three blank-line-delimited sentences.
+    assert df.filter(pl.col("sentence_tag") == "B").height == 3
 
 
-def test_read_text_corpus(sample_file):
-    df = read_text_corpus([sample_file])
-    assert df.shape[1] == 3
-    assert set(df.columns) == {"token", "tag", "sent"}
-    assert df.filter(pl.col("sent") == "B").height == 3
+def test_token_tag_parsing(sample_file):
+    rows = list(TextCorpusReader([sample_file]).read_file(sample_file))
+
+    assert rows[0] == {"token": "The", "pos": "DT", "sentence_tag": "B"}
+    assert rows[1]["sentence_tag"] == "I"
 
 
-def test_read_file_token_tag_parsing(sample_file):
-    reader = TextCorpusReader([sample_file])
-    rows = list(reader.read_file(sample_file))
-    assert rows[0]["token"] == "The"
-    assert rows[0]["tag"] == "DT"
-    assert rows[0]["sent"] == "B"
-    assert rows[1]["sent"] == "I"
+def test_scan_pushes_down_predicate_and_projection(sample_file):
+    df = (
+        scan_text_corpus([sample_file])
+        .select("token")
+        .filter(pl.col("token").str.contains("fox|dog"))
+        .collect()
+    )
+
+    assert df.columns == ["token"]
+    assert set(df["token"]) == {"fox", "dog"}
 
 
-def test_scan_text_corpus_collect(sample_file):
-    lf = scan_text_corpus([sample_file])
-    df = lf.collect()
-    assert isinstance(df, pl.DataFrame)
-    assert "token" in df.columns
-    assert df.filter(pl.col("sent") == "B").height == 3
+def test_malformed_line_raises(write_corpus):
+    """A token with no /tag is an error, not a silently dropped row."""
+    (path,) = write_corpus("Good/JJ morning/NN everyone\nMalformedLine noSlashHere\n")
 
-
-def test_scan_text_corpus_predicate_and_columns(sample_file):
-    lf = scan_text_corpus([sample_file])
-    filtered = lf.select(["token"]).filter(pl.col("token").str.contains("fox|dog"))
-    df = filtered.collect()
-    assert df.shape[1] == 1
-    assert all(t in {"fox", "dog"} for t in df["token"])
-
-
-def test_handles_malformed_lines_gracefully(malformed_file):
-    reader = TextCorpusReader([malformed_file])
     with pytest.raises(ValueError):
-        list(reader.read_file(malformed_file))
+        list(TextCorpusReader([path]).read_file(path))
 
 
-def test_multiple_files_combined(multiple_files):
-    df = read_text_corpus(multiple_files)
+def test_multiple_files_combined(write_corpus):
+    paths = write_corpus(
+        "First/DT file/NN\n", "Second/DT one/CD\nThird/JJ one/NN too/RB\n"
+    )
+    df = read_text_corpus(paths)
+
     assert df.filter(pl.col("token") == "First").height == 1
     assert df.filter(pl.col("token") == "Third").height == 1
 
 
-def test_empty_file():
-    path = create_temp_file_with_content("")
-    df = read_text_corpus([path])
-    assert df.is_empty()
-    path.unlink()
+def test_empty_file(write_corpus):
+    assert read_text_corpus(write_corpus("")).is_empty()
+
+
+def test_output_is_searchable_with_default_columns(sample_file):
+    """The tag column must be named `pos`, which is what search() looks for."""
+    results = plc.search(read_text_corpus([sample_file]), "the _JJ _NN")
+    assert results is not None and len(results._matches) > 0
