@@ -17,16 +17,30 @@ ruff check        # Lint Python
 cargo fmt         # Format Rust
 cargo clippy      # Lint Rust
 pyrefly check python/polars_corpus/
-make develop      # Rebuild after Rust changes (required)
+make develop      # Rebuild after Rust changes (required); ~1s incremental
+make build        # Release wheels for distribution (slow: full LTO)
 pytest            # Run tests (Python changes don't need rebuild)
 ```
 
+## Environment
+The venv lives **outside** the source tree, at `~/.venvs/polars_corpus`, and is
+activated automatically by a shell extension. Run `pytest`, `ruff`, etc. directly
+-- do **not** prefix them with `uv run`, which would create a `./.venv` here.
+
+That matters for two reasons: this directory is synced via Dropbox to machines
+with different paths, and a venv inside the project root breaks `pytest` --
+nltk's `inisec` import guard rejects any module resolving under the cwd, so
+`import nltk` fails during test collection.
+
 ## Dependencies
-Managed via `uv` with three levels of requirements:
-- `requirements.txt`: Runtime dependencies only
-- `requirements-dev.txt`: Runtime + development tools (pytest, pyrefly, etc.)
-- `requirements-examples.txt`: Runtime + dev + example notebooks
-- Regenerate lock files: `make locks`
+All declared in `pyproject.toml` and pinned by `uv.lock` (both tracked):
+- `[project] dependencies`: runtime
+- `[project.optional-dependencies] examples`: published extra for end users
+- `[dependency-groups] dev`: development tools (pytest, pyrefly, maturin, ...)
+- `[dependency-groups] notebooks`: `dev` plus what the example notebooks import
+
+Re-resolve with `uv lock` after editing `pyproject.toml`. `uv lock` only writes
+the lockfile and does not touch the venv, so it is safe to run here.
 
 ## Data Format
 DataFrame with: `token`, `pos`/`c5`, `mode`, `file_id`, plus annotation columns

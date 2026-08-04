@@ -53,8 +53,8 @@ See the `examples/` directory for notebooks covering:
 
 ## Requirements
 
-- Python 3.10+
-- Polars 1.34+
+- Python 3.11+
+- Polars 1.35+
 
 ## License
 

@@ -1,5 +1,5 @@
 [build-system]
-requires = ["maturin>=1.0,<2.0", "polars>=1.33"]
+requires = ["maturin>=1.0,<2.0", "polars>=1.35"]
 build-backend = "maturin"
 
 [project]
@@ -31,10 +31,10 @@ description = "Text processing plugins for polars"
 readme = "README.md"
 license = "MIT"
 dependencies = [
-    "polars>=1.34",
+    "polars>=1.35",
     "lark>=1.2",
     "nltk>=3.9",
-    "ipywidgets>=8.1"
+    "anywidget>=0.9"
 ]
 
 [project.optional-dependencies]
@@ -50,13 +50,8 @@ bad-override-mutable-attribute = "ignore"
 [tool.uv]
 python-preference = "only-managed"
 
-[tool.mypy]
-ignore_missing_imports = true
-strict = true
-
-[[tool.mypy.overrides]]
-module = "polars_corpus._internal"
-ignore_missing_imports = true
+[tool.pytest.ini_options]
+testpaths = ["python/tests"]
 
 [tool.maturin]
 module-name = "polars_corpus._internal"
@@ -70,11 +65,31 @@ ignore-missing-imports = [
 
 [dependency-groups]
 dev = [
- "jupyterlab>=4.4.0",
- "maturin>=1.8.3",
- "notebook>=7.4.0",
- "pip>=25.0.1",
- "pyrefly>=0.62",
- "pytest>=8.3.5",
- "great-docs",
+    "coverage>=7.10",
+    "great-docs",
+    "jupyterlab>=4.4.0",
+    "maturin>=1.8.3",
+    "notebook>=7.4.0",
+    "pip>=25.0.1",
+    "pyrefly>=0.62",
+    "pytest>=8.3.5",
+]
+# Everything `dev` has, plus what the example notebooks and user guide import.
+# Sync with `uv sync --group notebooks`. Distinct from the published
+# `examples` extra above, which is the minimum an end user needs.
+notebooks = [
+    {include-group = "dev"},
+    "adjustText",
+    "cytoolz",
+    "fastexcel",
+    "great-tables",
+    "joblib",
+    "joblib-progress",
+    "lxml",
+    "matplotlib",
+    "pyarrow",
+    "scipy",
+    "scipy-stubs",
+    "seaborn",
+    "selenium",
 ]
