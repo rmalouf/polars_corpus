@@ -69,17 +69,21 @@ tests.
    pytest automatically; run them by hand. Worth revisiting closer to a release.
 2. **No Rust unit tests.** The engine is exercised only through Python
    integration tests.
-3. **`pyrefly check` reports 20 errors.** Three clusters: `T_Frame` variance in
-   `keywords.py` (returning `DataFrame | LazyFrame` where `T_Frame` is
-   declared); `Expr has no attribute corpus`, because the registered namespace
-   is invisible to the checker; and the unfinished `productivity.py`. The
-   largest cluster, `.corpus`, is a checker-visibility problem rather than a
-   code problem: `pl.api.register_expr_namespace` is invisible to static
-   analysis, so it wants a stub or a Protocol, not a refactor.
-4. **`__init__.py` leaks names.** Modules without `__all__` are star-imported,
+3. **`pyrefly check` reports 5 errors**, in two clusters: nltk's `CorpusReader`
+   stubs disagreeing with how `convert.py` calls it, and the unfinished
+   `productivity.py`.
+4. **The `.corpus` namespace is invisible to type checkers.**
+   `pl.api.register_expr_namespace` installs a descriptor onto polars' classes
+   with a runtime `setattr`, which no stub can describe, so
+   `pl.col("x").corpus.pmi()` does not type-check in user code either. This
+   affects every polars plugin and there is no fix available to us. The
+   standalone functions (`plc.pmi(...)`, `plc.loglik(...)`) are the
+   statically-checkable path; the namespace is sugar over them. Library code
+   calls the functions directly for this reason.
+5. **`__init__.py` leaks names.** Modules without `__all__` are star-imported,
    so `polars_corpus.pl`, `.Any`, `.Optional` and most submodule names are bound
    at top level. The `keywords` function also shadows the `keywords` module.
-5. **No published wheels or PyPI release.**
+6. **No published wheels or PyPI release.**
 
 Notebooks are excluded from ruff (`[tool.ruff] extend-exclude`). They are
 working scratchpads and are expected to sit in unfinished states, so linting

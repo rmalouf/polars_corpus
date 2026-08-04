@@ -3,9 +3,9 @@ from __future__ import annotations
 from typing import Optional, cast
 
 import polars as pl
-import polars_corpus as plc
 
 from ._typing import IntoExpr, T_Frame
+from .assoc import chisq, crosstab, loglik, minsens, pmi, smp, welchs_t_from_stats
 from .utils import output_name
 
 __all__ = [
@@ -102,7 +102,7 @@ def keywords(
     else:
         expr_name = output_name(expr)
         combined = combined.with_columns(expr)
-        freq_table = plc.crosstab(combined, expr_name, PART_FIELD)
+        freq_table = crosstab(combined, expr_name, PART_FIELD)
         target_df = (
             combined.filter(pl.col(PART_FIELD) == "target")
             .group_by(expr_name)
@@ -152,25 +152,33 @@ def keywords_assoc(
     ValueError
         If `method` is not 'pmi', 'll', 'chisq', 'smp', or 'minsens'.
     """
+    # Call the measures directly rather than through the `.corpus` namespace,
+    # which is registered at runtime and so is invisible to type checkers.
+    freqs = pl.col("freqs")
+    f12 = freqs.struct.field("f12")
+    f1 = freqs.struct.field("f1")
+    f2 = freqs.struct.field("f2")
+    n = freqs.struct.field("n")
+
     match method:
         case "pmi":
-            assoc_expr = pl.col("freqs").corpus.pmi().alias("PMI")
+            assoc_expr = pmi(f12, f1, f2, n).alias("PMI")
         case "ll":
-            assoc_expr = pl.col("freqs").corpus.loglik().alias("LogLik")
+            assoc_expr = loglik(f12, f1, f2, n).alias("LogLik")
         case "chisq":
-            assoc_expr = pl.col("freqs").corpus.chisq().alias("ChiSq")
+            assoc_expr = chisq(f12, f1, f2, n).alias("ChiSq")
         case "minsens":
-            assoc_expr = pl.col("freqs").corpus.minsens().alias("MinSens")
+            assoc_expr = minsens(f12, f1, f2, n).alias("MinSens")
         case "smp":
             if k is None:
                 raise ValueError("k is required for smp")
-            assoc_expr = pl.col("freqs").corpus.smp(k).alias("SMP")
+            assoc_expr = smp(f12, f1, f2, n, k).alias("SMP")
         case _:
             raise ValueError(f"Unknown method {method}")
 
     result = (
         freq_table.filter(
-            pl.col("freqs").struct.field("f12") >= min_target_tf,
+            f12 >= min_target_tf,
             pl.col("target_df") >= min_target_df,
             pl.col(PART_FIELD) == "target",
         )
@@ -230,7 +238,7 @@ def keywords_ttest(
         .pivot(on=PART_FIELD, on_columns=["target", "reference"], index=expr_name)
         .drop_nulls()
         .with_columns(
-            plc.welchs_t_from_stats(
+            welchs_t_from_stats(
                 "s_target",
                 "ss_target",
                 "n_target",

@@ -6,7 +6,7 @@ import polars as pl
 from polars._typing import IntoExprColumn
 from polars.plugins import register_plugin_function
 
-from ._typing import T_Frame
+from ._typing import IntoExpr, T_Frame
 from .utils import output_name
 
 __all__ = [
@@ -90,9 +90,7 @@ def _validated_crosstab(df: T_Frame) -> T_Frame:
     )
 
 
-def pmi(
-    f12: IntoExprColumn, f1: IntoExprColumn, f2: IntoExprColumn, n: IntoExprColumn
-) -> pl.Expr | pl.Series:
+def pmi(f12: IntoExpr, f1: IntoExpr, f2: IntoExpr, n: IntoExpr) -> pl.Expr:
     """
     Compute Pointwise Mutual Information (PMI) for contingency table data.
 
@@ -103,16 +101,16 @@ def pmi(
 
     Parameters
     ----------
-    f12 : IntoExprColumn
+    f12 : IntoExpr
         Joint frequencies of variable pairs. Can be a column name (str) or
         Polars expression.
-    f1 : IntoExprColumn
+    f1 : IntoExpr
         Marginal frequencies of first variable. Can be a column name (str) or
         Polars expression.
-    f2 : IntoExprColumn
+    f2 : IntoExpr
         Marginal frequencies of second variable. Can be a column name (str) or
         Polars expression.
-    n : IntoExprColumn
+    n : IntoExpr
         Grand total (total number of observations). Can be a column name (str) or
         Polars expression.
 
@@ -138,10 +136,10 @@ def pmi(
 
 
 def chisq(
-    f12: IntoExprColumn,
-    f1: IntoExprColumn,
-    f2: IntoExprColumn,
-    n: IntoExprColumn,
+    f12: IntoExpr,
+    f1: IntoExpr,
+    f2: IntoExpr,
+    n: IntoExpr,
     yates: bool = False,
 ) -> pl.Expr:
     """
@@ -154,16 +152,16 @@ def chisq(
 
     Parameters
     ----------
-    f12 : IntoExprColumn
+    f12 : IntoExpr
         Joint frequencies of variable pairs. Can be a column name (str) or
         Polars expression.
-    f1 : IntoExprColumn
+    f1 : IntoExpr
         Marginal frequencies of first variable. Can be a column name (str) or
         Polars expression.
-    f2 : IntoExprColumn
+    f2 : IntoExpr
         Marginal frequencies of second variable. Can be a column name (str) or
         Polars expression.
-    n : IntoExprColumn
+    n : IntoExpr
         Grand total (total number of observations). Can be a column name (str) or
         Polars expression.
     yates : bool, default False
@@ -209,9 +207,7 @@ def chisq(
     return n * det.pow(2) / (f1 * f2 * (n - f1) * (n - f2))
 
 
-def loglik(
-    f12: IntoExprColumn, f1: IntoExprColumn, f2: IntoExprColumn, n: IntoExprColumn
-) -> pl.Expr:
+def loglik(f12: IntoExpr, f1: IntoExpr, f2: IntoExpr, n: IntoExpr) -> pl.Expr:
     """
     Compute log-likelihood ratio (G²) statistic for contingency table data.
 
@@ -222,16 +218,16 @@ def loglik(
 
     Parameters
     ----------
-    f12 : IntoExprColumn
+    f12 : IntoExpr
         Joint frequencies of variable pairs. Can be a column name (str) or
         Polars expression.
-    f1 : IntoExprColumn
+    f1 : IntoExpr
         Marginal frequencies of first variable. Can be a column name (str) or
         Polars expression.
-    f2 : IntoExprColumn
+    f2 : IntoExpr
         Marginal frequencies of second variable. Can be a column name (str) or
         Polars expression.
-    n : IntoExprColumn
+    n : IntoExpr
         Grand total (total number of observations). Can be a column name (str) or
         Polars expression.
 
@@ -259,9 +255,7 @@ def loglik(
     )
 
 
-def minsens(
-    f12: IntoExprColumn, f1: IntoExprColumn, f2: IntoExprColumn, n: IntoExprColumn
-) -> pl.Expr:
+def minsens(f12: IntoExpr, f1: IntoExpr, f2: IntoExpr, n: IntoExpr) -> pl.Expr:
     """
     Compute minimum sensitivity values for contingency table data.
 
@@ -271,16 +265,16 @@ def minsens(
 
     Parameters
     ----------
-    f12 : IntoExprColumn
+    f12 : IntoExpr
         Joint frequencies of variable pairs. Can be a column name (str) or
         Polars expression.
-    f1 : IntoExprColumn
+    f1 : IntoExpr
         Marginal frequencies of first variable. Can be a column name (str) or
         Polars expression.
-    f2 : IntoExprColumn
+    f2 : IntoExpr
         Marginal frequencies of second variable. Can be a column name (str) or
         Polars expression.
-    n : IntoExprColumn
+    n : IntoExpr
         Grand total (total number of observations). Can be a column name (str) or
         Polars expression. Note: This parameter is not used in the calculation
         but is kept for consistency with other association measures.
@@ -318,10 +312,10 @@ def minsens(
 
 
 def smp(
-    f12: IntoExprColumn,
-    f1: IntoExprColumn,
-    f2: IntoExprColumn,
-    n: IntoExprColumn,
+    f12: IntoExpr,
+    f1: IntoExpr,
+    f2: IntoExpr,
+    n: IntoExpr,
     k: float,
 ) -> pl.Expr:
     """
@@ -334,17 +328,17 @@ def smp(
 
     Parameters
     ----------
-    f12 : IntoExprColumn
+    f12 : IntoExpr
         Joint frequencies of variable pairs (target frequency). Can be a
         column name (str) or Polars expression.
-    f1 : IntoExprColumn
+    f1 : IntoExpr
         Marginal frequencies of first variable (target + reference frequency).
         Can be a column name (str) or Polars expression.
-    f2 : IntoExprColumn
+    f2 : IntoExpr
         Marginal frequencies of second variable. Can be a column name (str) or
         Polars expression. Note: This parameter is not used in the calculation
         but is kept for consistency with other association measures.
-    n : IntoExprColumn
+    n : IntoExpr
         Grand total (total number of observations). Can be a column name (str) or
         Polars expression. Note: This parameter is not used in the calculation
         but is kept for consistency with other association measures.

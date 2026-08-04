@@ -74,7 +74,7 @@ class CorpusExpr:
             self._expr.struct.field("n"),
         )
 
-    def pmi(self) -> pl.Expr | pl.Series:
+    def pmi(self) -> pl.Expr:
         """Compute pointwise mutual information from a freqs struct column."""
         return pmi(
             self._expr.struct.field("f12"),
