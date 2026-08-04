@@ -8,7 +8,7 @@ name = "polars_corpus"
 crate-type= ["cdylib"]
 
 [dependencies]
-pyo3 = { version = "0.28", default-features = false, features = ["extension-module", "abi3-py39"] }
+pyo3 = { version = "0.28", default-features = false, features = ["extension-module", "abi3-py311"] }
 polars = { version = "0.54", default-features = false, features = ["dtype-struct", "dtype-array", "dtype-categorical", "performant", "cse"] }
 # polars' own `rle` feature only forwards to polars-lazy, which this crate
 # doesn't build, so enable it on polars-ops directly. Re-exported through
@@ -21,18 +21,27 @@ polars-arrow = { version = "0.54", default-features = true }
 serde = { version = "1.0", features = ["derive"] }
 
 [profile.release]
-#debug = true
-#debug = "line-tables-only"  # or "limited"/"full" if you want more
-debug = "full"  # or "limited"/"full" if you want more
-strip = "none"
-lto = "off"                 # reduces cross-crate inlining + improves attribution
+lto = "fat"
 codegen-units = 1
+strip = "symbols"
 
+# Fast-turnaround profile for `make develop`. Still optimized, so real corpora
+# stay usable, but parallel codegen and no LTO keep rebuilds to a couple of
+# seconds, and symbols are kept so panics give a readable backtrace.
+# Not for distribution wheels -- see `make build`.
+[profile.dev-fast]
+inherits = "release"
+lto = "off"
+codegen-units = 256
+incremental = true
+debug = "line-tables-only"
+strip = "none"
+
+# Release build with debug info kept and cross-crate inlining disabled, so
+# profiler output attributes samples to the right function. Build with
+# `--profile profiling`.
 [profile.profiling]
 inherits = "release"
-#debug = "line-tables-only"  # or "limited"/"full" if you want more
-#debug = true
-debug = "full"  # or "limited"/"full" if you want more
+debug = "full"
 strip = "none"
-lto = "off"                 # reduces cross-crate inlining + improves attribution
-codegen-units = 1           # optional: improves stability of profiles# optional: improves stability of profiles
+lto = "off"

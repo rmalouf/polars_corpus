@@ -1,28 +1,25 @@
 # Makefile for managing Python dependencies with uv
 
-VENV_DIR = ${HOME}/.venvs/polars-corpus
+# The venv lives outside the source tree (see CLAUDE.md) and is activated by a
+# shell extension. Dependencies are declared in pyproject.toml; re-resolve with
+# `uv lock`.
+VENV_DIR = ${HOME}/.venvs/polars_corpus
 
-.PHONY: install dev lock clean docs
-
-#venv:
-#	uv venv --allow-existing --quiet $(VENV_DIR)
-#	source $(VENV_DIR)/bin/activate
-#	uv pip sync requirements-examples.txt
-#
-## Regenerate all requirement lock files from .in sources
-## Three levels: runtime (requirements.txt) → dev → examples
-#locks:
-#	uv pip compile requirements.in >requirements.txt
-#	uv pip compile requirements.in requirements-dev.in >requirements-dev.txt
-#	uv pip compile requirements.in requirements-examples.in requirements-dev.in >requirements-examples.txt
+.PHONY: develop develop-release build docs
 
 # Serve docs locally
 docs:
 	quarto convert user_guide/04-frequencies.ipynb
 	great-docs build
 
-# Build Rust extension for local development with native CPU optimizations
+# Rebuild the Rust extension for the edit/test loop. Optimized and native-CPU,
+# but without LTO, so this takes seconds rather than minutes. Use this one.
 develop:
+	RUSTFLAGS="-C target-cpu=native" maturin develop --profile dev-fast
+
+# Same, but with the full release profile. Only needed when benchmarking or
+# checking something that depends on LTO; `make develop` is the normal path.
+develop-release:
 	RUSTFLAGS="-C target-cpu=native" maturin develop --release
 
 # Build release wheels for distribution with architecture-specific optimizations
