@@ -1,5 +1,8 @@
 ## productivity metrics
 
+# WORK IN PROGRESS - not wired up yet, and not expected to work.
+# pyrefly flags missing-attribute errors here; ignore them until this goes live.
+
 import polars as pl
 from polars._typing import IntoExprColumn
 
