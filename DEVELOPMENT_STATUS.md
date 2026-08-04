@@ -69,9 +69,8 @@ tests.
    pytest automatically; run them by hand. Worth revisiting closer to a release.
 2. **No Rust unit tests.** The engine is exercised only through Python
    integration tests.
-3. **`pyrefly check` reports 5 errors**, in two clusters: nltk's `CorpusReader`
-   stubs disagreeing with how `convert.py` calls it, and the unfinished
-   `productivity.py`.
+3. **`pyrefly check` is clean.** `productivity.py` carries a file-level
+   `# pyrefly: ignore-errors` until it is finished; remove it then.
 4. **The `.corpus` namespace is invisible to type checkers.**
    `pl.api.register_expr_namespace` installs a descriptor onto polars' classes
    with a runtime `setattr`, which no stub can describe, so
@@ -94,18 +93,17 @@ them produced only noise.
 ## Roadmap
 
 **Before a release**
-1. Resolve or explicitly suppress the pyrefly errors.
-2. Finish `productivity.py` or drop it.
-3. Emit `file_id` from the text corpus readers.
+1. Finish `productivity.py` or drop it, and drop its `ignore-errors` marker.
+2. Emit `file_id` from the text corpus readers.
 
 **Before 1.0**
-4. Proximity operators.
-5. Publish to PyPI.
-6. Add CI, deferred until closer to release.
+3. Proximity operators.
+4. Publish to PyPI.
+5. Add CI, deferred until closer to release.
 
 **Quality**
-7. Rust unit tests for the matcher.
-8. Benchmarks (`examples/bench.py` is a starting point).
+6. Rust unit tests for the matcher.
+7. Benchmarks (`examples/bench.py` is a starting point).
 
 ---
 

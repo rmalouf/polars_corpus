@@ -1,7 +1,9 @@
+# pyrefly: ignore-errors
 ## productivity metrics
 
-# WORK IN PROGRESS - not wired up yet, and not expected to work.
-# pyrefly flags missing-attribute errors here; ignore them until this goes live.
+# WORK IN PROGRESS - not wired up yet, and not expected to work. Type checking
+# is off for the whole file meanwhile; drop the marker above when this gets
+# wired into __init__.py.
 
 import polars as pl
 from polars._typing import IntoExprColumn

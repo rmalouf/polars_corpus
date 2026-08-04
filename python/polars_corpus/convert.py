@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Generator
+from typing import TYPE_CHECKING, Any, Generator, cast
 
 import polars as pl
 
 if TYPE_CHECKING:
-    from nltk.corpus.reader.api import CorpusReader
+    from nltk.corpus.reader.api import CategorizedCorpusReader, CorpusReader
 
 __all__ = ["from_nltk"]
 
@@ -36,8 +36,12 @@ def from_nltk(corpus: CorpusReader) -> pl.DataFrame:
     """
     category_dict = dict()
     if hasattr(corpus, "categories"):
-        for category in corpus.categories():
-            for file_id in corpus.fileids(category):
+        # CategorizedCorpusReader is a mixin, so a categorized corpus is only
+        # identifiable by duck-typing. It supplies categories() and widens
+        # fileids(), which on the plain reader takes no arguments.
+        categorized = cast("CategorizedCorpusReader", corpus)
+        for category in categorized.categories():
+            for file_id in categorized.fileids(category):
                 category_dict[file_id] = category
     corpus_data = []
     for file_id in corpus.fileids():
@@ -67,8 +71,13 @@ def convert_file(corpus: CorpusReader, file_id: str) -> Generator[dict[str, str]
     else:
         if hasattr(corpus, "tagged_words"):
             tokens = corpus.tagged_words(file_id)
-        else:
+        elif hasattr(corpus, "words"):
             tokens = corpus.words(file_id)
+        else:
+            raise AttributeError(
+                f"{type(corpus).__name__} exposes none of sents(), tagged_words(), "
+                "or words(), so its tokens cannot be read"
+            )
         for token_dict in convert_token(tokens):
             yield token_dict
 
