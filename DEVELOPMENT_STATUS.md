@@ -1,262 +1,148 @@
-let's # Development Status - polars-corpus
+# Development Status - polars-corpus
 
-**Last Updated:** 2025-01-12
-**Version:** 0.1.4-pre
-**Status:** Pre-release, production-quality core
+**Last updated:** 2026-08-04
+**Version:** 0.2.0-pre
+**Status:** Pre-release; core is stable, not yet published to PyPI
 
 ---
 
-## Executive Summary
+## Summary
 
-polars-corpus is a mature, well-engineered corpus linguistics toolkit with ~3,900 lines of clean Python/Rust code. Core functionality (search, concordancing, statistics) is production-ready. Simple query language is 75% complete (Phase 3 partial). Main gaps: user documentation (README empty) and proximity operators (Phase 4).
+A corpus linguistics toolkit for Polars, split between a Python API and a Rust
+matching engine. Search, concordancing, collocation, keywords, and the
+statistical measures are all working and covered by tests. The user guide now
+exists. The main functional gap is proximity operators in the Simple query
+language; the main process gaps are the absence of CI and of any Rust unit
+tests.
 
 ---
 
 ## Codebase Metrics
 
-- **Python:** ~2,500 lines (15 modules)
-- **Rust:** ~900 lines (6 files)
-- **Tests:** ~500 lines (8 test files, 44 simple query tests)
-- **Examples:** 15+ files including BNC corpus examples
-- **Documentation:** 5 developer docs, 0 user guides
+| | |
+|---|---|
+| Python source | ~3,700 lines, 18 modules |
+| Rust source | ~950 lines, 6 files |
+| Tests | ~1,770 lines, 299 tests in 8 files |
+| User guide | 6 pages plus 4 on the query languages (Quarto / great-docs) |
+| Examples | 9 notebooks, 2 scripts |
 
 ---
 
 ## Feature Completeness
 
-### ✅ Production-Ready (100%)
+### Working
 
-1. **Core Search Engine**
-   - NFA-based pattern matcher (Rust)
-   - CQP query language (full support)
-   - SearchResults API (concordance, collocates, view)
+1. **Search engine** — NFA matcher in Rust; CQP and Simple query languages;
+   variable bindings (`$x: ...`) in both.
+2. **Concordancing** — KWIC generation in Rust, `SearchResults.concordance()`,
+   interactive `ConcordanceWidget` (anywidget) with pagination and sorting.
+3. **Collocation and keywords** — `collocates()`, `keywords()`, `crosstab()`
+   bundling frequencies into a `freqs` struct consumed by the association
+   measures.
+4. **Association measures** — PMI, log-likelihood, minimum sensitivity,
+   Kilgarriff's simple maths, chi-squared, Welch's t-test.
+5. **Lexical diversity** — TTR, MSTTR, Yule's K, MTLD.
+6. **I/O** — `read_text_corpus()` / `scan_text_corpus()`, `from_nltk()`.
+7. **Chunking** — BIO tags to chunk IDs via `chunk_id()` / `with_chunk_index()`.
+8. **Polars integration** — `.corpus` namespace on Expr, DataFrame, LazyFrame.
 
-2. **Concordancing**
-   - KWIC generation (Rust-optimized)
-   - Interactive Jupyter widget
-   - Pagination, sorting, filtering, sampling
+### Incomplete
 
-3. **Statistical Analysis**
-   - Association measures: PMI, log-likelihood, min sensitivity, Welch's t-test
-   - Lexical diversity: TTR, MSTTR, Yule's K, MTLD
-   - All implemented in Rust for performance
+- **`productivity.py`** — frequency spectrum, Yule's K, hapax counts. Written
+  but not wired into `__init__.py` and not expected to work.
+- **`visualizations.py`** — entirely commented out.
+- **`embed.py`** — empty stub.
 
-4. **Data I/O**
-   - Text corpus reader (eager/lazy)
-   - NLTK converter
-   - BIO sentence tagging
+### Not implemented
 
-5. **Polars Integration**
-   - `.corpus` expression namespace
-   - Plugin architecture
-   - Zero-copy data exchange
-
-### 🚧 Partially Complete (75%)
-
-**Simple Query Language** (BNCweb-style)
-
-Phase 1-3 Complete:
-- ✅ Basic words, case-insensitive
-- ✅ Wildcards: `?`, `*`, `+`
-- ✅ Alternatives: `[a,b,c]`
-- ✅ Word sequences
-- ✅ Gap tokens: `*`, `+`, `++`, `***`, `+++**`
-- ✅ POS tags: `word_TAG`, `_TAG`, `_{VERB}`
-- ✅ Lemmas: `{lemma}`, `{lemma/POS}`, `{lemma}_TAG`
-- ✅ Regex groups: `(pattern)?+*{m,n}`
-- ✅ Disjunction: `(a | b | c)`
-
-Phase 4 Not Started:
-- ❌ Proximity operators: `<<s>>`, `<<3>>`, `<<5<<`, `>>5>>`
-- ❌ Embedded alternatives: `neighbo[u,]r` (workaround available)
-
-### ❌ Missing (Critical)
-
-1. **User Documentation**
-   - README.md is empty
-   - No getting started guide
-   - No API reference
-   - No installation instructions
-
-2. **Testing**
-   - No Rust unit tests (Python integration only)
-   - Examples not tested automatically
+- **Proximity operators** (`<<s>>`, `<<3>>`, `<<5<<`, `>>5>>`) in the Simple
+  query language. See SIMPLE_QUERY_STATUS.md.
+- **`file_id` from the text corpus readers**, so a match can straddle the
+  boundary between two documents (`io.py` carries a TODO).
 
 ---
 
-## Recent Development Focus
+## Known Issues
 
-### Last 3 Commits (Jan 2025)
-1. Bump version to 0.1.4-pre, update dependencies
-2. Refactor documentation and format Python code
-3. Refactor collocates method and update collocation example
-
-### Untracked Work in Progress
-- `chunk.py` - BIO tag chunking utilities (~92 lines, ready to commit)
-- `SIMPLE_QUERY_STATUS.md` - Implementation tracking doc
-- `Simple_query_language.pdf` - BNCweb reference
-- `io.rs.hold`, `lib.rs.hold` - Old backups (deletable)
-
-### Recent Achievements
-- Clean refactor: removed AST layer from simple parser, direct CQP generation
-- Phase 3 features: regex groups, POS/lemma support, consecutive gaps
-- Upgraded to Python 3.10+, Rust Edition 2024
-- Comprehensive test suite (44 tests verify actual matched content)
-
----
-
-## Architecture Strengths
-
-1. **Performance-First Design**
-   - Rust for hot paths (matching, stats)
-   - Zero-copy pyo3-polars bridge
-   - Iterator-based, minimal allocations
-   - Lazy evaluation support
-
-2. **Code Quality**
-   - Clean separation of concerns
-   - Full type hints, checked with pyrefly
-   - Modern best practices
-   - "Minimal defensive programming" principle
-
-3. **Integration**
-   - Extends Polars via `.corpus` namespace
-   - Plugin architecture for custom expressions
-   - NLTK compatibility
+1. **No CI.** Nothing runs ruff, clippy, pyrefly, or pytest automatically.
+2. **No Rust unit tests.** The engine is exercised only through Python
+   integration tests.
+3. **`pyrefly check` reports 20 errors.** Three clusters: `T_Frame` variance in
+   `keywords.py` (returning `DataFrame | LazyFrame` where `T_Frame` is
+   declared); `Expr has no attribute corpus`, because the registered namespace
+   is invisible to the checker; and the unfinished `productivity.py`. Note that
+   `[tool.pyrefly] ignore-missing-imports` currently contains `"*"`, which
+   disables that check globally.
+4. **`ruff check` fails on tracked notebooks** — undefined names in
+   `user_guide/04-frequencies.ipynb` and `examples/concordance.ipynb`, an unused
+   import in `examples/keywords.ipynb`. All `.py` and `.rs` source is clean.
+5. **`__init__.py` leaks names.** Modules without `__all__` are star-imported,
+   so `polars_corpus.pl`, `.Any`, `.Optional` and most submodule names are bound
+   at top level. The `keywords` function also shadows the `keywords` module.
+6. **No published wheels or PyPI release.**
 
 ---
 
-## Known Limitations
+## Roadmap
 
-1. **Simple Query Language**
-   - No proximity operators yet (Phase 4)
-   - Embedded alternatives need workaround: `(neighbour|neighbor)` instead of `neighbo[u,]r`
+**Before a release**
+1. Add CI running ruff, clippy, pyrefly, and pytest.
+2. Resolve or explicitly suppress the pyrefly errors.
+3. Decide the fate of `productivity.py`, `visualizations.py`, and `embed.py`:
+   finish or delete.
+4. Emit `file_id` from the text corpus readers.
 
-2. **Documentation**
-   - Developer docs excellent (CLAUDE.md, QUERY_LANGUAGE.md)
-   - User docs non-existent (README empty)
-   - No API reference
+**Before 1.0**
+5. Proximity operators.
+6. Publish to PyPI.
 
-3. **Testing**
-   - Python integration tests comprehensive
-   - Rust unit tests missing
-   - No performance benchmarks
-
-4. **Release Status**
-   - Still pre-release (0.1.4-pre)
-   - No published wheels
-   - No PyPI release
-
----
-
-## Priority Roadmap
-
-### P0 (Blocker for 0.1.4 Release)
-1. Write README.md (installation, quick start, examples)
-2. Commit pending work (`chunk.py`, status docs)
-3. Clean up holdover files (`*.hold`)
-
-### P1 (Blocker for 1.0)
-4. Implement Phase 4 proximity operators
-5. Generate API documentation (Sphinx/MkDocs)
-6. Add tutorial/walkthrough
-7. Release 0.1.4, then 1.0
-
-### P2 (Quality Improvements)
-8. Add Rust unit tests
-9. Performance benchmarks
-10. More introductory examples
-11. Publish to PyPI
+**Quality**
+7. Rust unit tests for the matcher.
+8. Benchmarks (`examples/bench.py` is a starting point).
 
 ---
 
 ## Target Audience
 
-- **Primary:** Linguistics students and researchers
-- **Secondary:** Data scientists working with text corpora
-- **Use cases:** 100M+ word corpora on 16GB memory
+Linguistics students and researchers first, data scientists working with text
+second. Design target is 100M+ word corpora on 16GB of memory.
 
 ---
 
-## Dependencies Management
+## Dependencies
 
-- **Runtime:** polars ≥1.34, lark ≥1.2, pyparsing ≥3.2, nltk ≥3.9, ipywidgets ≥8.1
-- **Build:** maturin, pyo3 0.26, pyo3-polars 0.25
-- **Rust:** polars 0.52, statrs 0.18, itertools 0.14
-- **Dev:** pytest, pyrefly, ruff, jupyterlab
-- **Managed via:** uv with 3-level requirements (runtime, dev, examples)
+- **Runtime:** polars >=1.35, lark >=1.2, nltk >=3.9, anywidget >=0.9
+- **Build:** maturin, pyo3 0.28, pyo3-polars 0.27
+- **Rust:** polars 0.54, statrs 0.19, itertools 0.15
+- **Python:** >=3.11 (wheels are cp311-abi3)
+- **Managed via:** `pyproject.toml` plus `uv.lock`; see CLAUDE.md
 
 ---
 
 ## Build & Test Commands
 
 ```bash
-# Development
-make develop      # Rebuild after Rust changes
-ruff format       # Format Python
-ruff check        # Lint Python
-cargo fmt         # Format Rust
-cargo clippy      # Lint Rust
+make develop          # Rebuild after Rust changes; ~1s incremental
+make develop-release  # Same, full release profile (benchmarking)
+make build            # Distribution wheels (M4 + x86_64)
+make docs             # Build the user guide
+
+ruff format && ruff check
+cargo fmt && cargo clippy
 pyrefly check python/polars_corpus/
-
-# Testing
-pytest            # Python changes don't need rebuild
-
-# Dependencies
-make locks        # Regenerate lock files
-make venv         # Sync virtual environment
-
-# Release
-make build        # Build wheels (M4 + x86_64)
+pytest
 ```
 
----
-
-## Design Notes
-
-### Crosstab/Association Measures API Refactor ✅ IMPLEMENTED
-
-**Completed:** 2025-01 (on `crosstab-api` branch)
-
-The API has been successfully refactored to use a struct-based design for cleaner association measure computation.
-
-**New API:**
-
-1. `crosstab()` bundles frequencies into a struct column:
-   ```python
-   ct = crosstab(df, "word", "collocate")
-   # Returns: word, collocate, freqs:{f12, f1, f2, n}
-
-   # Optional: customize struct column name
-   ct = crosstab(df, "word", "collocate", freqs_name="counts")
-   ```
-
-2. Association measures via expression namespace:
-   ```python
-   ct.with_columns(
-       pl.col("freqs").corpus.loglik().alias("ll"),
-       pl.col("freqs").corpus.pmi().alias("pmi"),
-       pl.col("freqs").corpus.minsens().alias("minsens"),
-   )
-   ```
-
-3. Standalone functions still work with explicit column names:
-   ```python
-   loglik("f12", "f1", "f2", "n")  # explicit columns
-   ```
-
-**Benefits:**
-- Cleaner API: no need to repeatedly specify frequency column names
-- Type safety: struct ensures all required fields are present
-- Flexibility: struct can be unnested if needed, or renamed via `freqs_name` parameter
-- Backwards compatible: standalone functions with explicit column names still work
+The virtualenv lives outside the source tree at `~/.venvs/polars_corpus`; do not
+run `uv run` in this directory. See the Environment section of CLAUDE.md for
+why.
 
 ---
 
 ## Notes
 
-- Simple query → CQP translation is elegant (no intermediate AST)
-- Test quality is excellent (verify actual matched content, not just counts)
-- Code is ready for production use in core areas
-- Main barrier to 1.0 is documentation and proximity operators
-- Architecture choices (Rust + Polars + pyo3) are sound for performance goals
+- The Simple query language compiles straight to CQP with no intermediate AST.
+- Tests assert on actual matched spans rather than match counts.
+- Association measures take a `freqs` struct column, so frequency column names
+  are named once in `crosstab()` rather than repeated at every call site.

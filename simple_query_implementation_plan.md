@@ -1,5 +1,15 @@
 # Simple Query Language Implementation Plan
 
+> **Superseded — kept for historical interest.** This is the pre-implementation
+> planning document, written to choose between compiling Simple queries straight
+> to opcodes and translating them to CQP. The second option was chosen and
+> shipped. Its description of the current architecture is also out of date: both
+> parsers use lark, not pyparsing.
+>
+> For what exists today see [SIMPLE_QUERY_STATUS.md](SIMPLE_QUERY_STATUS.md),
+> [simple_grammar.md](simple_grammar.md), and
+> [QUERY_LANGUAGE.md](QUERY_LANGUAGE.md).
+
 ## Overview
 
 Implement a parser for the BNCweb-style Simple Query Language that compiles to the same matcher opcodes as the existing CQP parser, enabling reuse of the matching infrastructure.
