@@ -38,7 +38,7 @@ Last updated: 2025-01-28
 | Word sequences | `word1 word2` | `quick brown fox` | ✅ |
 | Gap tokens | `*`, `+` | `fox * over`, `fox + over` | ✅ |
 | Escaping | `\?`, `\*` | `what\?` | ✅ (untested) |
-| Column selection | `column=` | `search(c, "NN*", column="pos")` | ✅ |
+| Column selection | `token_column=` | `search(c, "NN*", token_column="pos")` | ✅ |
 | **POS tags** | `word_TAG` | `lights_NN2`, `*ly_AJ0`, `_PNX` | ✅ |
 | **Lemma searches** | `{lemma}`, `{lemma/POS}` | `{light}`, `{light/V}` | ✅ |
 

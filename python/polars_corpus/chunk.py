@@ -52,14 +52,16 @@ def chunk_id(expr: pl.Expr) -> pl.Expr:
     return pl.when(expr.eq("O")).then(None).otherwise(chunk_idx)
 
 
-def with_chunk_index(df: T_Frame, column: str, name: str = "chunk_idx") -> T_Frame:
+def with_chunk_index(
+    df: T_Frame, chunk_column: str, name: str = "chunk_idx"
+) -> T_Frame:
     """Add a column with chunk IDs based on BIO tags.
 
     Parameters
     ----------
     df
         DataFrame or LazyFrame with BIO-tagged column.
-    column
+    chunk_column
         Name of column containing BIO tags.
     name
         Name for the new chunk ID column (default: "chunk_idx").
@@ -88,4 +90,4 @@ def with_chunk_index(df: T_Frame, column: str, name: str = "chunk_idx") -> T_Fra
     │ I   ┆ 2         │
     └─────┴───────────┘
     """
-    return df.with_columns(chunk_id(pl.col(column)).alias(name))
+    return df.with_columns(chunk_id(pl.col(chunk_column)).alias(name))

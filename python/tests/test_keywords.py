@@ -145,6 +145,23 @@ def test_keywords_lazy_matches_eager(method: str) -> None:
     assert_frame_equal(eager, lazy, check_row_order=False)
 
 
+@pytest.mark.parametrize("method", ["ll", "ttest"])
+def test_keywords_file_id_column(method: str) -> None:
+    # A corpus that names its file column something other than "file_id" must
+    # give the same answer once `file_id_column` points at it.
+    renamed_target = TARGET.rename({"file_id": "text_id"})
+    renamed_reference = REFERENCE.rename({"file_id": "text_id"})
+    expected = keywords(TARGET, REFERENCE, pl.col("norm"), method)
+    got = keywords(
+        renamed_target,
+        renamed_reference,
+        pl.col("norm"),
+        method,
+        file_id_column="text_id",
+    )
+    assert_frame_equal(expected, got, check_row_order=False)
+
+
 def test_keywords_invalid_method() -> None:
     with pytest.raises(ValueError):
         keywords(TARGET, REFERENCE, pl.col("norm"), "bogus")

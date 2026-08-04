@@ -147,7 +147,7 @@ def search_cqp(
 def search(
     df: pl.DataFrame,
     query: str,
-    column: str = "token",
+    token_column: str = "token",
     pos_column: str = "pos",
     lemma_column: str = "lemma",
     file_id_column: Optional[str] = None,
@@ -165,7 +165,7 @@ def search(
          Corpus to be searched.
     query : str
         Simple query string (BNCweb-style syntax)
-    column : str, optional
+    token_column : str, optional
         Column name for token searches (default: "token")
     pos_column : str, optional
         Column name for POS tag searches (default: "pos")
@@ -246,14 +246,14 @@ def search(
     >>> verb_text = corpus["token"][verb_span.start:verb_span.end]
 
     >>> # Search in a different column
-    >>> search(corpus, "NN*", column="pos")  # Find noun POS tags
+    >>> search(corpus, "NN*", token_column="pos")  # Find noun POS tags
 
     >>> # Keep matches from spanning file boundaries
     >>> search(corpus, "quick brown", file_id_column="file_id")
 
     """
     # Translate simple query to CQP
-    cqp_query = simple_to_cqp(query, column, pos_column, lemma_column)
+    cqp_query = simple_to_cqp(query, token_column, pos_column, lemma_column)
 
     # Use the CQP search function
     if matched_spans := get_matches(df, cqp_query, file_id_column):

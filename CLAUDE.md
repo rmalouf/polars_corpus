@@ -29,7 +29,9 @@ Managed via `uv` with three levels of requirements:
 - Regenerate lock files: `make locks`
 
 ## Data Format
-DataFrame with: `token`, `pos`/`c5`, `mode`, `fileid`, plus annotation columns
+DataFrame with: `token`, `pos`/`c5`, `mode`, `file_id`, plus annotation columns
+Column names are defaults, not requirements: every function that reads one of
+these roles takes a `*_column` parameter to point it elsewhere.
 
 ## Query Languages
 The package supports Simple (BNCweb-style) and CQP query syntaxes. See [QUERY_LANGUAGE.md](QUERY_LANGUAGE.md) for syntax details.

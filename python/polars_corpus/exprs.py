@@ -127,8 +127,8 @@ class CorpusDataFrame:
     def crosstab(self, x: str, y: str, freqs_name: str = "freqs") -> pl.DataFrame:
         return crosstab(self._df, x, y, freqs_name)
 
-    def with_chunk_index(self, chunk_col: str, **kwargs: Any) -> pl.DataFrame:
-        return with_chunk_index(self._df, chunk_col, **kwargs)
+    def with_chunk_index(self, chunk_column: str, **kwargs: Any) -> pl.DataFrame:
+        return with_chunk_index(self._df, chunk_column, **kwargs)
 
     def search(self, query: str, **kwargs: Any) -> Optional[SearchResults]:
         return search(self._df, query, **kwargs)
@@ -145,5 +145,5 @@ class CorpusLazyFrame:
     def crosstab(self, x: str, y: str, freqs_name: str = "freqs") -> pl.LazyFrame:
         return crosstab(self._lf, x, y, freqs_name)
 
-    def with_chunk_index(self, chunk_col: str, **kwargs: Any) -> pl.LazyFrame:
-        return with_chunk_index(self._lf, chunk_col, **kwargs)
+    def with_chunk_index(self, chunk_column: str, **kwargs: Any) -> pl.LazyFrame:
+        return with_chunk_index(self._lf, chunk_column, **kwargs)

@@ -1,7 +1,7 @@
 import polars as pl
 import pytest
 from lark.exceptions import LarkError
-from polars_corpus.matcher import Span, get_matches
+from polars_corpus.matcher import Span, get_matches, search
 
 
 def match_spans(matches):
@@ -801,6 +801,36 @@ class TestFileBoundaries:
         query = '[word="brown"] [word="fox"]'
         matches = get_matches(corpus, query, "file_id")
         assert match_spans(matches) == [Span(0, 2), Span(2, 4), Span(4, 6)]
+
+
+class TestRoleColumns:
+    """search() must route each query construct at the named column"""
+
+    @pytest.fixture
+    def renamed_corpus(self):
+        """A corpus using none of the default column names"""
+        return pl.DataFrame(
+            {
+                "w": ["the", "quick", "fox", "jumped"],
+                "p": ["DT", "JJ", "NN", "VBD"],
+                "l": ["the", "quick", "fox", "jump"],
+            }
+        )
+
+    @pytest.mark.parametrize(
+        "query,expected,description",
+        [
+            ("fox", [Span(2, 3)], "bare word uses token_column"),
+            ("_JJ", [Span(1, 2)], "bare tag uses pos_column"),
+            ("{jump}", [Span(3, 4)], "braces use lemma_column"),
+            ("quick_JJ", [Span(1, 2)], "word+tag uses both"),
+        ],
+    )
+    def test_columns_are_settable(self, renamed_corpus, query, expected, description):
+        results = search(
+            renamed_corpus, query, token_column="w", pos_column="p", lemma_column="l"
+        )
+        assert match_spans(results._matches) == expected, description
 
 
 if __name__ == "__main__":

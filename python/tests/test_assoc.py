@@ -4,7 +4,7 @@ import polars as pl
 import pytest
 from polars.exceptions import ColumnNotFoundError
 from polars.testing import assert_frame_equal
-from polars_corpus import chisq, crosstab, loglik, smp, welchs_t
+from polars_corpus import chisq, crosstab, loglik, output_name, smp, welchs_t
 
 
 def _chisq_ref(f12: int, f1: int, f2: int, n: int, yates: bool = False) -> float:
@@ -36,6 +36,30 @@ def test_crosstab_basic() -> None:
     assert "f1" in field_names
     assert "f2" in field_names
     assert "n" in field_names
+
+
+@pytest.mark.parametrize(
+    "expr,expected",
+    [
+        ("a", "a"),
+        (pl.col("a"), "a"),
+        (pl.col("a").str.to_lowercase(), "a"),  # root name survives
+        (pl.col("a").alias("b"), "b"),
+        (pl.Series("a", ["x"]), "a"),  # a Series carries its own name
+    ],
+)
+def test_output_name(expr, expected: str) -> None:
+    assert output_name(expr) == expected
+
+
+def test_crosstab_accepts_series() -> None:
+    # crosstab evaluates its arguments against one frame, so a Series of
+    # matching height is as good as a column name or an expression.
+    df = pl.DataFrame({"x": ["A", "A", "B", "B", "C"], "y": [1, 2, 1, 2, 1]})
+    series = pl.Series("x", df["x"].to_list())
+    by_name = crosstab(df, "x", "y").sort("x", "y")
+    by_series = crosstab(df, series, "y").sort("x", "y")
+    assert_frame_equal(by_name, by_series)
 
 
 def test_crosstab_missing_columns() -> None:

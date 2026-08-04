@@ -393,11 +393,11 @@ class TestConcordanceMetadata:
 
         assert "file_id" not in conc.columns
 
-    def test_metadata_with_chunk_tag(self):
+    def test_metadata_with_chunk_column(self):
         df = self._df().with_columns(pl.Series("chunks", ["O", "B", "I", "B", "I"]))
         results = SearchResults(df, "", [Match(Span(3, 5), {})])  # "fox jumps"
 
-        conc = results.concordance("token", chunk_tag="chunks", metadata="file_id")
+        conc = results.concordance("token", chunk_column="chunks", metadata="file_id")
 
         assert conc["file_id"].to_list() == ["doc2"]
 

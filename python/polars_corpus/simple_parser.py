@@ -141,9 +141,9 @@ def _resolve_pos_tag(raw: str) -> str:
 
 
 class SimpleCompiler(Transformer):
-    def __init__(self, column: str, pos_column: str, lemma_column: str) -> None:
+    def __init__(self, token_column: str, pos_column: str, lemma_column: str) -> None:
         super().__init__()
-        self.column = column
+        self.token_column = token_column
         self.pos_column = pos_column
         self.lemma_column = lemma_column
 
@@ -151,13 +151,13 @@ class SimpleCompiler(Transformer):
 
     def WORD(self, token: Any) -> str:
         pattern = wildcard_to_regex(_unescape(str(token)))
-        return _make_token(_make_constraint(self.column, pattern))
+        return _make_token(_make_constraint(self.token_column, pattern))
 
     def ALT_LIST(self, token: Any) -> str:
         inner = str(token)[1:-1]
         alts = [wildcard_to_regex(_unescape(a)) for a in inner.split(",")]
         combined = "|".join(alts)
-        return _make_token(_make_constraint(self.column, combined))
+        return _make_token(_make_constraint(self.token_column, combined))
 
     def GAPS(self, token: Any) -> str:
         return _gap_tokens(str(token))
@@ -176,7 +176,7 @@ class SimpleCompiler(Transformer):
         ]
         if word_part:
             word_pattern = wildcard_to_regex(_unescape(word_part))
-            constraints.insert(0, _make_constraint(self.column, word_pattern))
+            constraints.insert(0, _make_constraint(self.token_column, word_pattern))
         return _make_token(*constraints)
 
     @staticmethod
@@ -245,7 +245,7 @@ _parser = Lark(_GRAMMAR, start="start", parser="lalr", lexer="basic")
 
 def simple_to_cqp(
     query: str,
-    column: str = "token",
+    token_column: str = "token",
     pos_column: str = "pos",
     lemma_column: str = "lemma",
 ) -> str:
@@ -255,7 +255,7 @@ def simple_to_cqp(
     ----------
     query : str
         Simple query string using BNCweb syntax
-    column : str, optional
+    token_column : str, optional
         Column name for token searches (default: "token")
     pos_column : str, optional
         Column name for POS tag searches (default: "pos")
@@ -323,5 +323,5 @@ def simple_to_cqp(
     '$phrase: ([token="quick"%c] [token="brown"%c])'
     """
     tree = _parser.parse(query)
-    compiler = SimpleCompiler(column, pos_column, lemma_column)
+    compiler = SimpleCompiler(token_column, pos_column, lemma_column)
     return compiler.transform(tree)

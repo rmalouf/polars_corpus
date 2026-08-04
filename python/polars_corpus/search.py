@@ -7,6 +7,7 @@ import polars as pl
 from polars._typing import IntoExprColumn
 
 from ._internal import Match, py_concordance, py_kwic, spans_to_chunks
+from .utils import output_name
 
 __all__ = ["SearchResults", "concordance", "collocates"]
 
@@ -66,9 +67,9 @@ class SearchResults:
 
     def concordance(
         self,
-        expr: IntoExprColumn,
+        expr: IntoExprColumn = "token",
         window: Optional[int] = None,
-        chunk_tag: Optional[str] = None,
+        chunk_column: Optional[str] = None,
         metadata: Optional[str | list[str]] = None,
     ) -> pl.DataFrame:
         """Generate a KWIC (Key Word In Context) concordance DataFrame.
@@ -79,14 +80,14 @@ class SearchResults:
 
         Parameters
         ----------
-        expr : IntoExprColumn
+        expr : IntoExprColumn, default "token"
             Column name or Polars expression specifying which column(s)
             to use for generating the concordance display.
         window : int, optional
             Number of tokens to include on both left and right sides of
             each match. If None, returns matches with no context (equivalent
-            to window=0). When chunk_tag is specified, this parameter is ignored.
-        chunk_tag : str, optional
+            to window=0). When chunk_column is specified, this parameter is ignored.
+        chunk_column : str, optional
             Column name defining chunk boundaries for context extraction.
             When specified, context extends to chunk boundaries marked by
             "B" (begin) and "I" (inside) tags, ignoring the window parameter.
@@ -111,7 +112,7 @@ class SearchResults:
         --------
         >>> results.concordance("token", window=3)
         >>> results.concordance("token")  # No context, matches only
-        >>> results.concordance("token", chunk_tag="sentence_tags")  # Chunk boundaries
+        >>> results.concordance("token", chunk_column="sentence_tags")  # Chunk boundaries
         >>> results.concordance(["token", "pos"], window=5)  # Multiple columns
         >>> results.concordance("token", window=5, metadata=["file_id", "category"])
         """
@@ -123,12 +124,12 @@ class SearchResults:
                 metadata = [metadata]
             metadata_df = self._df.select(metadata)
 
-        if chunk_tag is not None:
-            chunk_tag_column = self._df.get_column(chunk_tag)
+        if chunk_column is not None:
+            chunk_values = self._df.get_column(chunk_column)
             return py_concordance(
                 self._df.select(expr),
                 self._matches,
-                chunk_tag_column,
+                chunk_values,
                 metadata_df,
             )
         else:
@@ -148,7 +149,7 @@ class SearchResults:
 
     def collocates(
         self,
-        column: str = "token",
+        expr: IntoExprColumn = "token",
         window: int = 5,
         min_freq: Optional[int] = 5,
         freqs_name: str = "freqs",
@@ -161,8 +162,9 @@ class SearchResults:
 
         Parameters
         ----------
-        column : str, default "token"
-            Column name specifying which column to use for collocate analysis.
+        expr : IntoExprColumn, default "token"
+            Column name or Polars expression specifying which column to use
+            for collocate analysis.
         window : int, default 5
             Number of tokens to include on both left and right sides of
             each match.
@@ -195,20 +197,23 @@ class SearchResults:
         >>> collocs.with_columns(ll=pl.col("freqs").corpus.loglik())
         """
 
-        conc = self.concordance(column, window=window)
+        # The concordance names its context columns after the expression's
+        # output name.
+        name = output_name(expr)
+        conc = self.concordance(expr, window=window)
         colloc = (
             conc.lazy()
             .select(
-                collocate=pl.col(f"{column}_left_context")
-                .list.concat(f"{column}_right_context")
+                collocate=pl.col(f"{name}_left_context")
+                .list.concat(f"{name}_right_context")
                 .explode()
             )
             .group_by("collocate")
             .len(name="f12")
             .join(
-                self._df.lazy().group_by(column).len(name="f2"),
+                self._df.lazy().group_by(expr).len(name="f2"),
                 left_on="collocate",
-                right_on=column,
+                right_on=name,
                 how="left",
             )
             .with_columns(n=self._df.height, f1=len(self._matches) * window * 2)
@@ -226,7 +231,7 @@ class SearchResults:
         self,
         expr: IntoExprColumn = "token",
         window: Optional[int] = 5,
-        chunk_tag: Optional[str] = None,
+        chunk_column: Optional[str] = None,
         metadata: Optional[str | list[str]] = None,
         page_size: int = 25,
     ) -> None:
@@ -243,8 +248,8 @@ class SearchResults:
         window : int, optional, default 5
             Number of tokens to include on both left and right sides of
             each match. If None, returns matches with no context (equivalent
-            to window=0). When chunk_tag is specified, this parameter is ignored.
-        chunk_tag : str, optional
+            to window=0). When chunk_column is specified, this parameter is ignored.
+        chunk_column : str, optional
             Column name defining chunk boundaries for context extraction.
             When specified, context extends to chunk boundaries marked by
             "B" (begin) and "I" (inside) tags, ignoring the window parameter.
@@ -258,13 +263,13 @@ class SearchResults:
         --------
         >>> results.view()  # Use defaults
         >>> results.view("token", window=10, page_size=50)
-        >>> results.view("token", chunk_tag="sent_tag")
+        >>> results.view("token", chunk_column="sent_tag")
         """
         from .view import ConcordanceWidget
 
         # Generate concordance
         conc = self.concordance(
-            expr, window=window, chunk_tag=chunk_tag, metadata=metadata
+            expr, window=window, chunk_column=chunk_column, metadata=metadata
         )
 
         # Determine the column name
@@ -454,15 +459,15 @@ class SearchResults:
 
 def concordance(
     search_results: SearchResults,
-    expr: IntoExprColumn,
+    expr: IntoExprColumn = "token",
     window: Optional[int] = None,
-    chunk_tag: Optional[str] = None,
+    chunk_column: Optional[str] = None,
     metadata: Optional[str | list[str]] = None,
 ) -> pl.DataFrame:
     """Generate a concordance from search results (functional interface).
 
     This function provides a functional interface to SearchResults.concordance().
-    It's equivalent to calling search_results.concordance(expr, window, chunk_tag, metadata).
+    It's equivalent to calling search_results.concordance(expr, window, chunk_column, metadata).
 
     Parameters
     ----------
@@ -473,8 +478,8 @@ def concordance(
     window : int, optional
         Number of tokens to include on both left and right sides of
         each match. If None, returns matches with no context (equivalent
-        to window=0). When chunk_tag is specified, this parameter is ignored.
-    chunk_tag : str, optional
+        to window=0). When chunk_column is specified, this parameter is ignored.
+    chunk_column : str, optional
         Column name defining chunk boundaries for context extraction.
         When specified, context extends to chunk boundaries marked by
         "B" (begin) and "I" (inside) tags, ignoring the window parameter.
@@ -494,14 +499,14 @@ def concordance(
     Examples
     --------
     >>> conc = concordance(results, "token", window=5)
-    >>> conc = concordance(results, "token", chunk_tag="sentence_tags")
+    >>> conc = concordance(results, "token", chunk_column="sentence_tags")
     """
-    return search_results.concordance(expr, window, chunk_tag, metadata)
+    return search_results.concordance(expr, window, chunk_column, metadata)
 
 
 def collocates(
     search_results: SearchResults,
-    column: str,
+    expr: IntoExprColumn = "token",
     window_size: int = 5,
     freqs_name: str = "freqs",
 ) -> pl.DataFrame:
@@ -515,8 +520,8 @@ def collocates(
     ----------
     search_results : SearchResults
         The search results to analyze for collocates.
-    column : str
-        Name of the column containing the tokens to analyze.
+    expr : IntoExprColumn, default "token"
+        Column name or Polars expression containing the tokens to analyze.
     window_size : int, default 5
         Size of the context window on each side of the match
         (total window = 2 * window_size).
@@ -545,18 +550,19 @@ def collocates(
     >>> # Find top collocates by raw frequency
     >>> top_collocs = collocs.sort(pl.col("freqs").struct.field("f12"), descending=True).head(20)
     """
-    f1 = search_results._df.lazy().group_by(column).len(name="f1")
-    conc = concordance(search_results, column, window_size)
+    name = output_name(expr)
+    f1 = search_results._df.lazy().group_by(expr).len(name="f1")
+    conc = concordance(search_results, expr, window_size)
     tbl = (
         conc.lazy()
         .select(
-            collocate=pl.col(f"{column}_left_context")
-            .list.concat(f"{column}_right_context")
+            collocate=pl.col(f"{name}_left_context")
+            .list.concat(f"{name}_right_context")
             .explode()
         )
         .group_by("collocate")
         .len(name="f12")
-        .join(f1, left_on="collocate", right_on="token", how="left")
+        .join(f1, left_on="collocate", right_on=name, how="left")
         .with_columns(
             f2=pl.lit(conc.height), n=search_results._df.height * window_size * 2
         )

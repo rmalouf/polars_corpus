@@ -7,6 +7,7 @@ from polars._typing import IntoExprColumn
 from polars.plugins import register_plugin_function
 
 from ._typing import T_Frame
+from .utils import output_name
 
 __all__ = [
     "crosstab",
@@ -61,12 +62,8 @@ def crosstab(
         If either column `x` or `y` does not exist in the DataFrame.
     """
     f12 = pl.len().cast(pl.UInt64)
-    if isinstance(x, str):
-        x = pl.col(x)
-    if isinstance(y, str):
-        y = pl.col(y)
-    x_name = x.meta.output_name()
-    y_name = y.meta.output_name()
+    x_name = output_name(x)
+    y_name = output_name(y)
     return (
         df.select(x, y)
         .drop_nulls([x_name, y_name])
