@@ -20,9 +20,9 @@ CORPUS = pl.DataFrame(
 )
 
 
-def expected(counts: list[float], n_files: int, method: str) -> float:
-    """The measure, computed the long way round from per-file frequencies."""
-    padded = counts + [0.0] * (n_files - len(counts))
+def expected(counts: list[float], n_files: int, method: str, size: float = 1) -> float:
+    """The measure, computed the long way round from per-file relative frequencies."""
+    padded = [c / size for c in counts] + [0.0] * (n_files - len(counts))
     mean = sum(padded) / n_files
     sd = sqrt(sum((x - mean) ** 2 for x in padded) / n_files)
     cv = sd / mean
@@ -55,12 +55,14 @@ def expected(counts: list[float], n_files: int, method: str) -> float:
     ],
 )
 def test_dispersion_values(method: str, column: str) -> None:
-    result = dispersion(CORPUS, "token", method, normalize=False)
+    result = dispersion(CORPUS, "token", method)
 
     assert result.columns == ["token", column]
     counts = {"a": [2.0, 1.0, 3.0], "b": [2.0, 1.0], "c": [1.0, 3.0], "d": [2.0]}
     got = dict(zip(result["token"], result[column]))
-    assert got == pytest.approx({w: expected(c, 3, method) for w, c in counts.items()})
+    assert got == pytest.approx(
+        {w: expected(c, 3, method, size=5) for w, c in counts.items()}
+    )
 
 
 @pytest.mark.parametrize(
@@ -69,7 +71,7 @@ def test_dispersion_values(method: str, column: str) -> None:
 def test_dispersion_ranks_by_evenness(method: str, column: str) -> None:
     # dispersion() returns rows unordered, so rank them here. An even spread is
     # the low end for the measures of unevenness and the high end for D and DA.
-    result = dispersion(CORPUS, "token", method, normalize=False).sort(
+    result = dispersion(CORPUS, "token", method).sort(
         column, descending=method in ("d", "da")
     )
     # "a" is spread over all three files; "d" occurs in one file only.
@@ -92,38 +94,36 @@ def test_dispersion_ranks_by_evenness(method: str, column: str) -> None:
 def test_dispersion_endpoints(
     counts: list[int], expected_value: float, method: str, column: str
 ) -> None:
+    # Pad every file out to the same size, so a word's dispersion depends only
+    # on how it is spread, not on incidental differences in file length.
+    size = 3
     corpus = pl.DataFrame(
         {
-            "token": ["x"] * sum(counts) + ["pad"] * 3,
+            "token": ["x"] * sum(counts) + ["pad"] * (size * len(counts) - sum(counts)),
             "file_id": [f"f{i}" for i, n in enumerate(counts) for _ in range(n)]
-            + ["f0", "f1", "f2"],
+            + [f"f{i}" for i, n in enumerate(counts) for _ in range(size - n)],
         }
     )
-    result = dispersion(corpus, "token", method, normalize=False)
+    result = dispersion(corpus, "token", method)
     got = dict(zip(result["token"], result[column]))
     assert got["x"] == pytest.approx(expected_value)
 
 
-@pytest.mark.parametrize(
-    "method,column,even,uneven",
-    [("d", "D", 1.0, 0.5), ("dp", "DP", 0.0, 0.25)],
-)
-def test_dispersion_normalize_divides_out_file_length(
-    method: str, column: str, even: float, uneven: float
+@pytest.mark.parametrize("method,column,even", [("d", "D", 1.0), ("dp", "DP", 0.0)])
+def test_dispersion_divides_out_file_length(
+    method: str, column: str, even: float
 ) -> None:
-    # Same rate in both files, but f1 is three times the length of f2. On raw
-    # counts that reads as uneven; on relative frequencies it is perfectly even.
+    # Same rate in both files, but f1 is three times the length of f2. Measured
+    # on relative frequencies rather than raw counts, this reads as even.
     corpus = pl.DataFrame(
         {
             "token": ["x", "x", "x", "y", "y", "y", "x", "y"],
             "file_id": ["f1"] * 6 + ["f2"] * 2,
         }
     )
-    normalized = dispersion(corpus, "token", method)
-    raw = dispersion(corpus, "token", method, normalize=False)
+    result = dispersion(corpus, "token", method)
 
-    assert normalized[column].to_list() == pytest.approx([even, even])
-    assert raw[column].to_list() == pytest.approx([uneven, uneven])
+    assert result[column].to_list() == pytest.approx([even, even])
 
 
 @pytest.mark.parametrize("method,column", [("d", "D"), ("da", "DA")])
@@ -157,22 +157,6 @@ def test_dispersion_indirect_term(term: pl.Expr) -> None:
 def test_dispersion_multi_column_term() -> None:
     with pytest.raises(ValueError, match="expr must identify a single column"):
         dispersion(CORPUS.with_columns(pos=pl.lit("N")), pl.col("token", "pos"), "d")
-
-
-@pytest.mark.parametrize("method,values", [("range", [2, 2]), ("range%", [100, 100])])
-def test_dispersion_range_ignores_normalize(method: str, values: list[float]) -> None:
-    # Which files a word falls in does not depend on how the counts are scaled.
-    corpus = pl.DataFrame(
-        {
-            "token": ["x", "x", "x", "y", "y", "y", "x", "y"],
-            "file_id": ["f1"] * 6 + ["f2"] * 2,
-        }
-    )
-    normalized = dispersion(corpus, "token", method)
-    raw = dispersion(corpus, "token", method, normalize=False)
-
-    assert normalized[method].to_list() == values
-    assert_frame_equal(normalized, raw, check_row_order=False)
 
 
 @pytest.mark.parametrize(

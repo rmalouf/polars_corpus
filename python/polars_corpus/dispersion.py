@@ -36,7 +36,6 @@ def dispersion(
     corpus: T_Frame,
     expr: IntoExpr,
     method: str,
-    normalize: bool = True,
     file_id_column: str = "file_id",
 ) -> T_Frame:
     """
@@ -61,14 +60,6 @@ def dispersion(
         - 'da' : Burch's DA, from the average difference between pairs of files
         - 'dp' : Gries's DP, how far the word's spread over the files falls
           from the corpus's own
-    normalize : bool, default True
-        Measure the per-file relative frequencies rather than the raw counts.
-        Leave this on unless the files are all the same length: with raw counts
-        a word looks unevenly spread simply because the files it falls in differ
-        in size. For 'dp', which works from proportions either way, this instead
-        chooses what an even spread means -- a share of the word in each file
-        matching the file's share of the corpus, or an equal share all round.
-        Ignored by 'range' and 'range%', which count files rather than tokens.
     file_id_column : str, default "file_id"
         Column holding file ids, defining the parts the word is spread across.
 
@@ -82,8 +73,6 @@ def dispersion(
     --------
     >>> import polars_corpus as plc
     >>> plc.dispersion(corpus, "lemma", "d")
-    >>> # Raw counts, for a corpus cut into equal-sized parts:
-    >>> plc.dispersion(corpus, "lemma", "cv", normalize=False)
 
     Raises
     ------
@@ -124,7 +113,7 @@ def dispersion(
     term_name = check_expr(lf, term)
 
     # Range only asks which files a word falls in, not how often, so it needs
-    # neither the per-file frequencies below nor `normalize`.
+    # none of the per-file frequencies below.
     if method in RANGE_METHODS:
         files = pl.col(file_id_column).n_unique()
         counts = (
@@ -143,7 +132,7 @@ def dispersion(
     # works from the counts and the file sizes side by side rather than from the
     # per-file frequencies the measures below share.
     if method == "dp":
-        result = dispersion_dp(lf, term, term_name, file_id_column, normalize)
+        result = dispersion_dp(lf, term, term_name, file_id_column)
         return collect_like(result, corpus)
 
     # Broadcast the file count rather than cross-joining it in: every row of the
@@ -153,14 +142,10 @@ def dispersion(
         .agg(pl.len().alias("_n"))
         .with_columns(pl.col(file_id_column).n_unique().alias("_N"))
     )
-    if normalize:
-        sizes = lf.group_by(file_id_column).agg(pl.len().alias("_size"))
-        per_file = per_file.join(sizes, on=file_id_column).select(
-            term_name, "_N", (pl.col("_n") / pl.col("_size")).alias("_n")
-        )
-    else:
-        # Float64 up front: the sum of squares below overflows a count dtype.
-        per_file = per_file.select(term_name, "_N", pl.col("_n").cast(pl.Float64))
+    sizes = lf.group_by(file_id_column).agg(pl.len().alias("_size"))
+    per_file = per_file.join(sizes, on=file_id_column).select(
+        term_name, "_N", (pl.col("_n") / pl.col("_size")).alias("_n")
+    )
 
     if method in SD_METHODS:
         result = dispersion_sd(per_file, term_name, method)
@@ -242,7 +227,6 @@ def dispersion_dp(
     term: pl.Expr,
     term_name: str,
     file_id_column: str,
-    normalize: bool,
 ) -> pl.LazyFrame:
     """Measure dispersion by how far the word's spread falls from the corpus's.
 
@@ -250,9 +234,8 @@ def dispersion_dp(
     share of the corpus it is expected to hold.
     """
     counts = lf.group_by(term, file_id_column).agg(pl.len().alias("_n"))
-    # Expected share: the file's own share of the corpus, or -- for files taken
-    # to be all the same length -- an equal cut of it.
-    expected = pl.col("_size") / pl.col("_size").sum() if normalize else 1 / pl.len()
+    # Expected share: the file's own share of the corpus.
+    expected = pl.col("_size") / pl.col("_size").sum()
     sizes = (
         lf.group_by(file_id_column)
         .agg(pl.len().alias("_size"))
