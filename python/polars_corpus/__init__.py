@@ -17,6 +17,12 @@ from .matcher import *  # noqa: F403
 from .search import *  # noqa: F403
 from .utils import *  # noqa: F403
 from .view import *  # noqa: F403
-from .visualizations import *  # noqa: F403
+
+try:
+    # matplotlib/seaborn are the "examples" extra, not a core dependency --
+    # plotting is unavailable, but the rest of the package still works.
+    from .visualizations import *  # noqa: F403
+except ImportError:
+    pass
 
 __version__ = importlib.metadata.version("polars-corpus")

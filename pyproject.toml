@@ -38,7 +38,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-examples = ["great_tables", "scipy"]
+examples = ["great_tables", "scipy", "matplotlib", "seaborn"]
 
 [project.urls]
 Repository = "https://github.com/rmalouf/polars_corpus"

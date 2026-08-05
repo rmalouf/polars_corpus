@@ -2478,8 +2478,10 @@ dependencies = [
 [package.optional-dependencies]
 examples = [
     { name = "great-tables" },
+    { name = "matplotlib" },
     { name = "scipy", version = "1.17.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12'" },
     { name = "scipy", version = "1.18.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
+    { name = "seaborn" },
 ]
 
 [package.dev-dependencies]
@@ -2524,9 +2526,11 @@ requires-dist = [
     { name = "anywidget", specifier = ">=0.9" },
     { name = "great-tables", marker = "extra == 'examples'" },
     { name = "lark", specifier = ">=1.2" },
+    { name = "matplotlib", marker = "extra == 'examples'" },
     { name = "nltk", specifier = ">=3.9" },
     { name = "polars", specifier = ">=1.35" },
     { name = "scipy", marker = "extra == 'examples'" },
+    { name = "seaborn", marker = "extra == 'examples'" },
 ]
 provides-extras = ["examples"]
 
