@@ -131,8 +131,7 @@ def keywords(
     target_lf = as_corpus(target, "target corpus")
     reference_lf = as_corpus(reference, "reference corpus")
 
-    # Resolving the term against each schema keeps the errors about missing
-    # columns in this function rather than deep in a query plan.
+    # Check up front, so column errors don't surface from inside a query plan.
     parts = (("target", target_lf), ("reference", reference_lf))
     names = []
     for part, corpus in parts:
@@ -147,8 +146,7 @@ def keywords(
         )
     expr_name = names[0]
 
-    # Selecting the term itself rather than the columns behind it keeps corpora
-    # with different annotation columns concatenable, whatever shape `expr` takes.
+    # Select the term itself, so differently annotated corpora still concatenate.
     combined = pl.concat(
         [
             corpus.select(keyword_expr, file_id_column).with_columns(
@@ -180,30 +178,11 @@ def keywords_assoc(
     min_target_df: int,
     k: Optional[float],
 ) -> pl.LazyFrame:
-    """
-    Rank keywords from a crosstab frequency table using PMI or log-likelihood.
+    """Rank keywords from a crosstab frequency table by association strength.
 
-    Parameters
-    ----------
-    freq_table : pl.LazyFrame
-        Crosstab of word by corpus part (see `polars_corpus.crosstab`), with a
-        `freqs` struct column and a `PART_FIELD` column identifying target vs.
-        reference rows.
-    method : {'pmi', 'll', 'chisq', 'smp', 'minsens'}
-        Association measure to compute.
-    min_target_tf : int
-        Minimum term frequency in the target corpus required for a word to
-        be included.
-    min_target_df : int
-        Minimum document frequency in the target corpus required for a word to
-        be included.
-    k : float, optional
-        Smoothing constant for 'smp'; required by that method only.
-
-    Returns
-    -------
-    pl.LazyFrame
-        Target-corpus rows sorted by association strength, descending.
+    `freq_table` is a crosstab of word by corpus part (see
+    `polars_corpus.crosstab`), with a `freqs` struct and a `PART_FIELD` column.
+    Returns the target-corpus rows, sorted descending.
     """
     # Call the measures directly rather than through the `.corpus` namespace,
     # which is registered at runtime and so is invisible to type checkers.
@@ -247,28 +226,11 @@ def keywords_ttest(
     expr_name: str,
     file_id_column: str = "file_id",
 ) -> pl.LazyFrame:
-    """
-    Rank keywords by Welch's t-test on per-file relative frequencies.
+    """Rank keywords by Welch's t-test on per-file relative frequencies.
 
-    Computes, for each word, the relative frequency in every file of the
-    combined target+reference corpus, then compares the target and reference
-    distributions of those per-file relative frequencies with Welch's t-test.
-
-    Parameters
-    ----------
-    combined : pl.LazyFrame
-        Target and reference corpora concatenated, with a `file_id` column and
-        a `PART_FIELD` column identifying target vs. reference rows.
-    expr_name : str
-        Column identifying the word/type to compute keyness for.
-    file_id_column : str, default "file_id"
-        Column holding file ids, defining the units the t-test compares.
-
-    Returns
-    -------
-    pl.LazyFrame
-        Words with a higher mean relative frequency in the target corpus
-        (`stat` > 0), sorted by p-value ascending.
+    `combined` is the two corpora concatenated, with a `PART_FIELD` column
+    marking which is which. Returns the words overrepresented in the target
+    (`stat` > 0), sorted by p-value ascending.
     """
     result = (
         combined.group_by(file_id_column, PART_FIELD, expr_name)

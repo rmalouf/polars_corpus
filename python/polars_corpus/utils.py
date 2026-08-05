@@ -40,23 +40,7 @@ def output_name(expr: IntoExprColumn) -> str:
 def as_corpus(frame: object, name: str = "corpus") -> pl.LazyFrame:
     """Check that `frame` is a usable corpus and return it lazily.
 
-    Parameters
-    ----------
-    frame : object
-        The value passed as a corpus.
-    name : str, default "corpus"
-        How to refer to it in error messages, e.g. "target corpus".
-
-    Returns
-    -------
-    pl.LazyFrame
-        `frame`, made lazy.
-
-    Raises
-    ------
-    ValueError
-        If `frame` is not a Polars DataFrame or LazyFrame, or is an empty
-        DataFrame.
+    Rejects non-frames and empty DataFrames. `name` is used in error messages.
     """
     if not isinstance(frame, (pl.DataFrame, pl.LazyFrame)):
         raise ValueError(
@@ -73,21 +57,7 @@ def as_corpus(frame: object, name: str = "corpus") -> pl.LazyFrame:
 def collect_like(result: pl.LazyFrame, source: T_Frame) -> T_Frame:
     """Give `result` back in the form `source` came in as.
 
-    The other half of `as_corpus`: a function that takes either kind of frame,
-    works lazily inside, and hands back a DataFrame to callers who passed one
-    and a LazyFrame to callers who passed one.
-
-    Parameters
-    ----------
-    result : pl.LazyFrame
-        The query to return.
-    source : DataFrame | LazyFrame
-        The frame the caller passed in.
-
-    Returns
-    -------
-    T_Frame
-        `result` collected if `source` is a DataFrame, otherwise `result`.
+    The other half of `as_corpus`: eager in, eager out.
     """
     # The eager/lazy correlation is real but not expressible: T_Frame is bound
     # by the argument types, while this branch is chosen at runtime.
@@ -104,23 +74,9 @@ def check_columns(
 ) -> None:
     """Check that `frame` has every column in `columns`.
 
-    Parameters
-    ----------
-    frame : DataFrame | LazyFrame
-        Corpus to check.
-    columns : Iterable[str]
-        Column names that must be present.
-    name : str, default "corpus"
-        How to refer to `frame` in error messages, e.g. "reference corpus".
-    param : str, optional
-        Keyword argument the caller took `columns` from, e.g. "file_id_column".
-        Named in the error so the reader knows which argument to change.
-
-    Raises
-    ------
-    ValueError
-        If any of `columns` is missing, reporting the first one along with the
-        columns the corpus does have.
+    Reports the first one missing along with the columns `frame` does have.
+    `name` and `param` are used in error messages, `param` naming the keyword
+    argument the reader should change.
     """
     have = frame.collect_schema().names()
     missing = [column for column in columns if column not in have]
@@ -138,40 +94,16 @@ def check_expr(
     name: str = "corpus",
     param: str = "expr",
 ) -> str:
-    """Check that `frame` can evaluate `expr`, and return the column it produces.
+    """Check that `frame` can evaluate `expr`, and name the column it produces.
 
-    Asks Polars to resolve `expr` against the schema, which reads no data but
-    settles what a column name alone cannot: regular expressions, selectors and
-    positional references all name their columns indirectly.
-
-    Parameters
-    ----------
-    frame : DataFrame | LazyFrame
-        Corpus the expression will be evaluated against.
-    expr : pl.Expr
-        The expression to check.
-    name : str, default "corpus"
-        How to refer to `frame` in error messages, e.g. "reference corpus".
-    param : str, default "expr"
-        Name of the parameter `expr` came from, used in error messages.
-
-    Returns
-    -------
-    str
-        The name of the column `expr` evaluates to.
-
-    Raises
-    ------
-    ValueError
-        If `frame` is missing a column `expr` needs, or if `expr` resolves to
-        anything other than a single column.
+    Resolving against the schema reads no data and settles what a column name
+    alone cannot: regexes, selectors and positional references name their
+    columns indirectly. `name` and `param` are used in error messages.
     """
     try:
         resolved = frame.lazy().select(expr).collect_schema().names()
     except pl.exceptions.ColumnNotFoundError as err:
-        # An expression that names its columns plainly -- which is what gets
-        # here in practice -- can say which one is missing, and say it the way
-        # every other missing column is reported.
+        # An expression that names its columns plainly can say which is missing.
         check_columns(frame, expr.meta.root_names(), name)
         raise ValueError(f"the {name} cannot evaluate {param}: {err}") from err
     if len(resolved) != 1:
@@ -185,25 +117,8 @@ def check_expr(
 def as_expr(expr: object, param: str = "expr", hint: str = "") -> pl.Expr:
     """Turn a column name into an expression, or pass one through.
 
-    Parameters
-    ----------
-    expr : object
-        A column name or a Polars expression.
-    param : str, default "expr"
-        Name of the parameter being checked, used in error messages.
-    hint : str, default ""
-        Sentence appended to the error raised for a Series, explaining why the
-        caller cannot accept one.
-
-    Returns
-    -------
-    pl.Expr
-        `expr` as an expression.
-
-    Raises
-    ------
-    ValueError
-        If `expr` is neither a column name nor an expression.
+    `param` is used in error messages; `hint` is appended to the one raised for
+    a Series, to say why the caller cannot accept one.
     """
     if isinstance(expr, str):
         return pl.col(expr)
@@ -223,25 +138,8 @@ def as_expr(expr: object, param: str = "expr", hint: str = "") -> pl.Expr:
 def check_choice(value: object, options: Sequence[str], param: str = "method") -> str:
     """Match `value` against `options`, ignoring case and surrounding space.
 
-    Parameters
-    ----------
-    value : object
-        The value passed by the caller.
-    options : Sequence[str]
-        Accepted values, in lower case.
-    param : str, default "method"
-        Name of the parameter being checked, used in error messages.
-
-    Returns
-    -------
-    str
-        The matching entry of `options`.
-
-    Raises
-    ------
-    ValueError
-        If `value` is not a string or is not one of `options`. The message
-        lists the options, and suggests one if `value` is close to it.
+    `options` are in lower case. A bad value gets an error listing them, with a
+    difflib suggestion if it is close to one. `param` names it in the message.
     """
     if not isinstance(value, str):
         raise ValueError(
