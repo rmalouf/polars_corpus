@@ -16,20 +16,17 @@ __all__ = [
     "dispersion",
 ]
 
-# Grouped by family: each shares an aggregation and gets its own branch below.
 RANGE_METHODS = ("range", "range%")
-
 SD_METHODS = ("sd", "cv", "cv%", "d")
-
 METHODS = RANGE_METHODS + SD_METHODS + ("da", "dp")
 
-# Julliand, A., & Chang-Rodriguez, E. (1964). Frequency dictionary of Spanish words.
-# The Hague: Mouton.
-# Gries, S. Th. (2008). Dispersions and adjusted frequencies in corpora.
-# International Journal of Corpus Linguistics, 13(4), 403-437.
-# Burch, B., Egbert, J., & Biber, D. (2017). Measuring and interpreting lexical
-# dispersion in corpus linguistics. Journal of Research Design and Statistics in
-# Linguistics and Communication Science, 3(2), 189-216.
+# - Juilland, A., & Chang-Rodriguez, E. (1964). Frequency dictionary of Spanish words.
+#   The Hague: Mouton.
+# - Gries, S. Th. (2008). Dispersions and adjusted frequencies in corpora.
+#   International Journal of Corpus Linguistics, 13(4), 403-437.
+# - Burch, B., Egbert, J., & Biber, D. (2017). Measuring and interpreting lexical
+#   dispersion in corpus linguistics. Journal of Research Design and Statistics in
+#   Linguistics and Communication Science, 3(2), 189-216.
 
 
 def dispersion(
@@ -108,12 +105,9 @@ def dispersion(
     term = as_expr(expr)
     lf = as_corpus(corpus)
 
-    # Check up front, so column errors don't surface from inside a query plan.
     check_columns(lf, [file_id_column], param="file_id_column")
     term_name = check_expr(lf, term)
 
-    # Range only asks which files a word falls in, not how often, so it needs
-    # none of the per-file frequencies below.
     if method in RANGE_METHODS:
         files = pl.col(file_id_column).n_unique()
         counts = (
@@ -135,8 +129,6 @@ def dispersion(
         result = dispersion_dp(lf, term, term_name, file_id_column)
         return collect_like(result, corpus)
 
-    # Broadcast the file count rather than cross-joining it in: every row of the
-    # corpus lands in some group here, so the file ids are all still present.
     per_file = (
         lf.group_by(term, file_id_column)
         .agg(pl.len().alias("_n"))
@@ -178,10 +170,8 @@ def dispersion_sd(
     # Watch out for rounding, which can drive variance below 0.
     sd = variance.clip(lower_bound=0).sqrt()
     cv = sd / mean
-    # Rounding again: a word in a single file overshoots the ceiling of 1.
     cv_norm = (cv / (pl.col("_N") - 1).sqrt()).clip(upper_bound=1)
 
-    # Choose the expression we need to evaluate
     measure = {
         "sd": sd.alias("sd"),
         "cv": cv.alias("cv"),
@@ -192,31 +182,21 @@ def dispersion_sd(
     return stats.select(term_name, measure)
 
 
-# DA is 1 - Gini, though Burch et al. give it as an O(n^2) loop over the pairs
-# and never draw the connection. Gini's mean difference, and the O(n log n) form
-# of it that the sorted weights below come from:
-# https://www.itl.nist.gov/div898/software/dataplot/refman2/auxillar/gmd.htm
-# https://bshlgrs.github.io/2016/12/29/gini.html
 def dispersion_da(per_file: pl.LazyFrame, term_name: str) -> pl.LazyFrame:
     """Measure dispersion by how much the per-file frequencies differ pairwise.
 
     `per_file` holds one row per word per file it occurs in, with the frequency
     in `_n` and the corpus-wide file count in `_N`.
     """
-    # Sorted, the sum of |ni - nj| over every pair of files weights each
-    # frequency by how many fall below it less how many above: `2i - _N + 1` at
-    # rank `i`. The files a word is absent from are zeros, so they sort to the
-    # front and contribute nothing themselves -- they only shift the ranks of
-    # the rest by `_N - len`, which folds into the weight below.
+    # Notes on the O(n log n) method used here:
+    #   https://www.itl.nist.gov/div898/software/dataplot/refman2/auxillar/gmd.htm
+    #   https://bshlgrs.github.io/2016/12/29/gini.html
     weight = 2 * pl.int_range(pl.len()) - 2 * pl.len() + pl.col("_N").first() + 1
     stats = per_file.group_by(term_name).agg(
         (pl.col("_n").sort() * weight).sum().alias("_P"),
         pl.col("_n").sum().alias("_S"),
         pl.col("_N").first(),
     )
-
-    # Scaling that sum by the pair count and by twice the mean leaves the count
-    # of files cancelled out: DA = 1 - (_P / (_N(_N-1)/2)) / (2 * _S / _N).
     da = 1 - pl.col("_P") / ((pl.col("_N") - 1) * pl.col("_S"))
 
     return stats.select(term_name, da.alias("DA"))
@@ -234,7 +214,6 @@ def dispersion_dp(
     share of the corpus it is expected to hold.
     """
     counts = lf.group_by(term, file_id_column).agg(pl.len().alias("_n"))
-    # Expected share: the file's own share of the corpus.
     expected = pl.col("_size") / pl.col("_size").sum()
     sizes = (
         lf.group_by(file_id_column)
@@ -252,7 +231,6 @@ def dispersion_dp(
         .agg(((observed - pl.col("_e")).abs() - pl.col("_e")).sum().alias("_A"))
     )
 
-    # Rounding can drive a word spread just as the corpus is below the floor of 0.
     dp = ((1 + pl.col("_A")) / 2).clip(lower_bound=0)
 
     return stats.select(term_name, dp.alias("DP"))
