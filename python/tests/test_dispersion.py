@@ -29,6 +29,8 @@ def expected(counts: list[float], n_files: int, method: str) -> float:
     # Every pair of files, spelled out, rather than the closed form DA uses.
     pairs = [abs(a - b) for a, b in combinations(padded, 2)]
     return {
+        "range": sum(x > 0 for x in padded),
+        "range%": 100 * sum(x > 0 for x in padded) / n_files,
         "sd": sd,
         "cv": cv,
         "cv%": cv * 100,
@@ -39,7 +41,15 @@ def expected(counts: list[float], n_files: int, method: str) -> float:
 
 @pytest.mark.parametrize(
     "method,column",
-    [("sd", "sd"), ("cv", "cv"), ("cv%", "cv%"), ("d", "D"), ("da", "DA")],
+    [
+        ("range", "range"),
+        ("range%", "range%"),
+        ("sd", "sd"),
+        ("cv", "cv"),
+        ("cv%", "cv%"),
+        ("d", "D"),
+        ("da", "DA"),
+    ],
 )
 def test_dispersion_values(method: str, column: str) -> None:
     result = dispersion(CORPUS, "token", method, normalize=False)
@@ -133,14 +143,38 @@ def test_dispersion_multi_column_term() -> None:
         dispersion(CORPUS.with_columns(pos=pl.lit("N")), pl.col("token", "pos"), "d")
 
 
-@pytest.mark.parametrize("method", ["sd", "d", "da"])
+@pytest.mark.parametrize("method,values", [("range", [2, 2]), ("range%", [100, 100])])
+def test_dispersion_range_ignores_normalize(method: str, values: list[float]) -> None:
+    # Which files a word falls in does not depend on how the counts are scaled.
+    corpus = pl.DataFrame(
+        {
+            "token": ["x", "x", "x", "y", "y", "y", "x", "y"],
+            "file_id": ["f1"] * 6 + ["f2"] * 2,
+        }
+    )
+    normalized = dispersion(corpus, "token", method)
+    raw = dispersion(corpus, "token", method, normalize=False)
+
+    assert normalized[method].to_list() == values
+    assert_frame_equal(normalized, raw, check_row_order=False)
+
+
+@pytest.mark.parametrize("method,value", [("range", 1), ("range%", 100.0)])
+def test_dispersion_range_single_file(method: str, value: float) -> None:
+    # Unlike the other measures, range is defined for a corpus of one file.
+    corpus = pl.DataFrame({"token": ["a", "b"], "file_id": ["f1", "f1"]})
+    result = dispersion(corpus, "token", method)
+    assert result[method].to_list() == [value, value]
+
+
+@pytest.mark.parametrize("method", ["range", "sd", "d", "da"])
 def test_dispersion_string_term_matches_expr(method: str) -> None:
     from_str = dispersion(CORPUS, "token", method)
     from_expr = dispersion(CORPUS, pl.col("token"), method)
     assert_frame_equal(from_str, from_expr, check_row_order=False)
 
 
-@pytest.mark.parametrize("method", ["sd", "cv", "cv%", "d", "da"])
+@pytest.mark.parametrize("method", ["range", "range%", "sd", "cv", "cv%", "d", "da"])
 def test_dispersion_lazy_matches_eager(method: str) -> None:
     eager = dispersion(CORPUS, "token", method)
     lazy = dispersion(CORPUS.lazy(), "token", method).collect()

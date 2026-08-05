@@ -17,9 +17,11 @@ __all__ = [
 ]
 
 # Grouped by family: each shares an aggregation and gets its own branch below.
+RANGE_METHODS = ("range", "range%")
+
 SD_METHODS = ("sd", "cv", "cv%", "d")
 
-METHODS = SD_METHODS + ("da",)
+METHODS = RANGE_METHODS + SD_METHODS + ("da",)
 
 # Julliand, A., & Chang-Rodriguez, E. (1964). Frequency dictionary of Spanish words.
 # The Hague: Mouton.
@@ -49,9 +51,11 @@ def dispersion(
     expr : IntoExpr
         Column name or expression identifying the word/type to measure
         (e.g. token or lemma).
-    method : {'sd', 'cv', 'cv%', 'd', 'da'}
+    method : {'range', 'range%', 'sd', 'cv', 'cv%', 'd', 'da'}
         Dispersion measure to compute:
 
+        - 'range' : number of files the word occurs in
+        - 'range%' : the range as a percentage of the files in the corpus
         - 'sd' : standard deviation of the per-file frequencies
         - 'cv' : coefficient of variation, `sd` over the mean
         - 'cv%' : the coefficient of variation as a percentage
@@ -61,7 +65,8 @@ def dispersion(
         Measure the per-file relative frequencies rather than the raw counts.
         Leave this on unless the files are all the same length: with raw counts
         a word looks unevenly spread simply because the files it falls in differ
-        in size.
+        in size. Ignored by 'range' and 'range%', which count files rather than
+        tokens.
     file_id_column : str, default "file_id"
         Column holding file ids, defining the parts the word is spread across.
 
@@ -89,17 +94,21 @@ def dispersion(
     -----
     Only the columns `expr` and `file_id_column` name are read.
 
-    'sd' scales with a word's frequency, so it is comparable only between words
-    of similar frequency; 'cv', 'cv%', 'd' and 'da' divide that scale out. 'd'
-    and 'da' both run from 0 (the word falls in a single file) to 1 (spread
-    perfectly evenly), but 'da' compares the files to each other rather than to
-    their mean, so one outlying file sways it less.
+    'range', 'range%' and 'sd' scale with a word's frequency, so they are
+    comparable only between words of similar frequency; 'cv', 'cv%', 'd' and
+    'da' divide that scale out. 'range%' does divide out the number of files,
+    so unlike 'range' it can be compared across corpora cut into different
+    numbers of parts. 'd' and 'da' both run from 0 (the word falls in a single
+    file) to 1 (spread perfectly evenly), but 'da' compares the files to each
+    other rather than to their mean, so one outlying file sways it less.
 
     Sort the result to rank words, keeping in mind which end is which: 'sd',
     'cv' and 'cv%' measure variation, so an even spread is the low end, while
-    'd' and 'da' measure evenness directly and an even spread is the high end.
+    'range', 'range%', 'd' and 'da' measure evenness directly and an even
+    spread is the high end.
 
-    A corpus of a single file gives NaN: dispersion across one part is undefined.
+    A corpus of a single file gives NaN for every measure but 'range' and
+    'range%': dispersion across one part is undefined.
     """
     method = check_choice(method, METHODS)
     term = as_expr(expr)
@@ -108,6 +117,22 @@ def dispersion(
     # Check up front, so column errors don't surface from inside a query plan.
     check_columns(lf, [file_id_column], param="file_id_column")
     term_name = check_expr(lf, term)
+
+    # Range only asks which files a word falls in, not how often, so it needs
+    # neither the per-file frequencies below nor `normalize`.
+    if method in RANGE_METHODS:
+        files = pl.col(file_id_column).n_unique()
+        counts = (
+            lf.select(term, file_id_column)
+            .with_columns(files.alias("_N"))
+            .group_by(term_name)
+            .agg(files.alias("range"), pl.col("_N").first())
+        )
+        measure = {
+            "range": pl.col("range"),
+            "range%": (100 * pl.col("range") / pl.col("_N")).alias("range%"),
+        }[method]
+        return collect_like(counts.select(term_name, measure), corpus)
 
     # Broadcast the file count rather than cross-joining it in: every row of the
     # corpus lands in some group here, so the file ids are all still present.
