@@ -21,7 +21,7 @@ RANGE_METHODS = ("range", "range%")
 
 SD_METHODS = ("sd", "cv", "cv%", "d")
 
-METHODS = RANGE_METHODS + SD_METHODS + ("da",)
+METHODS = RANGE_METHODS + SD_METHODS + ("da", "dp")
 
 # Julliand, A., & Chang-Rodriguez, E. (1964). Frequency dictionary of Spanish words.
 # The Hague: Mouton.
@@ -30,8 +30,6 @@ METHODS = RANGE_METHODS + SD_METHODS + ("da",)
 # Burch, B., Egbert, J., & Biber, D. (2017). Measuring and interpreting lexical
 # dispersion in corpus linguistics. Journal of Research Design and Statistics in
 # Linguistics and Communication Science, 3(2), 189-216.
-
-# TODO: Add Gries's DP
 
 
 def dispersion(
@@ -51,7 +49,7 @@ def dispersion(
     expr : IntoExpr
         Column name or expression identifying the word/type to measure
         (e.g. token or lemma).
-    method : {'range', 'range%', 'sd', 'cv', 'cv%', 'd', 'da'}
+    method : {'range', 'range%', 'sd', 'cv', 'cv%', 'd', 'da', 'dp'}
         Dispersion measure to compute:
 
         - 'range' : number of files the word occurs in
@@ -61,12 +59,16 @@ def dispersion(
         - 'cv%' : the coefficient of variation as a percentage
         - 'd' : Julliand's D, `1 - cv / sqrt(N - 1)` for `N` files
         - 'da' : Burch's DA, from the average difference between pairs of files
+        - 'dp' : Gries's DP, how far the word's spread over the files falls
+          from the corpus's own
     normalize : bool, default True
         Measure the per-file relative frequencies rather than the raw counts.
         Leave this on unless the files are all the same length: with raw counts
         a word looks unevenly spread simply because the files it falls in differ
-        in size. Ignored by 'range' and 'range%', which count files rather than
-        tokens.
+        in size. For 'dp', which works from proportions either way, this instead
+        chooses what an even spread means -- a share of the word in each file
+        matching the file's share of the corpus, or an equal share all round.
+        Ignored by 'range' and 'range%', which count files rather than tokens.
     file_id_column : str, default "file_id"
         Column holding file ids, defining the parts the word is spread across.
 
@@ -95,20 +97,23 @@ def dispersion(
     Only the columns `expr` and `file_id_column` name are read.
 
     'range', 'range%' and 'sd' scale with a word's frequency, so they are
-    comparable only between words of similar frequency; 'cv', 'cv%', 'd' and
-    'da' divide that scale out. 'range%' does divide out the number of files,
-    so unlike 'range' it can be compared across corpora cut into different
-    numbers of parts. 'd' and 'da' both run from 0 (the word falls in a single
-    file) to 1 (spread perfectly evenly), but 'da' compares the files to each
-    other rather than to their mean, so one outlying file sways it less.
+    comparable only between words of similar frequency; the rest divide that
+    scale out. 'range%' does divide out the number of files, so unlike 'range'
+    it can be compared across corpora cut into different numbers of parts. 'd'
+    and 'da' both run from 0 (the word falls in a single file) to 1 (spread
+    perfectly evenly), but 'da' compares the files to each other rather than to
+    their mean, so one outlying file sways it less. 'dp' runs the other way,
+    from 0 (spread exactly as the corpus is) up towards 1, and reaches that
+    ceiling only for a word confined to a vanishingly small file.
 
     Sort the result to rank words, keeping in mind which end is which: 'sd',
-    'cv' and 'cv%' measure variation, so an even spread is the low end, while
-    'range', 'range%', 'd' and 'da' measure evenness directly and an even
+    'cv', 'cv%' and 'dp' measure unevenness, so an even spread is the low end,
+    while 'range', 'range%', 'd' and 'da' measure evenness directly and an even
     spread is the high end.
 
-    A corpus of a single file gives NaN for every measure but 'range' and
-    'range%': dispersion across one part is undefined.
+    A corpus of a single file gives NaN for 'sd', 'cv', 'cv%', 'd' and 'da':
+    dispersion across one part is undefined. 'dp' gives 0 instead, there being
+    no second file for the word to be spread unevenly over.
     """
     method = check_choice(method, METHODS)
     term = as_expr(expr)
@@ -133,6 +138,13 @@ def dispersion(
             "range%": (100 * pl.col("range") / pl.col("_N")).alias("range%"),
         }[method]
         return collect_like(counts.select(term_name, measure), corpus)
+
+    # DP weighs each file's share of the word against a share of its own, so it
+    # works from the counts and the file sizes side by side rather than from the
+    # per-file frequencies the measures below share.
+    if method == "dp":
+        result = dispersion_dp(lf, term, term_name, file_id_column, normalize)
+        return collect_like(result, corpus)
 
     # Broadcast the file count rather than cross-joining it in: every row of the
     # corpus lands in some group here, so the file ids are all still present.
@@ -223,3 +235,41 @@ def dispersion_da(per_file: pl.LazyFrame, term_name: str) -> pl.LazyFrame:
     da = 1 - pl.col("_P") / ((pl.col("_N") - 1) * pl.col("_S"))
 
     return stats.select(term_name, da.alias("DA"))
+
+
+def dispersion_dp(
+    lf: pl.LazyFrame,
+    term: pl.Expr,
+    term_name: str,
+    file_id_column: str,
+    normalize: bool,
+) -> pl.LazyFrame:
+    """Measure dispersion by how far the word's spread falls from the corpus's.
+
+    Half the total gap between the share of the word each file holds and the
+    share of the corpus it is expected to hold.
+    """
+    counts = lf.group_by(term, file_id_column).agg(pl.len().alias("_n"))
+    # Expected share: the file's own share of the corpus, or -- for files taken
+    # to be all the same length -- an equal cut of it.
+    expected = pl.col("_size") / pl.col("_size").sum() if normalize else 1 / pl.len()
+    sizes = (
+        lf.group_by(file_id_column)
+        .agg(pl.len().alias("_size"))
+        .select(file_id_column, expected.alias("_e"))
+    )
+
+    observed = pl.col("_n") / pl.col("_n").sum()
+    # A file the word is absent from is off by its whole expected share, and
+    # those shares sum to 1 over the corpus, so dropping the present files'
+    # shares from the total leaves exactly what the absent ones contribute.
+    stats = (
+        counts.join(sizes, on=file_id_column)
+        .group_by(term_name)
+        .agg(((observed - pl.col("_e")).abs() - pl.col("_e")).sum().alias("_A"))
+    )
+
+    # Rounding can drive a word spread just as the corpus is below the floor of 0.
+    dp = ((1 + pl.col("_A")) / 2).clip(lower_bound=0)
+
+    return stats.select(term_name, dp.alias("DP"))
