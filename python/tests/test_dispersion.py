@@ -1,3 +1,4 @@
+from itertools import combinations
 from math import isnan, sqrt
 
 import polars as pl
@@ -25,17 +26,20 @@ def expected(counts: list[float], n_files: int, method: str) -> float:
     mean = sum(padded) / n_files
     sd = sqrt(sum((x - mean) ** 2 for x in padded) / n_files)
     cv = sd / mean
+    # Every pair of files, spelled out, rather than the closed form DA uses.
+    pairs = [abs(a - b) for a, b in combinations(padded, 2)]
     return {
         "sd": sd,
         "cv": cv,
         "cv%": cv * 100,
         "d": 1 - cv / sqrt(n_files - 1),
+        "da": 1 - (sum(pairs) / len(pairs)) / (2 * mean),
     }[method]
 
 
 @pytest.mark.parametrize(
     "method,column",
-    [("sd", "sd"), ("cv", "cv"), ("cv%", "cv%"), ("d", "D")],
+    [("sd", "sd"), ("cv", "cv"), ("cv%", "cv%"), ("d", "D"), ("da", "DA")],
 )
 def test_dispersion_values(method: str, column: str) -> None:
     result = dispersion(CORPUS, "token", method, normalize=False)
@@ -46,25 +50,28 @@ def test_dispersion_values(method: str, column: str) -> None:
     assert got == pytest.approx({w: expected(c, 3, method) for w, c in counts.items()})
 
 
-@pytest.mark.parametrize("method,column", [("cv", "cv"), ("d", "D")])
+@pytest.mark.parametrize("method,column", [("cv", "cv"), ("d", "D"), ("da", "DA")])
 def test_dispersion_ranks_by_evenness(method: str, column: str) -> None:
     # dispersion() returns rows unordered, so rank them here. An even spread is
-    # the low end for the measures of variation and the high end for D.
+    # the low end for the measures of variation and the high end for D and DA.
     result = dispersion(CORPUS, "token", method, normalize=False).sort(
-        column, descending=method == "d"
+        column, descending=method in ("d", "da")
     )
     # "a" is spread over all three files; "d" occurs in one file only.
     assert result["token"].to_list() == ["a", "b", "c", "d"]
 
 
+@pytest.mark.parametrize("method,column", [("d", "D"), ("da", "DA")])
 @pytest.mark.parametrize(
-    "counts,expected_d",
+    "counts,expected_value",
     [
         ([1, 1, 1], 1.0),  # perfectly even
         ([3, 0, 0], 0.0),  # confined to a single file
     ],
 )
-def test_dispersion_d_endpoints(counts: list[int], expected_d: float) -> None:
+def test_dispersion_endpoints(
+    counts: list[int], expected_value: float, method: str, column: str
+) -> None:
     corpus = pl.DataFrame(
         {
             "token": ["x"] * sum(counts) + ["pad"] * 3,
@@ -72,8 +79,9 @@ def test_dispersion_d_endpoints(counts: list[int], expected_d: float) -> None:
             + ["f0", "f1", "f2"],
         }
     )
-    result = dispersion(corpus, "token", "d", normalize=False)
-    assert dict(zip(result["token"], result["D"]))["x"] == pytest.approx(expected_d)
+    result = dispersion(corpus, "token", method, normalize=False)
+    got = dict(zip(result["token"], result[column]))
+    assert got["x"] == pytest.approx(expected_value)
 
 
 def test_dispersion_normalize_divides_out_file_length() -> None:
@@ -92,10 +100,11 @@ def test_dispersion_normalize_divides_out_file_length() -> None:
     assert raw["D"].to_list() == pytest.approx([0.5, 0.5])
 
 
-def test_dispersion_single_file_is_undefined() -> None:
+@pytest.mark.parametrize("method,column", [("d", "D"), ("da", "DA")])
+def test_dispersion_single_file_is_undefined(method: str, column: str) -> None:
     corpus = pl.DataFrame({"token": ["a", "b"], "file_id": ["f1", "f1"]})
-    result = dispersion(corpus, "token", "d")
-    assert all(isnan(value) for value in result["D"])
+    result = dispersion(corpus, "token", method)
+    assert all(isnan(value) for value in result[column])
 
 
 def test_dispersion_computed_term() -> None:
@@ -124,14 +133,14 @@ def test_dispersion_multi_column_term() -> None:
         dispersion(CORPUS.with_columns(pos=pl.lit("N")), pl.col("token", "pos"), "d")
 
 
-@pytest.mark.parametrize("method", ["sd", "d"])
+@pytest.mark.parametrize("method", ["sd", "d", "da"])
 def test_dispersion_string_term_matches_expr(method: str) -> None:
     from_str = dispersion(CORPUS, "token", method)
     from_expr = dispersion(CORPUS, pl.col("token"), method)
     assert_frame_equal(from_str, from_expr, check_row_order=False)
 
 
-@pytest.mark.parametrize("method", ["sd", "cv", "cv%", "d"])
+@pytest.mark.parametrize("method", ["sd", "cv", "cv%", "d", "da"])
 def test_dispersion_lazy_matches_eager(method: str) -> None:
     eager = dispersion(CORPUS, "token", method)
     lazy = dispersion(CORPUS.lazy(), "token", method).collect()
@@ -155,7 +164,7 @@ def test_dispersion_ignores_other_columns() -> None:
     assert_frame_equal(expected_result, got, check_row_order=False)
 
 
-@pytest.mark.parametrize("method", ["D", " CV% ", "Sd"])
+@pytest.mark.parametrize("method", ["D", " CV% ", "Sd", "Da"])
 def test_dispersion_method_case_insensitive(method: str) -> None:
     got = dispersion(CORPUS, "token", method)
     expected_result = dispersion(CORPUS, "token", method.strip().lower())
