@@ -1,3 +1,5 @@
+import warnings
+
 import polars as pl
 import pytest
 from polars.testing import assert_frame_equal
@@ -186,6 +188,94 @@ def test_keywords_file_id_column(method: str) -> None:
         file_id_column="text_id",
     )
     assert_frame_equal(expected, got, check_row_order=False)
+
+
+NULL_ROWS = pl.DataFrame({"norm": [None, None], "file_id": ["t1", "t2"]})
+
+
+@pytest.mark.parametrize("method", ["ll", "pmi", "chisq", "minsens", "ttest"])
+@pytest.mark.parametrize("part", ["target", "reference"])
+def test_keywords_drops_null_terms(method: str, part: str) -> None:
+    # A null term is not an occurrence of anything, so it gets no row of its own
+    # -- and the corpus totals the measures divide by count only what survives.
+    frames = {"target": TARGET, "reference": REFERENCE}
+    expected = keywords(frames["target"], frames["reference"], "norm", method)
+    frames[part] = pl.concat([frames[part], NULL_ROWS])
+    with pytest.warns(UserWarning, match=f"the {part} corpus holding a null 'norm'"):
+        got = keywords(frames["target"], frames["reference"], "norm", method)
+    assert None not in got["norm"].to_list()
+    assert_frame_equal(expected, got, check_row_order=False)
+
+
+@pytest.mark.parametrize("method", ["ll", "pmi", "chisq", "minsens", "ttest"])
+@pytest.mark.parametrize("part", ["target", "reference"])
+def test_keywords_drops_null_file_ids(method: str, part: str) -> None:
+    # A token with no file id is in no document, so it must not add a document
+    # of its own to the counts `min_target_df` and 'ttest' work from.
+    frames = {"target": TARGET, "reference": REFERENCE}
+    dropped = {
+        part: frames[part].filter(pl.col("file_id") != frames[part]["file_id"][0])
+    }
+    expected = keywords(
+        dropped.get("target", TARGET),
+        dropped.get("reference", REFERENCE),
+        "norm",
+        method,
+    )
+    frames[part] = frames[part].with_columns(
+        pl.when(pl.col("file_id") == frames[part]["file_id"][0])
+        .then(None)
+        .otherwise(pl.col("file_id"))
+        .alias("file_id")
+    )
+    with pytest.warns(UserWarning, match=f"the {part} corpus holding a null 'file_id'"):
+        got = keywords(frames["target"], frames["reference"], "norm", method)
+    assert_frame_equal(expected, got, check_row_order=False)
+
+
+def test_keywords_null_file_id_not_a_document() -> None:
+    # "the" is in all three target files; blanking one file id must leave it a
+    # document frequency of 2, not 3 with null counted as a file of its own.
+    target = TARGET.with_columns(
+        pl.when(pl.col("file_id") == "t3")
+        .then(None)
+        .otherwise(pl.col("file_id"))
+        .alias("file_id")
+    )
+    with pytest.warns(UserWarning, match="null 'file_id'"):
+        result = keywords(target, REFERENCE, "norm", "ll")
+    assert dict(zip(result["norm"], result["target_df"])) == {
+        "cat": 2,
+        "dog": 1,
+        "the": 2,
+    }
+
+
+def test_keywords_null_warning_counts_rows() -> None:
+    target = pl.concat(
+        [TARGET, NULL_ROWS, pl.DataFrame({"norm": ["x"], "file_id": [None]})]
+    )
+    with pytest.warns(
+        UserWarning,
+        match=r"dropped 3 of 12 rows of the target corpus .* 'norm' or 'file_id'",
+    ):
+        keywords(target, REFERENCE, "norm", "ll")
+
+
+def test_keywords_no_warning_without_nulls() -> None:
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        keywords(TARGET, REFERENCE, "norm", "ll")
+
+
+def test_keywords_lazy_does_not_warn() -> None:
+    # Counting the dropped rows of a LazyFrame would mean reading it up front.
+    target = pl.concat([TARGET, NULL_ROWS]).lazy()
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        got = keywords(target, REFERENCE.lazy(), "norm", "ll").collect()
+    # Dropped all the same, just silently.
+    assert None not in got["norm"].to_list()
 
 
 def test_keywords_invalid_method() -> None:

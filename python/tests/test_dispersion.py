@@ -58,7 +58,7 @@ def expected(counts: list[float], n_files: int, method: str, size: float = 1) ->
 def test_dispersion_values(method: str, column: str) -> None:
     result = dispersion(CORPUS, "token", method)
 
-    assert result.columns == ["token", column]
+    assert result.columns == ["token", "freq", column]
     counts = {"a": [2.0, 1.0, 3.0], "b": [2.0, 1.0], "c": [1.0, 3.0], "d": [2.0]}
     got = dict(zip(result["token"], result[column]))
     assert got == pytest.approx(
@@ -142,7 +142,7 @@ def test_dispersion_computed_term() -> None:
         corpus, pl.col("token").str.to_lowercase().alias("norm"), "d"
     ).sort("D", descending=True)
 
-    assert result.columns == ["norm", "D"]
+    assert result.columns == ["norm", "freq", "D"]
     # Case-folded, "cat" is in every file and so is more evenly spread than "dog".
     assert result["norm"].to_list() == ["cat", "dog"]
 
@@ -212,6 +212,52 @@ def test_dispersion_method_case_insensitive(method: str) -> None:
 
 
 ALL_METHODS = ["range", "range%", "sd", "cv", "cv%", "d", "da", "dp"]
+
+# Corpus frequencies of CORPUS, summed over the per-file counts above.
+FREQS = {"a": 6, "b": 3, "c": 4, "d": 2}
+
+
+@pytest.mark.parametrize("method", ALL_METHODS)
+def test_dispersion_reports_frequency(method: str) -> None:
+    # Every method reports the same frequency, whichever route it takes to it.
+    result = dispersion(CORPUS, "token", method)
+    assert dict(zip(result["token"], result["freq"])) == FREQS
+
+
+@pytest.mark.parametrize("method", ALL_METHODS)
+@pytest.mark.parametrize(
+    "min_freq,expected_words",
+    [
+        (0, {"a", "b", "c", "d"}),  # the default keeps everything
+        (3, {"a", "b", "c"}),  # "d" (freq 2) drops out
+        (4, {"a", "c"}),  # inclusive bound: "c" (freq 4) survives
+        (7, set()),  # above every word in the corpus
+    ],
+)
+def test_dispersion_min_freq(
+    method: str, min_freq: int, expected_words: set[str]
+) -> None:
+    result = dispersion(CORPUS, "token", method, min_freq=min_freq)
+    assert set(result["token"]) == expected_words
+
+
+@pytest.mark.parametrize("method", ALL_METHODS)
+def test_dispersion_min_freq_only_filters(method: str) -> None:
+    # Filtering happens after the measure, so the words that survive keep the
+    # values they had with the rest of the corpus in view.
+    full = dispersion(CORPUS, "token", method).filter(pl.col("freq") >= 3)
+    got = dispersion(CORPUS, "token", method, min_freq=3)
+    assert_frame_equal(full, got, check_row_order=False)
+
+
+def test_dispersion_freq_counts_surviving_rows() -> None:
+    # Nulls are dropped before anything is counted, so they are not in `freq`.
+    corpus = pl.concat(
+        [CORPUS, pl.DataFrame({"token": ["a", "a"], "file_id": [None, None]})]
+    )
+    with pytest.warns(UserWarning, match="'file_id'"):
+        result = dispersion(corpus, "token", "d")
+    assert dict(zip(result["token"], result["freq"])) == FREQS
 
 
 @pytest.mark.parametrize("method", ALL_METHODS)

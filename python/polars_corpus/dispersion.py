@@ -34,6 +34,7 @@ def dispersion(
     corpus: T_Frame,
     expr: IntoExpr,
     method: str,
+    min_freq: int = 0,
     file_id_column: str = "file_id",
 ) -> T_Frame:
     """
@@ -58,19 +59,27 @@ def dispersion(
         - 'da' : Burch's DA, from the average difference between pairs of files
         - 'dp' : Gries's DP, how far the word's spread over the files falls
           from the corpus's own
+    min_freq : int, default 0
+        Minimum corpus frequency a word needs to be reported. Every measure
+        here is unstable for a word seen only a handful of times, so raising
+        this is usually the first thing to do with a ranked result.
     file_id_column : str, default "file_id"
         Column holding file ids, defining the parts the word is spread across.
 
     Returns
     -------
     T_Frame
-        One row per word with its dispersion, in no particular order.
-        Eager if `corpus` is a DataFrame, lazy if it is a LazyFrame.
+        One row per word, in no particular order, with its corpus frequency in
+        `freq` and its dispersion in a column named for the measure: 'range',
+        'range%', 'sd', 'cv', 'cv%', 'D', 'DA' or 'DP'. Eager if `corpus` is a
+        DataFrame, lazy if it is a LazyFrame.
 
     Examples
     --------
     >>> import polars_corpus as plc
     >>> plc.dispersion(corpus, "lemma", "d")
+    >>> # Rank the reasonably frequent words from least to most evenly spread:
+    >>> plc.dispersion(corpus, "lemma", "d", min_freq=50).sort("D")
 
     Raises
     ------
@@ -100,9 +109,10 @@ def dispersion(
     every lemma's frequency in it.
 
     'range', 'range%' and 'sd' scale with a word's frequency, so they are
-    comparable only between words of similar frequency; the rest divide that
-    scale out. 'range%' does divide out the number of files, so unlike 'range'
-    it can be compared across corpora cut into different numbers of parts. 'd'
+    comparable only between words of similar frequency; `freq` is reported
+    alongside the measure to make that visible. The rest divide that scale out.
+    'range%' does divide out the number of files, so unlike 'range' it can be
+    compared across corpora cut into different numbers of parts. 'd'
     and 'da' both run from 0 (the word falls in a single file) to 1 (spread
     perfectly evenly), but 'da' compares the files to each other rather than to
     their mean, so one outlying file sways it less. 'dp' runs the other way,
@@ -136,35 +146,43 @@ def dispersion(
         counts = (
             lf.with_columns(files.alias("_N"))
             .group_by(term_name)
-            .agg(files.alias("range"), pl.col("_N").first())
+            .agg(files.alias("range"), pl.len().alias("freq"), pl.col("_N").first())
         )
         measure = {
             "range": pl.col("range"),
             "range%": (100 * pl.col("range") / pl.col("_N")).alias("range%"),
         }[method]
-        return collect_like(counts.select(term_name, measure), corpus)
+        result = counts.select(term_name, "freq", measure)
 
     # DP weighs each file's share of the word against a share of its own, so it
     # works from the counts and the file sizes side by side rather than from the
     # per-file frequencies the measures below share.
-    if method == "dp":
+    elif method == "dp":
         result = dispersion_dp(lf, term_name, file_id_column)
-        return collect_like(result, corpus)
 
-    per_file = (
-        lf.group_by(term_name, file_id_column)
-        .agg(pl.len().alias("_n"))
-        .with_columns(pl.col(file_id_column).n_unique().alias("_N"))
-    )
-    sizes = lf.group_by(file_id_column).agg(pl.len().alias("_size"))
-    per_file = per_file.join(sizes, on=file_id_column).select(
-        term_name, "_N", (pl.col("_n") / pl.col("_size")).alias("_n")
-    )
-
-    if method in SD_METHODS:
-        result = dispersion_sd(per_file, term_name, method)
     else:
-        result = dispersion_da(per_file, term_name)
+        per_file = (
+            lf.group_by(term_name, file_id_column)
+            .agg(pl.len().alias("_n"))
+            .with_columns(pl.col(file_id_column).n_unique().alias("_N"))
+        )
+        sizes = lf.group_by(file_id_column).agg(pl.len().alias("_size"))
+        # Keep the raw count as well: the measures work from the rate, but the
+        # frequency reported alongside them is of occurrences, not of shares.
+        per_file = per_file.join(sizes, on=file_id_column).select(
+            term_name,
+            "_N",
+            pl.col("_n").alias("_f"),
+            (pl.col("_n") / pl.col("_size")).alias("_n"),
+        )
+
+        if method in SD_METHODS:
+            result = dispersion_sd(per_file, term_name, method)
+        else:
+            result = dispersion_da(per_file, term_name)
+
+    if min_freq:
+        result = result.filter(pl.col("freq") >= min_freq)
 
     return collect_like(result, corpus)
 
@@ -176,13 +194,15 @@ def dispersion_sd(
 ) -> pl.LazyFrame:
     """Measure dispersion by how much the per-file frequencies vary.
 
-    `per_file` holds one row per word per file it occurs in, with the frequency
-    in `_n` and the corpus-wide file count in `_N`.
+    `per_file` holds one row per word per file it occurs in, with the relative
+    frequency in `_n`, the raw count in `_f`, and the corpus-wide file count in
+    `_N`.
     """
     # Files a word never occurs in add nothing to either sum; `_N` restores them.
     stats = per_file.group_by(term_name).agg(
         pl.col("_n").sum().alias("_S"),
         (pl.col("_n") ** 2).sum().alias("_Q"),
+        pl.col("_f").sum().alias("freq"),
         pl.col("_N").first(),
     )
 
@@ -201,14 +221,15 @@ def dispersion_sd(
         "d": (1 - cv_norm).alias("D"),
     }[method]
 
-    return stats.select(term_name, measure)
+    return stats.select(term_name, "freq", measure)
 
 
 def dispersion_da(per_file: pl.LazyFrame, term_name: str) -> pl.LazyFrame:
     """Measure dispersion by how much the per-file frequencies differ pairwise.
 
-    `per_file` holds one row per word per file it occurs in, with the frequency
-    in `_n` and the corpus-wide file count in `_N`.
+    `per_file` holds one row per word per file it occurs in, with the relative
+    frequency in `_n`, the raw count in `_f`, and the corpus-wide file count in
+    `_N`.
     """
     # Notes on the O(n log n) method used here:
     #   https://www.itl.nist.gov/div898/software/dataplot/refman2/auxillar/gmd.htm
@@ -217,11 +238,12 @@ def dispersion_da(per_file: pl.LazyFrame, term_name: str) -> pl.LazyFrame:
     stats = per_file.group_by(term_name).agg(
         (pl.col("_n").sort() * weight).sum().alias("_P"),
         pl.col("_n").sum().alias("_S"),
+        pl.col("_f").sum().alias("freq"),
         pl.col("_N").first(),
     )
     da = 1 - pl.col("_P") / ((pl.col("_N") - 1) * pl.col("_S"))
 
-    return stats.select(term_name, da.alias("DA"))
+    return stats.select(term_name, "freq", da.alias("DA"))
 
 
 def dispersion_dp(
@@ -249,9 +271,12 @@ def dispersion_dp(
     stats = (
         counts.join(sizes, on=file_id_column)
         .group_by(term_name)
-        .agg(((observed - pl.col("_e")).abs() - pl.col("_e")).sum().alias("_A"))
+        .agg(
+            ((observed - pl.col("_e")).abs() - pl.col("_e")).sum().alias("_A"),
+            pl.col("_n").sum().alias("freq"),
+        )
     )
 
     dp = ((1 + pl.col("_A")) / 2).clip(lower_bound=0)
 
-    return stats.select(term_name, dp.alias("DP"))
+    return stats.select(term_name, "freq", dp.alias("DP"))

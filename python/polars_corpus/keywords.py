@@ -14,6 +14,7 @@ from .utils import (
     check_columns,
     check_expr,
     collect_like,
+    drop_null_rows,
 )
 
 __all__ = [
@@ -99,10 +100,23 @@ def keywords(
         listed above; or if `method` is 'smp' and `k` is missing or not
         positive.
 
+    Warns
+    -----
+    UserWarning
+        If rows are dropped from either corpus for holding a null. Raised only
+        for an eager corpus: counting the dropped rows of a LazyFrame would mean
+        reading it before the caller has asked for anything.
+
     Notes
     -----
     Only the columns `expr` and `file_id_column` name are read, so the target
     and reference corpora need not have matching schemas otherwise.
+
+    Rows holding a null in either are dropped: a token with no value for `expr`
+    is not an occurrence of anything, and one with no file id is in no document.
+    The corpus sizes the measures divide by count what survives, so over a
+    corpus whose `lemma` is null on punctuation, keyness is measured per
+    lemma-bearing token rather than per token.
     """
     method = check_choice(method, METHODS)
     keyword_expr = as_expr(
@@ -132,9 +146,9 @@ def keywords(
     reference_lf = as_corpus(reference, "reference corpus")
 
     # Check up front, so column errors don't surface from inside a query plan.
-    parts = (("target", target_lf), ("reference", reference_lf))
+    parts = (("target", target_lf, target), ("reference", reference_lf, reference))
     names = []
-    for part, corpus in parts:
+    for part, corpus, _ in parts:
         check_columns(
             corpus, [file_id_column], f"{part} corpus", param="file_id_column"
         )
@@ -146,15 +160,18 @@ def keywords(
         )
     expr_name = names[0]
 
-    # Select the term itself, so differently annotated corpora still concatenate.
-    combined = pl.concat(
-        [
-            corpus.select(keyword_expr, file_id_column).with_columns(
-                pl.lit(part).alias(PART_FIELD)
-            )
-            for part, corpus in parts
-        ]
-    )
+    # Select the term itself, so differently annotated corpora still concatenate,
+    # then drop the rows holding a null in either column. A token with no value
+    # for `expr` is not an occurrence of anything, and one with no file id is in
+    # no document; left in, they pad the corpus totals the measures divide by and
+    # add a file of their own to the document counts.
+    selected = []
+    for part, corpus, source in parts:
+        rows = drop_null_rows(
+            corpus.select(keyword_expr, file_id_column), source, f"{part} corpus"
+        )
+        selected.append(rows.with_columns(pl.lit(part).alias(PART_FIELD)))
+    combined = pl.concat(selected)
 
     if method == "ttest":
         result = keywords_ttest(combined, expr_name, file_id_column)

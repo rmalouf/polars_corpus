@@ -1,12 +1,15 @@
+import warnings
+
+import matplotlib.pyplot as plt
 import polars as pl
 import seaborn as sns
 from matplotlib.axes import Axes
-import matplotlib.pyplot as plt
 
 from ._typing import IntoExpr, T_Frame
 from .utils import (
     as_corpus,
     as_expr,
+    check_columns,
     check_expr,
 )
 
@@ -50,12 +53,25 @@ def barcode_plot(
     Returns
     -------
     Axes
-        The matplotlib axes the plot was drawn on.
+        The matplotlib axes the plot was drawn on, one row per word in
+        `targets`, in the order given.
 
     Examples
     --------
     >>> import polars_corpus as plc
     >>> plc.barcode_plot(corpus, "lemma", ["cat", "dog"])
+
+    Raises
+    ------
+    ValueError
+        If `corpus` is not a Polars DataFrame or LazyFrame, is empty, or cannot
+        evaluate `expr`; or if `expr` is not a column name or expression.
+
+    Warns
+    -----
+    UserWarning
+        If a word in `targets` does not occur in the corpus. It still gets a
+        row, drawn empty.
     """
     term = as_expr(expr)
     lf = as_corpus(corpus)
@@ -64,20 +80,40 @@ def barcode_plot(
     if isinstance(targets, str):
         targets = [targets]
 
+    # Filter on the term's own column rather than on `expr`: a computed term is
+    # gone from the frame by the time the select is through with it.
     data = (
-        lf.with_row_index().select("index", expr).filter(term.is_in(targets)).collect()
+        lf.with_row_index()
+        .select("index", term)
+        .filter(pl.col(term_name).is_in(targets))
+        .collect()
     )
+
+    # Reduce before crossing into Python: `data` can hold millions of matches,
+    # but at most one distinct value per target.
+    found = set(data[term_name].unique().to_list())
+    if missing := [target for target in targets if target not in found]:
+        warnings.warn(
+            f"{', '.join(repr(target) for target in missing)} "
+            f"{'do' if len(missing) > 1 else 'does'} not occur in the corpus's "
+            f"{term_name!r} column",
+            stacklevel=2,
+        )
 
     ax = sns.stripplot(
         x="index",
         y=term_name,
         data=data,
+        # Keep the rows in the order asked for, and give a word that occurs
+        # nowhere a row of its own rather than dropping it off the plot.
+        order=targets,
         marker="|",
         linewidth=linewidth,
         size=size,
         jitter=jitter,
         **kwargs,
     )
+    ax.set(xlabel="index", title=f"Barcode plot: {term_name}")
 
     return ax
 
@@ -126,27 +162,49 @@ def dispersion_plot(
     Returns
     -------
     Axes
-        The matplotlib axes the plot was drawn on.
+        The matplotlib axes the plot was drawn on, one row per file `target`
+        occurs in.
 
     Examples
     --------
     >>> import polars_corpus as plc
     >>> plc.dispersion_plot(corpus, "lemma", "whale")
+
+    Raises
+    ------
+    ValueError
+        If `corpus` is not a Polars DataFrame or LazyFrame, is empty, or is
+        missing a column `dispersion_plot` needs; if `expr` is not a column name
+        or expression; or if `target` does not occur in the corpus.
+
+    Notes
+    -----
+    Only the files `target` occurs in get a row, so the plot says how evenly the
+    word is spread over those files, not over the corpus. Read it alongside
+    `dispersion(corpus, expr, "range")`, which counts them.
     """
     term = as_expr(expr)
     lf = as_corpus(corpus)
 
+    check_columns(lf, [file_id_column], param="file_id_column")
+    term_name = check_expr(lf, term)
+
+    position = pl.int_range(1, pl.len() + 1)
     if relative:
-        data = lf.with_columns(
-            (pl.int_range(1, pl.len() + 1) / pl.len())
-            .over(file_id_column)
-            .alias("index")
+        position = position / pl.len()
+    # Filter on the term's own column rather than on `expr`: a computed term is
+    # gone from the frame by the time the select is through with it.
+    data = (
+        lf.select(position.over(file_id_column).alias("index"), file_id_column, term)
+        .filter(pl.col(term_name) == target)
+        .collect()
+    )
+
+    if data.height == 0:
+        raise ValueError(
+            f"{target!r} does not occur in the corpus's {term_name!r} column, "
+            f"so there is nothing to plot"
         )
-    else:
-        data = lf.with_columns(
-            pl.int_range(1, pl.len() + 1).over(file_id_column).alias("index")
-        )
-    data = data.select("index", file_id_column, expr).filter(term == target).collect()
 
     ax = sns.stripplot(
         x="index",
