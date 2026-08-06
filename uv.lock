@@ -2479,6 +2479,7 @@ dependencies = [
 examples = [
     { name = "great-tables" },
     { name = "matplotlib" },
+    { name = "pyarrow" },
     { name = "scipy", version = "1.17.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12'" },
     { name = "scipy", version = "1.18.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
     { name = "seaborn" },
@@ -2529,6 +2530,7 @@ requires-dist = [
     { name = "matplotlib", marker = "extra == 'examples'" },
     { name = "nltk", specifier = ">=3.9" },
     { name = "polars", specifier = ">=1.35" },
+    { name = "pyarrow", marker = "extra == 'examples'", specifier = ">=14" },
     { name = "scipy", marker = "extra == 'examples'" },
     { name = "seaborn", marker = "extra == 'examples'" },
 ]
@@ -2560,7 +2562,7 @@ notebooks = [
     { name = "maturin", specifier = ">=1.8.3" },
     { name = "notebook", specifier = ">=7.4.0" },
     { name = "pip", specifier = ">=25.0.1" },
-    { name = "pyarrow" },
+    { name = "pyarrow", specifier = ">=14" },
     { name = "pyrefly", specifier = ">=0.62" },
     { name = "pytest", specifier = ">=8.3.5" },
     { name = "scipy" },

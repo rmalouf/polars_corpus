@@ -21,6 +21,9 @@ CORPUS = pl.DataFrame(
     }
 )
 
+# A keyword table as `keywords()` returns one: ranked, strongest first.
+KEYWORDS = pl.DataFrame({"token": ["cat", "dog", "eel"], "LL": [9.0, 4.0, 1.0]})
+
 
 @pytest.fixture(autouse=True)
 def close_figures():
@@ -155,12 +158,50 @@ def test_plot_lazy_corpus(plot) -> None:
 
 
 def test_keyword_plot_labels_every_stem() -> None:
-    keywords = pl.DataFrame({"token": ["cat", "dog", "eel"], "LL": [9.0, 4.0, 1.0]})
-    ax = keyword_plot(keywords, "token", "LL")
+    ax = keyword_plot(KEYWORDS, "token", "LL")
     assert [text.get_text() for text in ax.texts] == ["cat", "dog", "eel"]
 
 
 def test_keyword_plot_top_k() -> None:
-    keywords = pl.DataFrame({"token": ["cat", "dog", "eel"], "LL": [9.0, 4.0, 1.0]})
-    ax = keyword_plot(keywords, "token", "LL", top_k=2)
+    ax = keyword_plot(KEYWORDS, "token", "LL", top_k=2)
     assert [text.get_text() for text in ax.texts] == ["cat", "dog"]
+
+
+def test_keyword_plot_computed_term() -> None:
+    # A computed term exists only in the select, so the labels have to be read
+    # from there rather than from the frame the caller handed over.
+    ax = keyword_plot(KEYWORDS, pl.col("token").str.to_uppercase(), "LL")
+    assert [text.get_text() for text in ax.texts] == ["CAT", "DOG", "EEL"]
+
+
+def test_keyword_plot_computed_keyness() -> None:
+    ax = keyword_plot(KEYWORDS, "token", (pl.col("LL") * 2).alias("scaled"))
+    assert list(ax.containers[0].markerline.get_xdata()) == [18.0, 8.0, 2.0]
+
+
+def test_keyword_plot_ignores_other_columns() -> None:
+    # A keyword table carries columns the plot never reads, `keywords()`'s
+    # frequency struct among them.
+    keywords = KEYWORDS.with_columns(
+        pl.struct(f12=pl.col("LL"), f1=pl.col("LL")).alias("freqs")
+    )
+    assert [
+        text.get_text() for text in keyword_plot(keywords, "token", "LL").texts
+    ] == [
+        "cat",
+        "dog",
+        "eel",
+    ]
+
+
+def test_keyword_plot_empty_keyword_df() -> None:
+    # Left to itself the stem plot raises out of numpy, reducing over no data.
+    with pytest.raises(ValueError, match="the keyword_df is empty"):
+        keyword_plot(KEYWORDS.clear(), "token", "LL")
+    with pytest.raises(ValueError, match="the keyword_df is empty"):
+        keyword_plot(KEYWORDS.lazy().filter(pl.col("LL") > 100), "token", "LL")
+
+
+def test_keyword_plot_missing_column() -> None:
+    with pytest.raises(ValueError, match="the keyword_df has no column 'lemma'"):
+        keyword_plot(KEYWORDS, "lemma", "LL")

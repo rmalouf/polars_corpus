@@ -229,7 +229,7 @@ def keyword_plot(
     term_expr: IntoExpr,
     keyness_expr: IntoExpr,
     ax: Axes | None = None,
-    top_k: int = 10,
+    top_k: int | None = 10,
     descending: bool = True,
     padding: int = 6,
     **kwargs,
@@ -255,7 +255,7 @@ def keyword_plot(
         stem is positioned at.
     ax : Axes, optional
         Axes to draw on. A new figure and axes are created if not given.
-    top_k : int, default 10
+    top_k : int | None, default 10
         Number of rows to plot, taken from the start of `keyword_df`.
         Plots every row if `top_k` is `None` or non-positive.
     descending : bool, default True
@@ -270,22 +270,35 @@ def keyword_plot(
     Axes
         The matplotlib axes the plot was drawn on.
 
+    Raises
+    ------
+    ValueError
+        If `keyword_df` is not a Polars DataFrame or LazyFrame, is empty, or
+        cannot evaluate `term_expr` or `keyness_expr`; or if either of those is
+        not a column name or expression.
+
     Examples
     --------
     >>> import polars_corpus as plc
     >>> male_keywords = plc.keywords(male_corpus, reference, "token", "ll")
-    >>> plc.keyword_plot(male_keywords, "token", "LL", top_k=15)
+    >>> plc.keyword_plot(male_keywords, "token", "LogLik", top_k=15)
     """
-    term = as_expr(term_expr)
-    keyness = as_expr(keyness_expr)
-    lf = as_corpus(keyword_df)
-    term_name = check_expr(lf, term)
-    keyness_name = check_expr(lf, keyness)
+    term = as_expr(term_expr, param="term_expr")
+    keyness = as_expr(keyness_expr, param="keyness_expr")
+    lf = as_corpus(keyword_df, name="keyword_df")
+    term_name = check_expr(lf, term, name="keyword_df", param="term_expr")
+    keyness_name = check_expr(lf, keyness, name="keyword_df", param="keyness_expr")
 
     if top_k is not None and top_k > 0:
         lf = lf.head(top_k)
 
-    keywords = lf.collect()
+    # Select the two expressions rather than collecting the frame whole: a
+    # computed term or score exists only once evaluated, and a keyword table
+    # carries columns (frequency structs, document counts) the plot never reads.
+    keywords = lf.select(term, keyness).collect()
+
+    if keywords.height == 0:
+        raise ValueError("the keyword_df is empty, so there is nothing to plot")
 
     if descending:
         indices = range(len(keywords), 0, -1)
@@ -317,7 +330,7 @@ def keyword_plot(
         )
 
     ax.set_yticks([])
-    for _, spine in ax.spines.items():
+    for spine in ax.spines.values():
         spine.set_visible(False)
 
     return ax
