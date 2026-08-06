@@ -64,8 +64,7 @@ def dispersion(
         Column name or expression identifying the word/type to measure
         (e.g. token or lemma).
     method : str | list of str
-        Dispersion measure to compute, or a list of them to compute together.
-        One of:
+        Dispersion measure to compute, or a list of them to compute together:
 
         - 'range' : number of files the word occurs in
         - 'range%' : the range as a percentage of the files in the corpus
@@ -78,8 +77,8 @@ def dispersion(
           from the corpus's own
     min_freq : int, default 0
         Minimum corpus frequency a word needs to be reported. Every measure
-        here is unstable for a word seen only a handful of times, so raising
-        this is usually the first thing to do with a ranked result.
+        here is unstable for rare words, so raising this is usually the first
+        thing to do with a ranked result.
     file_id_column : str, default "file_id"
         Column holding file ids, defining the parts the word is spread across.
 
@@ -114,39 +113,27 @@ def dispersion(
     is not an occurrence of anything, and one with no file id belongs to no part
     to be spread across. The file sizes the measures divide by count what
     survives, so over a corpus whose `lemma` is null on punctuation, lemma
-    frequencies are measured per lemma-bearing token rather than per token. That
-    makes the denominator depend on `expr`, but keeps it in the same units as
-    the counts above it -- otherwise a file heavy with punctuation would dilute
-    every lemma's frequency in it.
+    frequencies are measured per lemma-bearing token rather than per token.
 
-    'range', 'range%' and 'sd' scale with a word's frequency, so they are
-    comparable only between words of similar frequency; `freq` is reported
-    alongside the measure to make that visible. The rest divide that scale out.
-    'range%' does divide out the number of files, so unlike 'range' it can be
-    compared across corpora cut into different numbers of parts. 'd'
-    and 'da' both run from 0 (the word falls in a single file) to 1 (spread
-    perfectly evenly), but 'da' compares the files to each other rather than to
-    their mean, so one outlying file sways it less. 'dp' runs the other way,
-    from 0 (spread exactly as the corpus is) up towards 1, and reaches that
-    ceiling only for a word confined to a vanishingly small file.
+    'range', 'range%' and 'sd' scale with a word's frequency, so they compare
+    only between words of similar frequency; `freq` is reported alongside to
+    make that visible. The rest divide that scale out, and 'range%' also divides
+    out the number of files, so it can be compared across corpora cut into
+    different numbers of parts.
 
-    Sort the result to rank words, keeping in mind which end is which: 'sd',
-    'cv', 'cv%' and 'dp' measure unevenness, so an even spread is the low end,
-    while 'range', 'range%', 'd' and 'da' measure evenness directly and an even
-    spread is the high end.
-
-    A corpus of a single file gives NaN for 'sd', 'cv', 'cv%', 'd' and 'da':
-    dispersion across one part is undefined. 'dp' gives 0 instead, there being
-    no second file for the word to be spread unevenly over.
+    Which end of a sort holds the evenly spread words varies: 'sd', 'cv', 'cv%'
+    and 'dp' measure unevenness, the other four measure evenness. 'd' and 'da'
+    both run from 0 (the word falls in a single file) to 1 (spread perfectly
+    evenly), but 'da' compares the files to each other rather than to their
+    mean, so one outlying file sways it less. 'dp' runs from 0 (spread exactly
+    as the corpus is) up towards 1, reaching that ceiling only for a word
+    confined to a vanishingly small file. A corpus of a single file gives NaN
+    for 'sd', 'cv', 'cv%', 'd' and 'da', and 0 for 'dp'.
 
     Asking for several measures at once costs less than asking for them one by
-    one, by however much they have in common: 'sd', 'cv', 'cv%' and 'd' all come
-    out of one pass over the corpus, as do 'range' and 'range%', and 'da' shares
-    most of its work with the first group. 'dp' reads the corpus its own way and
-    shares nothing, so adding it costs about what asking for it alone would. On
-    the BNC, the whole set together runs in about half the time of the eight
-    calls apart. Either way they arrive in one frame, ready to compare without a
-    join.
+    one: 'sd', 'cv', 'cv%' and 'd' all come out of one pass over the corpus, as
+    do 'range' and 'range%', and 'da' shares most of its work with the first
+    group. Only 'dp' reads the corpus its own way and shares nothing.
 
     Examples
     --------
@@ -252,9 +239,8 @@ def dispersion_sd(
 ) -> pl.LazyFrame:
     """Measure dispersion by how much the per-file frequencies vary.
 
-    `per_file` holds one row per word per file it occurs in, with the relative
-    frequency in `_n`, the raw count in `_f`, and the corpus-wide file count in
-    `_N`.
+    `per_file` holds one row per word per file it occurs in: relative frequency
+    in `_n`, raw count in `_f`, corpus-wide file count in `_N`.
     """
     # Files a word never occurs in add nothing to either sum; `_N` restores them.
     stats = per_file.group_by(term_name).agg(
@@ -285,9 +271,7 @@ def dispersion_sd(
 def dispersion_da(per_file: pl.LazyFrame, term_name: str) -> pl.LazyFrame:
     """Measure dispersion by how much the per-file frequencies differ pairwise.
 
-    `per_file` holds one row per word per file it occurs in, with the relative
-    frequency in `_n`, the raw count in `_f`, and the corpus-wide file count in
-    `_N`.
+    `per_file` is as in `dispersion_sd`.
     """
     # Notes on the O(n log n) method used here:
     #   https://www.itl.nist.gov/div898/software/dataplot/refman2/auxillar/gmd.htm
