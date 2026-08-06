@@ -56,11 +56,6 @@ def barcode_plot(
         The matplotlib axes the plot was drawn on, one row per word in
         `targets`, in the order given.
 
-    Examples
-    --------
-    >>> import polars_corpus as plc
-    >>> plc.barcode_plot(corpus, "lemma", ["cat", "dog"])
-
     Raises
     ------
     ValueError
@@ -72,6 +67,11 @@ def barcode_plot(
     UserWarning
         If a word in `targets` does not occur in the corpus. It still gets a
         row, drawn empty.
+
+    Examples
+    --------
+    >>> import polars_corpus as plc
+    >>> plc.barcode_plot(corpus, "lemma", ["cat", "dog"])
     """
     term = as_expr(expr)
     lf = as_corpus(corpus)
@@ -165,11 +165,6 @@ def dispersion_plot(
         The matplotlib axes the plot was drawn on, one row per file `target`
         occurs in.
 
-    Examples
-    --------
-    >>> import polars_corpus as plc
-    >>> plc.dispersion_plot(corpus, "lemma", "whale")
-
     Raises
     ------
     ValueError
@@ -182,6 +177,11 @@ def dispersion_plot(
     Only the files `target` occurs in get a row, so the plot says how evenly the
     word is spread over those files, not over the corpus. Read it alongside
     `dispersion(corpus, expr, "range")`, which counts them.
+
+    Examples
+    --------
+    >>> import polars_corpus as plc
+    >>> plc.dispersion_plot(corpus, "lemma", "whale")
     """
     term = as_expr(expr)
     lf = as_corpus(corpus)

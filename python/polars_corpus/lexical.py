@@ -69,6 +69,17 @@ def msttr(expr: IntoExprColumn, n: int = 1000) -> pl.Expr:
         Expression returning the mean segmental TTR as a float scalar.
         Returns null if there are no complete segments.
 
+    Raises
+    ------
+    ValueError
+        If n is not a positive integer.
+    TypeError
+        If n is not an integer.
+
+    Notes
+    -----
+    - If the text contains fewer than n tokens, the result is null
+
     Examples
     --------
     >>> # Create a corpus with 2500 tokens
@@ -78,17 +89,6 @@ def msttr(expr: IntoExprColumn, n: int = 1000) -> pl.Expr:
     >>> df.select(plc.msttr("tokens"))
     >>> # Calculate MSTTR with custom segment size
     >>> df.select(plc.msttr("tokens", n=500))
-
-    Notes
-    -----
-    - If the text contains fewer than n tokens, the result is null
-
-    Raises
-    ------
-    ValueError
-        If n is not a positive integer.
-    TypeError
-        If n is not an integer.
 
     """
     if not isinstance(n, int):
@@ -132,6 +132,17 @@ def mtld(expr: IntoExprColumn, threshold: float = 0.720) -> pl.Expr:
         Returns null if the text contains fewer than 10 tokens.
         Higher values indicate greater lexical diversity.
 
+    Raises
+    ------
+    ValueError
+        If threshold is not strictly between 0 and 1 (exclusive).
+
+    References
+    ----------
+    McCarthy, P. M., & Jarvis, S. (2010). MTLD, vocd-D, and HD-D: A validation
+    study of sophisticated approaches to lexical diversity assessment.
+    Behavior Research Methods, 42(2), 381-392.
+
     Examples
     --------
     >>> import polars as pl
@@ -144,17 +155,6 @@ def mtld(expr: IntoExprColumn, threshold: float = 0.720) -> pl.Expr:
     >>> df.select(plc.mtld("tokens"))
     >>> # Use custom threshold
     >>> df.select(plc.mtld("tokens", threshold=0.800))
-
-    Raises
-    ------
-    ValueError
-        If threshold is not strictly between 0 and 1 (exclusive).
-
-    References
-    ----------
-    McCarthy, P. M., & Jarvis, S. (2010). MTLD, vocd-D, and HD-D: A validation
-    study of sophisticated approaches to lexical diversity assessment.
-    Behavior Research Methods, 42(2), 381-392.
 
     """
     if not 0 < threshold < 1:
@@ -194,6 +194,11 @@ def yules_k(expr: IntoExprColumn) -> pl.Expr:
         Expression returning Yule's K statistic as a float scalar.
         The value is scaled by 10,000 for readability.
 
+    References
+    ----------
+    Yule, G. U. (1944). The Statistical Study of Literary Vocabulary.
+    Cambridge University Press.
+
     Examples
     --------
     >>> import polars as pl
@@ -204,11 +209,6 @@ def yules_k(expr: IntoExprColumn) -> pl.Expr:
     >>> # Text with low diversity (high K)
     >>> df = pl.DataFrame({"tokens": ["the"] * 50 + ["cat"] * 30 + ["sat"] * 20})
     >>> df.select(plc.yules_k("tokens"))
-
-    References
-    ----------
-    Yule, G. U. (1944). The Statistical Study of Literary Vocabulary.
-    Cambridge University Press.
 
     """
     expr_s: pl.Expr = cast(pl.Expr, pl.col(expr) if isinstance(expr, str) else expr)

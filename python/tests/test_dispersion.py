@@ -326,9 +326,92 @@ def test_dispersion_all_rows_null() -> None:
         assert dispersion(corpus, "token", "d").height == 0
 
 
+COLUMNS = {
+    "range": "range",
+    "range%": "range%",
+    "sd": "sd",
+    "cv": "cv",
+    "cv%": "cv%",
+    "d": "D",
+    "da": "DA",
+    "dp": "DP",
+}
+
+
+@pytest.mark.parametrize(
+    "methods",
+    [
+        ALL_METHODS,  # every group at once
+        ["range", "d"],  # two groups
+        ["sd", "cv", "cv%", "d"],  # one group, all of it
+        ["da", "dp"],  # the two that stand alone
+        ["dp"],  # a list of one is still a list
+    ],
+)
+def test_dispersion_several_methods(methods: list[str]) -> None:
+    got = dispersion(CORPUS, "token", methods)
+
+    # Reported in the order asked for, whatever order they are computed in.
+    assert got.columns == ["token", "freq"] + [COLUMNS[m] for m in methods]
+    # And each column holds what asking for that measure alone would have given.
+    for method in methods:
+        alone = dispersion(CORPUS, "token", method)
+        assert_frame_equal(
+            got.select("token", "freq", COLUMNS[method]),
+            alone,
+            check_row_order=False,
+        )
+
+
+def test_dispersion_several_methods_keeps_the_order_asked_for() -> None:
+    # Not the order of METHODS, and not the order the passes run in.
+    got = dispersion(CORPUS, "token", ["dp", "range", "d"])
+    assert got.columns == ["token", "freq", "DP", "range", "D"]
+
+
+def test_dispersion_repeated_method() -> None:
+    # Two columns of the same name would not be a frame; drop the repeat.
+    got = dispersion(CORPUS, "token", ["d", "range", "d"])
+    assert got.columns == ["token", "freq", "D", "range"]
+
+
+@pytest.mark.parametrize("methods", [["range", "d"], ALL_METHODS])
+def test_dispersion_several_methods_min_freq(methods: list[str]) -> None:
+    got = dispersion(CORPUS, "token", methods, min_freq=3)
+    assert set(got["token"]) == {"a", "b", "c"}
+
+
+@pytest.mark.parametrize("methods", [["range", "d"], ["da", "dp"]])
+def test_dispersion_several_methods_lazy_matches_eager(methods: list[str]) -> None:
+    eager = dispersion(CORPUS, "token", methods)
+    lazy = dispersion(CORPUS.lazy(), "token", methods).collect()
+    assert_frame_equal(eager, lazy, check_row_order=False)
+
+
+def test_dispersion_several_methods_case_insensitive() -> None:
+    got = dispersion(CORPUS, "token", [" D ", "Range%"])
+    assert got.columns == ["token", "freq", "D", "range%"]
+
+
 def test_dispersion_invalid_method() -> None:
     with pytest.raises(ValueError, match="sd, cv, cv%, d"):
         dispersion(CORPUS, "token", "bogus")
+
+
+def test_dispersion_invalid_method_in_a_list() -> None:
+    with pytest.raises(ValueError, match="Unknown method 'bogus'"):
+        dispersion(CORPUS, "token", ["d", "bogus"])
+
+
+def test_dispersion_empty_method_list() -> None:
+    with pytest.raises(ValueError, match="method is empty"):
+        dispersion(CORPUS, "token", [])
+
+
+@pytest.mark.parametrize("bad", [3, None, {"d"}])
+def test_dispersion_method_wrong_type(bad: object) -> None:
+    with pytest.raises(ValueError, match="or a list of them"):
+        dispersion(CORPUS, "token", bad)
 
 
 @pytest.mark.parametrize("bad", [[1, 2, 3], "corpus", None, CORPUS["token"]])

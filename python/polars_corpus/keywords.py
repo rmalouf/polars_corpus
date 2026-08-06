@@ -84,13 +84,6 @@ def keywords(
         Keywords ranked by association strength, most target-specific first.
         Eager if `target` is a DataFrame, lazy if it is a LazyFrame.
 
-    Examples
-    --------
-    >>> import polars_corpus as plc
-    >>> plc.keywords(target, reference, "lemma", "ll", min_target_df=5)
-    >>> # A corpus whose file ids live in another column:
-    >>> plc.keywords(target, reference, "lemma", "ttest", file_id_column="text_id")
-
     Raises
     ------
     ValueError
@@ -117,6 +110,13 @@ def keywords(
     The corpus sizes the measures divide by count what survives, so over a
     corpus whose `lemma` is null on punctuation, keyness is measured per
     lemma-bearing token rather than per token.
+
+    Examples
+    --------
+    >>> import polars_corpus as plc
+    >>> plc.keywords(target, reference, "lemma", "ll", min_target_df=5)
+    >>> # A corpus whose file ids live in another column:
+    >>> plc.keywords(target, reference, "lemma", "ttest", file_id_column="text_id")
     """
     method = check_choice(method, METHODS)
     keyword_expr = as_expr(

@@ -192,6 +192,29 @@ def check_choice(value: object, options: Sequence[str], param: str = "method") -
     return canonical
 
 
+def check_choices(
+    value: object, options: Sequence[str], param: str = "method"
+) -> list[str]:
+    """Match `value`, one option or a list of them, against `options`.
+
+    Each is normalized as `check_choice` normalizes it. Repeats are dropped,
+    keeping the order asked for, so callers can name the columns they produce
+    from the result. `param` names the argument in error messages.
+    """
+    if isinstance(value, str):
+        return [check_choice(value, options, param)]
+    if not isinstance(value, (list, tuple)):
+        raise ValueError(
+            f"{param} must be one of {', '.join(options)}, or a list of them; "
+            f"got {type(value).__name__}"
+        )
+    if not value:
+        raise ValueError(
+            f"{param} is empty; name at least one of: {', '.join(options)}"
+        )
+    return list(dict.fromkeys(check_choice(item, options, param) for item in value))
+
+
 def ngrams(n: int, expr: pl.Expr | str) -> pl.Expr:
     if isinstance(expr, str):
         expr = pl.col(expr)

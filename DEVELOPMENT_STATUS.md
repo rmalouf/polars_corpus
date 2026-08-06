@@ -1,6 +1,6 @@
 # Development Status - polars-corpus
 
-**Last updated:** 2026-08-04
+**Last updated:** 2026-08-06
 **Version:** 0.2.0-pre
 **Status:** Pre-release; core is stable, not yet published to PyPI
 
@@ -9,9 +9,9 @@
 ## Summary
 
 A corpus linguistics toolkit for Polars, split between a Python API and a Rust
-matching engine. Search, concordancing, collocation, keywords, and the
-statistical measures are all working and covered by tests. The user guide now
-exists. The main functional gap is proximity operators in the Simple query
+matching engine. Search, concordancing, collocation, keywords, dispersion, the
+statistical measures and the plots are all working and covered by tests. The
+user guide now exists. The main functional gap is proximity operators in the Simple query
 language; the main process gaps are the absence of CI and of any Rust unit
 tests.
 
@@ -21,9 +21,9 @@ tests.
 
 | | |
 |---|---|
-| Python source | ~3,700 lines, 18 modules |
+| Python source | ~4,600 lines, 18 modules |
 | Rust source | ~950 lines, 6 files |
-| Tests | ~1,770 lines, 299 tests in 8 files |
+| Tests | ~2,700 lines, 568 tests in 11 files |
 | User guide | 6 pages plus 4 on the query languages (Quarto / great-docs) |
 | Examples | 9 notebooks, 2 scripts |
 
@@ -43,16 +43,20 @@ tests.
 4. **Association measures** — PMI, log-likelihood, minimum sensitivity,
    Kilgarriff's simple maths, chi-squared, Welch's t-test.
 5. **Lexical diversity** — TTR, MSTTR, Yule's K, MTLD.
-6. **I/O** — `read_text_corpus()` / `scan_text_corpus()`, `from_nltk()`.
-7. **Chunking** — BIO tags to chunk IDs via `chunk_id()` / `with_chunk_index()`.
-8. **Polars integration** — `.corpus` namespace on Expr, DataFrame, LazyFrame.
+6. **Lexical dispersion** — `dispersion()` with range, range%, sd, cv, cv%,
+   Juilland's D, Burch's DA, Gries's DP; several measures per call.
+7. **I/O** — `read_text_corpus()` / `scan_text_corpus()`, `from_nltk()`.
+8. **Chunking** — BIO tags to chunk IDs via `chunk_id()` / `with_chunk_index()`.
+9. **Polars integration** — `.corpus` namespace on Expr, DataFrame, LazyFrame.
+10. **Visualization** — `barcode_plot()`, `dispersion_plot()`, `keyword_plot()`,
+    on seaborn and matplotlib from the `examples` extra.
 
 ### Incomplete
 
 - **`productivity.py`** — frequency spectrum, Yule's K, hapax counts. Written
   but not wired into `__init__.py` and not expected to work.
-- **`visualizations.py`** — entirely commented out, kept deliberately; the
-  seaborn distribution plot is intended to come back.
+- **`visualizations.py`** — the three plots above work and are tested; the
+  mosaic plot from a crosstab and the collocation graph are still TODOs.
 
 ### Not implemented
 

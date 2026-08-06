@@ -4,6 +4,7 @@ from polars_corpus.utils import (
     as_corpus,
     as_expr,
     check_choice,
+    check_choices,
     check_columns,
     check_expr,
     collect_like,
@@ -148,3 +149,32 @@ def test_check_choice_rejects(value: object, match: str) -> None:
 def test_check_choice_names_the_parameter() -> None:
     with pytest.raises(ValueError, match="Unknown syntax 'bogus'"):
         check_choice("bogus", ("simple", "cqp"), param="syntax")
+
+
+@pytest.mark.parametrize(
+    "value,expected",
+    [
+        ("ll", ["ll"]),  # one option is a list of one
+        (" LL ", ["ll"]),  # normalized as check_choice normalizes it
+        (["pmi", "ll"], ["pmi", "ll"]),  # kept in the order asked for
+        (("ll", "pmi"), ["ll", "pmi"]),  # a tuple will do
+        (["ll", "LL", "pmi"], ["ll", "pmi"]),  # repeats dropped, first wins
+    ],
+)
+def test_check_choices_normalizes(value: object, expected: list[str]) -> None:
+    assert check_choices(value, METHODS) == expected
+
+
+@pytest.mark.parametrize(
+    "value,match",
+    [
+        ([], "method is empty"),
+        (["ll", "bogus"], "Unknown method 'bogus'"),
+        (3, "or a list of them; got int"),
+        ({"ll"}, "or a list of them; got set"),
+        ([None], "got NoneType"),
+    ],
+)
+def test_check_choices_rejects(value: object, match: str) -> None:
+    with pytest.raises(ValueError, match=match):
+        check_choices(value, METHODS)
