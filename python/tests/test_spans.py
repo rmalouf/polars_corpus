@@ -1,6 +1,7 @@
 import polars as pl
 import pytest
 from polars_corpus import Match, SearchResults, Span, with_chunk_index
+from polars_corpus.utils import ngrams
 
 
 def chunk_ids_via_function(df: pl.DataFrame) -> list:
@@ -85,15 +86,13 @@ class TestNgramsExpression:
         df = pl.DataFrame({"token": ["the", "quick", "brown", "fox"]})
         result = df.with_columns(pl.col("token").corpus.ngrams(2).alias("bigrams"))
 
-        assert result.schema["bigrams"] == pl.Struct(
-            [pl.Field("_0", pl.Utf8), pl.Field("_1", pl.Utf8)]
-        )
-        # The tail is padded with nulls rather than truncated.
+        assert result.schema["bigrams"] == pl.Utf8
+        # The tail has no full bigram to start, so it comes out null.
         assert result["bigrams"].to_list() == [
-            {"_0": "the", "_1": "quick"},
-            {"_0": "quick", "_1": "brown"},
-            {"_0": "brown", "_1": "fox"},
-            {"_0": "fox", "_1": None},
+            "the quick",
+            "quick brown",
+            "brown fox",
+            None,
         ]
 
     def test_trigrams(self):
@@ -101,12 +100,49 @@ class TestNgramsExpression:
         result = df.with_columns(pl.col("token").corpus.ngrams(3).alias("trigrams"))
 
         assert result["trigrams"].to_list() == [
-            {"_0": "the", "_1": "quick", "_2": "brown"},
-            {"_0": "quick", "_1": "brown", "_2": "fox"},
-            {"_0": "brown", "_1": "fox", "_2": "jumps"},
-            {"_0": "fox", "_1": "jumps", "_2": None},
-            {"_0": "jumps", "_1": None, "_2": None},
+            "the quick brown",
+            "quick brown fox",
+            "brown fox jumps",
+            None,
+            None,
         ]
+
+    def test_unigrams(self):
+        df = pl.DataFrame({"token": ["the", "quick", "brown"]})
+        result = df.with_columns(pl.col("token").corpus.ngrams(1).alias("unigrams"))
+
+        assert result["unigrams"].to_list() == ["the", "quick", "brown"]
+
+    @pytest.mark.parametrize("n", [0, -1, 2.0, True, "2"])
+    def test_bad_n(self, n):
+        with pytest.raises(ValueError, match="n must be a positive integer"):
+            ngrams(n, "token")
+
+    def test_as_list(self):
+        df = pl.DataFrame({"token": ["the", "quick", "brown"]})
+        result = df.with_columns(ngrams(2, "token", as_str=False).alias("bigrams"))
+
+        assert result.schema["bigrams"] == pl.List(pl.Utf8)
+        # A partial n-gram is null here too, not a shorter list.
+        assert result["bigrams"].to_list() == [
+            ["the", "quick"],
+            ["quick", "brown"],
+            None,
+        ]
+
+    def test_over_file_id(self):
+        df = pl.DataFrame(
+            {
+                "token": ["the", "quick", "brown", "fox"],
+                "file_id": ["a", "a", "b", "b"],
+            }
+        )
+        result = df.with_columns(
+            pl.col("token").corpus.ngrams(2).over("file_id").alias("bigrams")
+        )
+
+        # No bigram runs from the end of one file into the start of the next.
+        assert result["bigrams"].to_list() == ["the quick", None, "brown fox", None]
 
     def test_with_lazyframe(self):
         df = pl.DataFrame({"token": ["the", "quick", "brown"]})
@@ -115,7 +151,7 @@ class TestNgramsExpression:
             .with_columns(pl.col("token").corpus.ngrams(2).alias("bigrams"))
             .collect()
         )
-        assert result["bigrams"][0] == {"_0": "the", "_1": "quick"}
+        assert result["bigrams"][0] == "the quick"
 
     def test_empty_dataframe(self):
         df = pl.DataFrame({"token": []}, schema={"token": pl.Utf8})

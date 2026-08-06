@@ -8,7 +8,7 @@ from typing import cast
 import polars as pl
 from polars._typing import IntoExprColumn
 
-from ._typing import T_Frame
+from ._typing import IntoExpr, T_Frame
 
 # The argument checks below are deliberately left out of `__all__`: they are for
 # use inside the package, not part of its public API. Their job is to turn the
@@ -215,8 +215,48 @@ def check_choices(
     return list(dict.fromkeys(check_choice(item, options, param) for item in value))
 
 
-def ngrams(n: int, expr: pl.Expr | str) -> pl.Expr:
-    if isinstance(expr, str):
-        expr = pl.col(expr)
-    exprs = [expr.alias("_0")] + [expr.shift(-i).alias(f"_{i}") for i in range(1, n)]
-    return pl.struct(exprs)
+def ngrams(n: int, in_expr: IntoExpr, as_str: bool = True) -> pl.Expr:
+    """Gather each token together with the `n - 1` tokens that follow it.
+
+    Parameters
+    ----------
+    n : int
+        Length of the n-gram: 1 for unigrams, 2 for bigrams, and so on.
+    in_expr : IntoExpr
+        Column name or expression holding the tokens to gather.
+    as_str : bool, default True
+        Join the tokens into one space-separated string. Set to False for a
+        list column instead, which keeps the tokens separate and is safe when
+        they may contain spaces themselves.
+
+    Returns
+    -------
+    pl.Expr
+        Expression giving the n-gram starting at each row. The last `n - 1`
+        rows have no full n-gram to start and come out null, as does any
+        n-gram covering a null token, so the caller can drop them.
+
+    Notes
+    -----
+    Rows are read in the order the frame holds them, so an n-gram will run
+    from the end of one file into the start of the next. Add `.over()` on the
+    file id column to stop them at the boundary:
+
+    >>> df.select(pl.col("token").corpus.ngrams(2).over("file_id"))
+    """
+    if not isinstance(n, int) or isinstance(n, bool) or n < 1:
+        raise ValueError(f"n must be a positive integer, got {n!r}")
+
+    expr = as_expr(in_expr)
+    exprs = [expr.shift(-i) for i in range(n)]
+
+    if as_str:
+        # concat_str is null for the whole n-gram if any token in it is null.
+        return pl.concat_str(exprs, separator=" ")
+    # concat_list is not: a null token would leave a shorter n-gram behind
+    # looking like a real one, so null those rows out to match.
+    return (
+        pl.when(pl.any_horizontal(sub.is_null() for sub in exprs))
+        .then(None)
+        .otherwise(pl.concat_list(exprs))
+    )
