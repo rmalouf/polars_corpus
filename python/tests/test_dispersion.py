@@ -1,3 +1,4 @@
+import warnings
 from itertools import combinations
 from math import isnan, sqrt
 
@@ -208,6 +209,75 @@ def test_dispersion_method_case_insensitive(method: str) -> None:
     got = dispersion(CORPUS, "token", method)
     expected_result = dispersion(CORPUS, "token", method.strip().lower())
     assert_frame_equal(got, expected_result, check_row_order=False)
+
+
+ALL_METHODS = ["range", "range%", "sd", "cv", "cv%", "d", "da", "dp"]
+
+
+@pytest.mark.parametrize("method", ALL_METHODS)
+def test_dispersion_drops_null_file_ids(method: str) -> None:
+    # A token with no file id belongs to no part, so it cannot be spread across
+    # them. Every method has to agree about that -- 'range' used to count null
+    # as a file of its own while the rest silently dropped the word.
+    corpus = CORPUS.with_columns(
+        pl.when(pl.col("file_id") == "f3")
+        .then(None)
+        .otherwise(pl.col("file_id"))
+        .alias("file_id")
+    )
+    with pytest.warns(UserWarning, match="'file_id'"):
+        got = dispersion(corpus, "token", method)
+    expected_result = dispersion(
+        CORPUS.filter(pl.col("file_id") != "f3"), "token", method
+    )
+    assert_frame_equal(got, expected_result, check_row_order=False)
+
+
+@pytest.mark.parametrize("method", ALL_METHODS)
+def test_dispersion_drops_null_terms(method: str) -> None:
+    # A null term is not an occurrence of anything, so it gets no row of its own
+    # -- and the file sizes the measures divide by count only what survives.
+    corpus = pl.concat(
+        [CORPUS, pl.DataFrame({"token": [None] * 3, "file_id": ["f1", "f2", "f3"]})]
+    )
+    with pytest.warns(UserWarning, match="'token'"):
+        got = dispersion(corpus, "token", method)
+    assert None not in got["token"].to_list()
+    assert_frame_equal(got, dispersion(CORPUS, "token", method), check_row_order=False)
+
+
+def test_dispersion_null_warning_counts_rows() -> None:
+    corpus = pl.concat(
+        [CORPUS, pl.DataFrame({"token": [None, None], "file_id": ["f1", None]})]
+    )
+    with pytest.warns(
+        UserWarning, match=r"dropped 2 of 17 rows .* 'token' or 'file_id'"
+    ):
+        dispersion(corpus, "token", "d")
+
+
+def test_dispersion_no_warning_without_nulls() -> None:
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        dispersion(CORPUS, "token", "d")
+
+
+def test_dispersion_lazy_does_not_warn() -> None:
+    # Counting the dropped rows of a LazyFrame would mean reading it up front.
+    corpus = pl.concat(
+        [CORPUS, pl.DataFrame({"token": [None], "file_id": ["f1"]})]
+    ).lazy()
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        got = dispersion(corpus, "token", "d").collect()
+    # Dropped all the same, just silently.
+    assert None not in got["token"].to_list()
+
+
+def test_dispersion_all_rows_null() -> None:
+    corpus = pl.DataFrame({"token": [None, None], "file_id": ["f1", "f2"]})
+    with pytest.warns(UserWarning, match="dropped 2 of 2 rows"):
+        assert dispersion(corpus, "token", "d").height == 0
 
 
 def test_dispersion_invalid_method() -> None:

@@ -10,6 +10,7 @@ from .utils import (
     check_columns,
     check_expr,
     collect_like,
+    drop_null_rows,
 )
 
 __all__ = [
@@ -78,9 +79,25 @@ def dispersion(
         missing a column `dispersion` needs; if `expr` is not a column name or
         expression; or if `method` is not one of the measures listed above.
 
+    Warns
+    -----
+    UserWarning
+        If rows are dropped for holding a null. Raised only for an eager
+        `corpus`: counting the dropped rows of a LazyFrame would mean reading it
+        before the caller has asked for anything.
+
     Notes
     -----
     Only the columns `expr` and `file_id_column` name are read.
+
+    Rows holding a null in either are dropped: a token with no value for `expr`
+    is not an occurrence of anything, and one with no file id belongs to no part
+    to be spread across. The file sizes the measures divide by count what
+    survives, so over a corpus whose `lemma` is null on punctuation, lemma
+    frequencies are measured per lemma-bearing token rather than per token. That
+    makes the denominator depend on `expr`, but keeps it in the same units as
+    the counts above it -- otherwise a file heavy with punctuation would dilute
+    every lemma's frequency in it.
 
     'range', 'range%' and 'sd' scale with a word's frequency, so they are
     comparable only between words of similar frequency; the rest divide that
@@ -108,11 +125,16 @@ def dispersion(
     check_columns(lf, [file_id_column], param="file_id_column")
     term_name = check_expr(lf, term)
 
+    # Cut down to the two columns being read before anything else: it is what
+    # the null drop below should be measured against, and it settles `term` into
+    # a plain column, so the rest of the work can name it rather than re-evaluate
+    # it against a frame it no longer matches.
+    lf = drop_null_rows(lf.select(term, file_id_column), corpus)
+
     if method in RANGE_METHODS:
         files = pl.col(file_id_column).n_unique()
         counts = (
-            lf.select(term, file_id_column)
-            .with_columns(files.alias("_N"))
+            lf.with_columns(files.alias("_N"))
             .group_by(term_name)
             .agg(files.alias("range"), pl.col("_N").first())
         )
@@ -126,11 +148,11 @@ def dispersion(
     # works from the counts and the file sizes side by side rather than from the
     # per-file frequencies the measures below share.
     if method == "dp":
-        result = dispersion_dp(lf, term, term_name, file_id_column)
+        result = dispersion_dp(lf, term_name, file_id_column)
         return collect_like(result, corpus)
 
     per_file = (
-        lf.group_by(term, file_id_column)
+        lf.group_by(term_name, file_id_column)
         .agg(pl.len().alias("_n"))
         .with_columns(pl.col(file_id_column).n_unique().alias("_N"))
     )
@@ -204,7 +226,6 @@ def dispersion_da(per_file: pl.LazyFrame, term_name: str) -> pl.LazyFrame:
 
 def dispersion_dp(
     lf: pl.LazyFrame,
-    term: pl.Expr,
     term_name: str,
     file_id_column: str,
 ) -> pl.LazyFrame:
@@ -213,7 +234,7 @@ def dispersion_dp(
     Half the total gap between the share of the word each file holds and the
     share of the corpus it is expected to hold.
     """
-    counts = lf.group_by(term, file_id_column).agg(pl.len().alias("_n"))
+    counts = lf.group_by(term_name, file_id_column).agg(pl.len().alias("_n"))
     expected = pl.col("_size") / pl.col("_size").sum()
     sizes = (
         lf.group_by(file_id_column)
