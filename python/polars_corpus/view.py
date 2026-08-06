@@ -25,8 +25,8 @@ class ConcordanceWidget:
         Expected to have columns ending in '_left_context', the base column name,
         and '_right_context'.
     column : str, optional
-        The base column name to display (e.g., 'token'). If None, attempts to
-        detect from DataFrame columns.
+        The base column name to display (e.g., 'token'). If None, the first
+        matched column in the concordance is used.
     page_size : int, default 25
         Number of concordance lines to display per page.
 
@@ -39,7 +39,7 @@ class ConcordanceWidget:
 
     Examples
     --------
-    >>> results = plc.search(corpus, '[pos="ADJ"]')
+    >>> results = plc.search(corpus, "_AJ0")
     >>> conc = results.concordance('token', window=5)
     >>> widget = ConcordanceWidget(conc, 'token')
     >>> widget.show()
@@ -63,27 +63,30 @@ class ConcordanceWidget:
         self.original_df = df
         self.df = df
 
-        # Auto-detect column if not provided
         if column is None:
-            # Look for columns without _left_context or _right_context suffix
+            # The matched columns hold a list of tokens each; the context
+            # columns are named after them, and metadata columns are scalars.
             candidates = [
-                col
-                for col in df.columns
-                if not col.endswith("_left_context")
-                and not col.endswith("_right_context")
+                name
+                for name, dtype in df.schema.items()
+                if dtype == pl.List
+                and not name.endswith(("_left_context", "_right_context"))
             ]
-            if candidates:
-                column = candidates[0]
-            else:
-                raise ValueError("Could not auto-detect column name")
+            if not candidates:
+                raise ValueError(
+                    f"none of the columns {', '.join(df.columns)} hold matched "
+                    f"tokens; pass column= to name the one to show"
+                )
+            column = candidates[0]
+        elif column not in df.columns:
+            raise ValueError(
+                f"the concordance has no column {column!r}; "
+                f"its columns are: {', '.join(df.columns)}"
+            )
 
         self.column = column
         self.left_col = f"{column}_left_context"
         self.right_col = f"{column}_right_context"
-
-        # Verify columns exist
-        if self.column not in df.columns:
-            raise ValueError(f"Missing required column: {self.column}")
 
         # Check if context columns exist
         self.has_context = self.left_col in df.columns and self.right_col in df.columns
@@ -700,8 +703,10 @@ export function render({ model, el }) {
             widget_instance: Any, content: Dict[str, Any], buffers: List[Any]
         ) -> None:
             if content.get("type") == "shuffle":
-                self.df = self.df.sample(fraction=1.0, shuffle=True)
+                # Clearing the sort restores the order the rows came in, so it
+                # has to happen before the shuffle rather than after it.
                 widget.sort_column = None
+                self.df = self.df.sample(fraction=1.0, shuffle=True)
                 widget.current_page = 0
                 widget.page_data = self._prepare_page_data(widget)
                 # Send confirmation back to JavaScript
@@ -762,32 +767,24 @@ export function render({ model, el }) {
         query = query.strip().lower()
         if not query:
             self.df = self.original_df.clone()
-        else:
-            # Filter: check if query appears in any column (case-insensitive)
-            if self.has_context:
-                mask = (
-                    pl.col(self.left_col)
-                    .list.join(" ")
-                    .str.to_lowercase()
-                    .str.contains(query)
-                    | pl.col(self.column)
-                    .list.join(" ")
-                    .str.to_lowercase()
-                    .str.contains(query)
-                    | pl.col(self.right_col)
-                    .list.join(" ")
-                    .str.to_lowercase()
-                    .str.contains(query)
-                )
-            else:
-                mask = (
-                    pl.col(self.column)
-                    .list.join(" ")
-                    .str.to_lowercase()
-                    .str.contains(query)
-                )
+            return
 
-            self.df = self.original_df.filter(mask)
+        # What was typed is matched as itself: a linguist filtering for "(" or
+        # for "u.s." is not writing a regex.
+        def holds(column: str) -> pl.Expr:
+            return (
+                pl.col(column)
+                .list.join(" ")
+                .str.to_lowercase()
+                .str.contains(query, literal=True)
+            )
+
+        if self.has_context:
+            mask = holds(self.left_col) | holds(self.column) | holds(self.right_col)
+        else:
+            mask = holds(self.column)
+
+        self.df = self.original_df.filter(mask)
 
     def show(self) -> None:
         """Display the widget."""

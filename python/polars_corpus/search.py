@@ -7,9 +7,43 @@ import polars as pl
 from polars._typing import IntoExprColumn
 
 from ._internal import Match, py_concordance, py_kwic, spans_to_chunks
-from .utils import output_name
+from .utils import check_columns, output_name
 
 __all__ = ["SearchResults", "concordance", "collocates"]
+
+
+def _select(
+    df: pl.DataFrame,
+    expr: IntoExprColumn | list[IntoExprColumn],
+    param: str = "expr",
+) -> pl.DataFrame:
+    """The columns `expr` names, with a bad name reported against the corpus.
+
+    `expr` may name several columns -- a list, a regex, a selector -- so it is
+    resolved rather than checked ahead of time, and the error a missing column
+    raises is caught here, where it can say which corpus lacks it.
+    """
+    try:
+        return df.select(expr)
+    except pl.exceptions.ColumnNotFoundError as err:
+        items = expr if isinstance(expr, list) else [expr]
+        roots: list[str] = []
+        for item in items:
+            if isinstance(item, str):
+                roots.append(item)
+            elif isinstance(item, pl.Expr):
+                roots.extend(item.meta.root_names())
+        check_columns(df, roots, param=param)
+        raise ValueError(f"the corpus cannot evaluate {param}: {err}") from err
+
+
+def _check_count(value: object, param: str, hint: str = "") -> int:
+    """Check that `value` is a count: an integer, zero or more."""
+    if not isinstance(value, int) or isinstance(value, bool) or value < 0:
+        raise ValueError(
+            f"{param} must be a non-negative integer, got {value!r}.{hint}"
+        )
+    return value
 
 
 class SearchResults:
@@ -67,8 +101,8 @@ class SearchResults:
 
     def concordance(
         self,
-        expr: IntoExprColumn = "token",
-        window: Optional[int] = None,
+        expr: IntoExprColumn | list[IntoExprColumn] = "token",
+        window: int = 0,
         chunk_column: Optional[str] = None,
         metadata: Optional[str | list[str]] = None,
     ) -> pl.DataFrame:
@@ -82,11 +116,12 @@ class SearchResults:
         ----------
         expr : IntoExprColumn, default "token"
             Column name or Polars expression specifying which column(s)
-            to use for generating the concordance display.
-        window : int, optional
+            to use for generating the concordance display. A list names
+            several at once.
+        window : int, default 0
             Number of tokens to include on both left and right sides of
-            each match. If None, returns matches with no context (equivalent
-            to window=0). When chunk_column is specified, this parameter is ignored.
+            each match. The default of 0 gives the matches with no context.
+            Ignored when chunk_column is given.
         chunk_column : str, optional
             Column name defining chunk boundaries for context extraction.
             When specified, context extends to chunk boundaries marked by
@@ -105,8 +140,14 @@ class SearchResults:
             - "{column}_left_context": List of tokens before the match
             - "{column}": List of matched tokens
             - "{column}_right_context": List of tokens after the match
-            Context columns are omitted when window=0 or no context available.
+            Context columns are omitted when window=0.
             Each name in metadata adds a single scalar column with that name.
+
+        Notes
+        -----
+        Context is taken from the corpus in the order it is held, so it will
+        run from the end of one file into the start of the next even when the
+        search was confined to files with `file_id_column`.
 
         Examples
         --------
@@ -116,42 +157,48 @@ class SearchResults:
         >>> results.concordance(["token", "pos"], window=5)  # Multiple columns
         >>> results.concordance("token", window=5, metadata=["file_id", "category"])
         """
-
         if metadata is None:
             metadata_df = None
         else:
             if isinstance(metadata, str):
                 metadata = [metadata]
+            check_columns(self._df, metadata, param="metadata")
             metadata_df = self._df.select(metadata)
 
         if chunk_column is not None:
-            chunk_values = self._df.get_column(chunk_column)
+            check_columns(self._df, [chunk_column], param="chunk_column")
+            chunk_tags = self._df.get_column(chunk_column)
+            # The tags are read as strings. A dictionary-encoded column holds
+            # the same ones and is worth the cast to get at them; a column of
+            # anything else is not a tag column at all.
+            if isinstance(chunk_tags.dtype, (pl.Categorical, pl.Enum)):
+                chunk_tags = chunk_tags.cast(pl.String)
+            elif chunk_tags.dtype != pl.String:
+                raise ValueError(
+                    f"chunk_column must hold the chunk tags 'B', 'I' and 'O' as "
+                    f"strings, but {chunk_column!r} holds {chunk_tags.dtype}"
+                )
             return py_concordance(
-                self._df.select(expr),
+                _select(self._df, expr),
                 self._matches,
-                chunk_values,
+                chunk_tags,
                 metadata_df,
             )
-        else:
-            if window is None:
-                left_window = 0
-                right_window = 0
-            else:
-                left_window = window
-                right_window = window
-            return py_kwic(
-                self._df.select(expr),
-                self._matches,
-                left_window,
-                right_window,
-                metadata_df,
-            )
+
+        window = _check_count(window, "window", " Use window=0 for no context.")
+        return py_kwic(
+            _select(self._df, expr),
+            self._matches,
+            window,
+            window,
+            metadata_df,
+        )
 
     def collocates(
         self,
         expr: IntoExprColumn = "token",
         window: int = 5,
-        min_freq: Optional[int] = 5,
+        min_freq: int = 5,
         freqs_name: str = "freqs",
     ) -> pl.DataFrame:
         """Generate a collocate DataFrame.
@@ -164,13 +211,14 @@ class SearchResults:
         ----------
         expr : IntoExprColumn, default "token"
             Column name or Polars expression specifying which column to use
-            for collocate analysis.
+            for collocate analysis. It must name a single column.
         window : int, default 5
             Number of tokens to include on both left and right sides of
-            each match.
+            each match. Must be at least 1.
         min_freq : int, default 5
             Minimum frequency of each node-collocate pair within the window span.
             Node-collocate pairs with lower frequencies are not displayed in DataFrame.
+            Pass 0 to keep them all.
         freqs_name : str, default "freqs"
             Name for the output frequencies struct column.
 
@@ -181,14 +229,17 @@ class SearchResults:
             - collocate: The collocating token
             - freqs: Struct with fields {f12, f1, f2, n} where:
                 - f12: observed node-collocate frequency
-                - f1: total frequency of node in window (corpus freq of node * window size * 2)
+                - f1: total number of window positions (matches * window * 2)
                 - f2: total frequency of collocate in corpus
                 - n: total words in corpus
 
         Notes
         -----
-        The returned frequencies can be used to compute association measures
-        like PMI, log-likelihood ratios, or other collocation statistics.
+        The returned frequencies are laid out the way `crosstab` lays its own
+        out, so the association measures take them as they come.
+
+        `f1` counts the window positions the matches ask for, which is more
+        than they get where a window runs off the end of the corpus.
 
         Examples
         --------
@@ -196,20 +247,32 @@ class SearchResults:
         >>> results.collocates("token", window=3, min_freq=10)
         >>> collocs.with_columns(ll=pl.col("freqs").corpus.loglik())
         """
-
+        if _check_count(window, "window") == 0:
+            raise ValueError("window must be at least 1 to have any collocates in it")
+        _check_count(min_freq, "min_freq", " Use min_freq=0 to keep them all.")
         # The concordance names its context columns after the expression's
-        # output name.
+        # output name, so the expression has to name one column, not several.
+        if isinstance(expr, (list, tuple)):
+            raise ValueError(
+                "expr must name a single column to collocate with, not a list of "
+                "them; call collocates() once per column instead"
+            )
         name = output_name(expr)
         conc = self.concordance(expr, window=window)
-        colloc = (
+        return (
             conc.lazy()
             .select(
                 collocate=pl.col(f"{name}_left_context")
                 .list.concat(f"{name}_right_context")
-                .explode()
+                # An empty context -- a match at the edge of the corpus -- has
+                # no collocates in it rather than one null one.
+                .explode(empty_as_null=False)
             )
+            # A null token is not a collocate either.
+            .drop_nulls()
             .group_by("collocate")
             .len(name="f12")
+            .filter(pl.col("f12") >= min_freq)
             .join(
                 self._df.lazy().group_by(expr).len(name="f2"),
                 left_on="collocate",
@@ -217,20 +280,14 @@ class SearchResults:
                 how="left",
             )
             .with_columns(n=self._df.height, f1=len(self._matches) * window * 2)
-        ).remove(pl.col("f12") < min_freq)
-
-        return (
-            colloc.with_columns(
-                pl.struct("f12", "f1", "f2", "n").alias(freqs_name),
-            )
-            .drop("f12", "f1", "f2", "n")
+            .select("collocate", pl.struct("f12", "f1", "f2", "n").alias(freqs_name))
             .collect()
         )
 
     def view(
         self,
-        expr: IntoExprColumn = "token",
-        window: Optional[int] = 5,
+        expr: IntoExprColumn | list[IntoExprColumn] = "token",
+        window: int = 5,
         chunk_column: Optional[str] = None,
         metadata: Optional[str | list[str]] = None,
         page_size: int = 25,
@@ -244,11 +301,12 @@ class SearchResults:
         ----------
         expr : IntoExprColumn, default "token"
             Column name or Polars expression specifying which column(s)
-            to use for generating the concordance display.
-        window : int, optional, default 5
+            to use for generating the concordance display. Where it names
+            several, the first is the one shown.
+        window : int, default 5
             Number of tokens to include on both left and right sides of
-            each match. If None, returns matches with no context (equivalent
-            to window=0). When chunk_column is specified, this parameter is ignored.
+            each match. Pass 0 for no context. Ignored when chunk_column
+            is given.
         chunk_column : str, optional
             Column name defining chunk boundaries for context extraction.
             When specified, context extends to chunk boundaries marked by
@@ -267,27 +325,12 @@ class SearchResults:
         """
         from .view import ConcordanceWidget
 
-        # Generate concordance
         conc = self.concordance(
             expr, window=window, chunk_column=chunk_column, metadata=metadata
         )
-
-        # Determine the column name
-        if isinstance(expr, str):
-            column = expr
-        else:
-            # If expr is a list or complex expression, use first column that's not context
-            candidates = [
-                col
-                for col in conc.columns
-                if not col.endswith("_left_context")
-                and not col.endswith("_right_context")
-            ]
-            column = candidates[0] if candidates else None
-
-        # Create and display widget
-        widget = ConcordanceWidget(conc, column=column, page_size=page_size)
-        widget.show()
+        # The widget shows one column; the concordance holds the matched ones
+        # ahead of any metadata, so its first is the one asked for.
+        ConcordanceWidget(conc, page_size=page_size).show()
 
     def head(self, n: int) -> SearchResults:
         """Return the first n search results.
@@ -303,14 +346,19 @@ class SearchResults:
         SearchResults
             New SearchResults object containing the first n matches.
 
+        Raises
+        ------
+        ValueError
+            If n is negative.
+
         Examples
         --------
         >>> first_10 = results.head(10)
         """
-        if abs(n) > len(self._matches):
+        _check_count(n, "n")
+        if n >= len(self._matches):
             return self
-        else:
-            return SearchResults(self._df, self._query, self._matches[:n])
+        return SearchResults(self._df, self._query, self._matches[:n])
 
     def tail(self, n: int) -> SearchResults:
         """Return the last n search results.
@@ -319,8 +367,7 @@ class SearchResults:
         ----------
         n : int
             Number of results to return from the end.
-            Must be positive. If n exceeds the total number of matches,
-            returns all matches.
+            If n exceeds the total number of matches, returns all matches.
 
         Returns
         -------
@@ -330,18 +377,19 @@ class SearchResults:
         Raises
         ------
         ValueError
-            If n is negative or zero.
+            If n is negative.
 
         Examples
         --------
         >>> last_10 = results.tail(10)
         """
-        if n > len(self._matches):
+        _check_count(n, "n")
+        if n >= len(self._matches):
             return self
-        elif n > 0:
-            return SearchResults(self._df, self._query, self._matches[-n:])
-        else:
-            raise ValueError
+        # matches[-0:] is the whole list, not an empty one.
+        return SearchResults(
+            self._df, self._query, self._matches[len(self._matches) - n :]
+        )
 
     def sample(self, k: int, seed: Optional[int] = None) -> SearchResults:
         """Return a random sample of search results.
@@ -374,17 +422,18 @@ class SearchResults:
         --------
         >>> sample_100 = results.sample(100, seed=42)
         """
+        _check_count(k, "k")
+        if k > len(self._matches):
+            raise ValueError(
+                f"cannot sample {k:,} of {len(self._matches):,} matches; "
+                f"k must be no larger than the number of matches"
+            )
         state = random.getstate()
         random.seed(seed)
-        if k < 0 or k > len(self._matches):
-            raise ValueError
         try:
-            new_results = SearchResults(
-                self._df, self._query, random.sample(self._matches, k)
-            )
+            return SearchResults(self._df, self._query, random.sample(self._matches, k))
         finally:
             random.setstate(state)
-        return new_results
 
     # Do really want to do this? Am I assuming somewhere else that the spans are sorted?
     # We can always shuffle the concordance after it's built.
@@ -402,23 +451,25 @@ class SearchResults:
         SearchResults
             New SearchResults object with matches in random order.
 
+        Notes
+        -----
+        The random state is preserved, so this method does not affect
+        the global random state.
+
         Examples
         --------
         >>> shuffled = results.shuffle(seed=123)
         """
         state = random.getstate()
-        if seed is not None:
-            random.seed(seed)
+        random.seed(seed)
         try:
-            new_results = SearchResults(
+            return SearchResults(
                 self._df,
                 self._query,
                 random.sample(self._matches, len(self._matches)),
             )
         finally:
-            if seed is not None:
-                random.setstate(state)
-        return new_results
+            random.setstate(state)
 
     def with_spans_as_chunks(self, name: str = "spans") -> pl.DataFrame | pl.LazyFrame:
         """Add a column containing span information to the corpus DataFrame.
@@ -459,26 +510,24 @@ class SearchResults:
 
 def concordance(
     search_results: SearchResults,
-    expr: IntoExprColumn = "token",
-    window: Optional[int] = None,
+    expr: IntoExprColumn | list[IntoExprColumn] = "token",
+    window: int = 0,
     chunk_column: Optional[str] = None,
     metadata: Optional[str | list[str]] = None,
 ) -> pl.DataFrame:
     """Generate a concordance from search results (functional interface).
 
-    This function provides a functional interface to SearchResults.concordance().
-    It's equivalent to calling search_results.concordance(expr, window, chunk_column, metadata).
-
     Parameters
     ----------
     search_results : SearchResults
         The search results to generate concordance from.
-    expr : IntoExprColumn
-        Column name or Polars expression for concordance display.
-    window : int, optional
-        Number of tokens to include on both left and right sides of
-        each match. If None, returns matches with no context (equivalent
-        to window=0). When chunk_column is specified, this parameter is ignored.
+    expr : IntoExprColumn, default "token"
+        Column name or Polars expression for concordance display. A list
+        names several at once.
+    window : int, default 0
+        Number of tokens to include on both left and right sides of each
+        match. The default of 0 gives the matches with no context. Ignored
+        when chunk_column is given.
     chunk_column : str, optional
         Column name defining chunk boundaries for context extraction.
         When specified, context extends to chunk boundaries marked by
@@ -490,7 +539,8 @@ def concordance(
     Returns
     -------
     pl.DataFrame
-        KWIC concordance DataFrame.
+        KWIC concordance DataFrame, laid out as `SearchResults.concordance`
+        describes.
 
     See Also
     --------
@@ -507,14 +557,11 @@ def concordance(
 def collocates(
     search_results: SearchResults,
     expr: IntoExprColumn = "token",
-    window_size: int = 5,
+    window: int = 5,
+    min_freq: int = 5,
     freqs_name: str = "freqs",
 ) -> pl.DataFrame:
     """Extract collocate frequency information from search results.
-
-    Analyzes the tokens that appear near the search matches within a specified
-    window and computes frequency statistics useful for collocation analysis.
-    Returns a DataFrame with collocate frequencies and corpus frequencies.
 
     Parameters
     ----------
@@ -522,53 +569,28 @@ def collocates(
         The search results to analyze for collocates.
     expr : IntoExprColumn, default "token"
         Column name or Polars expression containing the tokens to analyze.
-    window_size : int, default 5
-        Size of the context window on each side of the match
-        (total window = 2 * window_size).
+        It must name a single column.
+    window : int, default 5
+        Number of tokens to include on both left and right sides of each
+        match. Must be at least 1.
+    min_freq : int, default 5
+        Minimum frequency of each node-collocate pair within the window span.
+        Pass 0 to keep them all.
     freqs_name : str, default "freqs"
         Name for the output frequencies struct column.
 
     Returns
     -------
     pl.DataFrame
-        DataFrame with columns:
-        - collocate: The collocating token
-        - freqs: Struct with fields {f12, f1, f2, n} where:
-            - f12: frequency of collocate within the search context windows
-            - f1: total frequency of collocate in the corpus
-            - f2: number of search matches (constant for all rows)
-            - n: total number of context positions analyzed
+        Collocate DataFrame, laid out as `SearchResults.collocates` describes.
 
-    Notes
-    -----
-    The returned frequencies can be used to compute association measures
-    like PMI, log-likelihood ratios, or other collocation statistics.
+    See Also
+    --------
+    SearchResults.collocates : Method interface for the same functionality.
 
     Examples
     --------
-    >>> collocs = collocates(results, "token", window_size=3)
-    >>> # Find top collocates by raw frequency
-    >>> top_collocs = collocs.sort(pl.col("freqs").struct.field("f12"), descending=True).head(20)
+    >>> collocs = collocates(results, "token", window=3)
+    >>> collocs.with_columns(ll=pl.col("freqs").corpus.loglik())
     """
-    name = output_name(expr)
-    f1 = search_results._df.lazy().group_by(expr).len(name="f1")
-    conc = concordance(search_results, expr, window_size)
-    tbl = (
-        conc.lazy()
-        .select(
-            collocate=pl.col(f"{name}_left_context")
-            .list.concat(f"{name}_right_context")
-            .explode()
-        )
-        .group_by("collocate")
-        .len(name="f12")
-        .join(f1, left_on="collocate", right_on=name, how="left")
-        .with_columns(
-            f2=pl.lit(conc.height), n=search_results._df.height * window_size * 2
-        )
-        .with_columns(
-            pl.struct("f12", "f1", "f2", "n").alias(freqs_name),
-        )
-        .drop("f12", "f1", "f2", "n")
-    )
-    return tbl.collect()
+    return search_results.collocates(expr, window, min_freq, freqs_name)

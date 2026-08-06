@@ -54,15 +54,17 @@ fn concordance_df(
     chunk_tag: &Series,
     metadata: Option<&DataFrame>,
 ) -> PolarsResult<DataFrame> {
+    // Every column takes its context from the same positions, so the spans
+    // are built once and read by all of them.
+    let left_spans = left_chunk_context_from_spans(matched_spans, chunk_tag)?;
+    let right_spans = right_chunk_context_from_spans(matched_spans, chunk_tag)?;
     let mut result_columns: Vec<Column> = Vec::new();
     for column in df.columns() {
-        let left_spans = Some(left_chunk_context_from_spans(matched_spans, chunk_tag)?);
-        let right_spans = Some(right_chunk_context_from_spans(matched_spans, chunk_tag)?);
         add_columns(
             column,
-            left_spans.as_deref(),
+            Some(&left_spans),
             matched_spans,
-            right_spans.as_deref(),
+            Some(&right_spans),
             &mut result_columns,
         )?;
     }
@@ -105,7 +107,7 @@ fn add_columns(
     };
 
     let node: Series = implode_series_by_spans(series, matched_spans)?;
-    result_columns.push(node.with_name(format!("{column_name}").into()).into());
+    result_columns.push(node.with_name(column_name.clone()).into());
 
     if let Some(right_spans) = right_spans {
         let right_context: Series = implode_series_by_spans(series, right_spans)?;
@@ -119,29 +121,37 @@ fn add_columns(
     Ok(())
 }
 
+// Both directions walk the tag column as a string array, and treat anything
+// that isn't "I" -- including a null -- as the edge of the chunk.
 fn left_chunk_context_from_spans(spans: &[Span], chunk_tag: &Series) -> PolarsResult<Vec<Span>> {
+    let tags = chunk_tag.str()?;
     let mut context_spans = Vec::with_capacity(spans.len());
     for &Span { start, end: _ } in spans {
-        let mut left_edge = (start as i32) - 1;
-        while left_edge > 0 && chunk_tag.get(left_edge as usize)?.extract_str().unwrap() == "I" {
+        // Walk back over the chunk's interior, then take in the tag that opens
+        // it. A match at the start of the corpus has neither to its left, and
+        // gets an empty context.
+        let mut left_edge = start;
+        while left_edge > 0 && tags.get(left_edge - 1) == Some("I") {
             left_edge -= 1;
         }
-        context_spans.push(Span::new(left_edge as usize, start));
+        left_edge = left_edge.saturating_sub(1);
+        context_spans.push(Span::new(left_edge, start));
     }
     Ok(context_spans)
 }
 
 fn right_chunk_context_from_spans(spans: &[Span], chunk_tag: &Series) -> PolarsResult<Vec<Span>> {
+    let tags = chunk_tag.str()?;
     let mut context_spans = Vec::with_capacity(spans.len());
     let df_height = chunk_tag.len();
     for &Span { start: _, end } in spans {
-        let mut right_edge = end as i32;
-        while right_edge < df_height as i32
-            && chunk_tag.get(right_edge as usize)?.extract_str().unwrap() == "I"
-        {
+        // The tag opening the next chunk is not part of this one, so the right
+        // context ends before it.
+        let mut right_edge = end;
+        while right_edge < df_height && tags.get(right_edge) == Some("I") {
             right_edge += 1;
         }
-        context_spans.push(Span::new(end, right_edge as usize));
+        context_spans.push(Span::new(end, right_edge));
     }
     Ok(context_spans)
 }
@@ -176,18 +186,20 @@ fn kwic_df(
     right_window: i32,
     metadata: Option<&DataFrame>,
 ) -> PolarsResult<DataFrame> {
+    // Every column takes its context from the same positions, so the spans
+    // are built once and read by all of them.
+    let left_spans = if left_window > 0 {
+        Some(left_fixed_context_from_spans(matched_spans, left_window)?)
+    } else {
+        None
+    };
+    let right_spans = if right_window > 0 {
+        Some(right_fixed_context_from_spans(matched_spans, right_window)?)
+    } else {
+        None
+    };
     let mut result_columns: Vec<Column> = Vec::new();
     for column in df.columns() {
-        let left_spans = if left_window > 0 {
-            Some(left_fixed_context_from_spans(matched_spans, left_window)?)
-        } else {
-            None
-        };
-        let right_spans = if right_window > 0 {
-            Some(right_fixed_context_from_spans(matched_spans, right_window)?)
-        } else {
-            None
-        };
         add_columns(
             column,
             left_spans.as_deref(),
