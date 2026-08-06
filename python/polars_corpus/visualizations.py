@@ -9,7 +9,7 @@ from .utils import (
     check_expr,
 )
 
-__all__ = ["barcode_plot", "dispersion_plot"]
+__all__ = ["barcode_plot", "dispersion_plot", "keyword_plot"]
 
 
 def barcode_plot(
@@ -161,6 +161,37 @@ def dispersion_plot(
         xlabel="relative index" if relative else "index",
         title=f"Dispersion plot: {target}",
     )
+
+    return ax
+
+
+def keyword_plot(
+    keyword_df: T_Frame,
+    expr: IntoExpr,
+    keyness: IntoExpr,
+    top_k: int = 10,
+    bottom_k: int = 10,
+    **kwargs,
+) -> Axes:
+
+    term = as_expr(expr)
+    lf = as_corpus(keyword_df)
+    term_name = check_expr(lf, term)
+    keyness_name = check_expr(lf, keyness)
+
+    top_items = lf.head(top_k).collect()
+    ax = sns.barplot(x=keyness_name, y=term_name, data=top_items, orient="h", **kwargs)
+    ax.bar_label(ax.containers[0], labels=top_items[term_name], padding=4)
+
+    bottom_items = lf.tail(bottom_k).collect()
+    sns.barplot(
+        x=keyness_name, y=term_name, data=bottom_items, orient="h", ax=ax, **kwargs
+    )
+    ax.bar_label(ax.containers[1], labels=bottom_items[term_name], padding=4)
+
+    ax.set_yticks([])
+    ax.set_ylabel("")
+    ax.margins(x=0.2)
 
     return ax
 

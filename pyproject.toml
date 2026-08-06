@@ -100,4 +100,5 @@ notebooks = [
     "scipy-stubs",
     "seaborn",
     "selenium",
+    "great-tables"
 ]
