@@ -1,6 +1,7 @@
 import polars as pl
 import seaborn as sns
 from matplotlib.axes import Axes
+import matplotlib.pyplot as plt
 
 from ._typing import IntoExpr, T_Frame
 from .utils import (
@@ -167,31 +168,99 @@ def dispersion_plot(
 
 def keyword_plot(
     keyword_df: T_Frame,
-    expr: IntoExpr,
-    keyness: IntoExpr,
+    term_expr: IntoExpr,
+    keyness_expr: IntoExpr,
+    ax: Axes | None = None,
     top_k: int = 10,
-    bottom_k: int = 10,
+    descending: bool = True,
+    padding: int = 6,
     **kwargs,
 ) -> Axes:
+    """
+    Plot ranked keywords as a horizontal lollipop/stem chart.
 
-    term = as_expr(expr)
+    Each row of `keyword_df` becomes a stem, positioned by `keyness_expr` and
+    labeled with `term_expr`, giving a quick visual read of the strongest
+    keywords and how strong they are relative to each other. `keyword_df` is
+    plotted in the order it is given (e.g. the output of `keywords`), so it
+    should already be sorted by association strength.
+
+    Parameters
+    ----------
+    keyword_df : DataFrame | LazyFrame
+        Keywords to plot, e.g. the output of `keywords`.
+    term_expr : IntoExpr
+        Column name or expression giving the label for each stem
+        (e.g. token or lemma).
+    keyness_expr : IntoExpr
+        Column name or expression giving the keyness/association score each
+        stem is positioned at.
+    ax : Axes, optional
+        Axes to draw on. A new figure and axes are created if not given.
+    top_k : int, default 10
+        Number of rows to plot, taken from the start of `keyword_df`.
+        Plots every row if `top_k` is `None` or non-positive.
+    descending : bool, default True
+        Plot the first row of `keyword_df` at the top rather than the bottom.
+    padding : int, default 6
+        Offset in points between a stem's tip and its label.
+    **kwargs
+        Passed through to `Axes.stem`.
+
+    Returns
+    -------
+    Axes
+        The matplotlib axes the plot was drawn on.
+
+    Examples
+    --------
+    >>> import polars_corpus as plc
+    >>> male_keywords = plc.keywords(male_corpus, reference, "token", "ll")
+    >>> plc.keyword_plot(male_keywords, "token", "LL", top_k=15)
+    """
+    term = as_expr(term_expr)
+    keyness = as_expr(keyness_expr)
     lf = as_corpus(keyword_df)
     term_name = check_expr(lf, term)
     keyness_name = check_expr(lf, keyness)
 
-    top_items = lf.head(top_k).collect()
-    ax = sns.barplot(x=keyness_name, y=term_name, data=top_items, orient="h", **kwargs)
-    ax.bar_label(ax.containers[0], labels=top_items[term_name], padding=4)
+    if top_k is not None and top_k > 0:
+        lf = lf.head(top_k)
 
-    bottom_items = lf.tail(bottom_k).collect()
-    sns.barplot(
-        x=keyness_name, y=term_name, data=bottom_items, orient="h", ax=ax, **kwargs
+    keywords = lf.collect()
+
+    if descending:
+        indices = range(len(keywords), 0, -1)
+    else:
+        indices = range(len(keywords))
+
+    if ax is None:
+        _, ax = plt.subplots()
+
+    stems = ax.stem(
+        indices,
+        keywords[keyness_name],
+        linefmt="-",
+        markerfmt="o",
+        basefmt="lightgray",
+        orientation="horizontal",
+        **kwargs,
     )
-    ax.bar_label(ax.containers[1], labels=bottom_items[term_name], padding=4)
+
+    xs, ys = stems.markerline.get_data()
+    for x, y, label in zip(xs, ys, keywords[term_name]):
+        ax.annotate(
+            label,
+            xy=(x, y),
+            xytext=(padding if x >= 0 else -padding, 0),
+            textcoords="offset points",
+            ha="left" if x >= 0 else "right",
+            va="center_baseline",
+        )
 
     ax.set_yticks([])
-    ax.set_ylabel("")
-    ax.margins(x=0.2)
+    for _, spine in ax.spines.items():
+        spine.set_visible(False)
 
     return ax
 
