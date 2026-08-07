@@ -9,8 +9,8 @@ VENV_DIR = ${HOME}/.venvs/polars_corpus
 
 # Serve docs locally
 docs:
-	quarto convert user_guide/04-frequencies.ipynb
-	great-docs build
+	#quarto convert user_guide/04-frequencies.ipynb
+	mkdocs build
 
 # Rebuild the Rust extension for the edit/test loop. Optimized and native-CPU,
 # but without LTO, so this takes seconds rather than minutes. Use this one.

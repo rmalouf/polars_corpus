@@ -1,0 +1,34 @@
+site_name: polars-corpus
+
+theme:
+  name: mkdocs
+  color_mode: auto
+  user_color_mode_toggle: true
+
+plugins:
+  - search
+  - mkdocstrings:
+      handlers:
+        python:
+          options:
+            heading_level: 3
+            docstring_style: numpy
+            show_root_heading: true
+            show_root_full_path: false
+            show_signature: true
+            show_signature_annotations: true
+            show_signature_type_parameters: true
+            separate_signature: true
+            docstring_section_style: list
+
+  - mkdocs-jupyter:
+      execute: true
+
+nav:
+  - Home: index.md
+#  - User Guide:
+#      - Getting started: guide/getting-started.ipynb
+#      - Working with corpora: guide/corpora.ipynb
+  - Reference:
+#      - Corpus: api/corpus.md
+      - API: api.md

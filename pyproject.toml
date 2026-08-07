@@ -77,7 +77,9 @@ ignore-missing-imports = ["polars_corpus._internal"]
 [dependency-groups]
 dev = [
     "coverage>=7.10",
-    "great-docs",
+    "mkdocs",
+    "mkdocstrings[python]",
+    "mkdocs-jupyter",
     "jupyterlab>=4.4.0",
     "maturin>=1.8.3",
     "notebook>=7.4.0",
@@ -103,5 +105,4 @@ notebooks = [
     "scipy-stubs",
     "seaborn",
     "selenium",
-    "great-tables"
 ]

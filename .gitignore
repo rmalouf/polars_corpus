@@ -30,5 +30,5 @@ stuff/
 **/*.quarto_ipynb
 /_site/
 /objects.json
-/great-docs/
+/site/
 scratch.ipynb
