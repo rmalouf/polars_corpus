@@ -70,7 +70,8 @@ def test_barcode_plot_computed_term() -> None:
     corpus = pl.DataFrame({"token": ["Cat", "CAT", "dog"], "file_id": ["f1"] * 3})
     ax = barcode_plot(corpus, pl.col("token").str.to_lowercase().alias("norm"), "cat")
     assert y_labels(ax) == ["cat"]
-    assert ax.get_ylabel() == "norm"
+    # Both spellings are drawn, at their positions in the corpus.
+    assert [x for c in ax.collections for x, _ in c.get_offsets()] == [0, 1]
 
 
 def test_dispersion_plot_rows_are_the_files_hit() -> None:

@@ -20,9 +20,10 @@ def barcode_plot(
     corpus: T_Frame,
     expr: IntoExpr,
     targets: str | list[str],
+    ax: Axes | None = None,
     linewidth: float = 0.75,
-    size: float = 20,
-    jitter: float | bool = 0,
+    size: float = 200,
+    margin: float | None = None,
     **kwargs,
 ) -> Axes:
     """
@@ -41,14 +42,17 @@ def barcode_plot(
         against `targets` (e.g. token or lemma).
     targets : str | list[str]
         Word or words to plot, one row per word.
+    ax : Axes, optional
+        Axes to draw on. A new figure and axes are created if not given.
     linewidth : float, default 0.75
         Width of each tick mark.
-    size : float, default 20
-        Height of each tick mark.
-    jitter : float | bool, default 0
-        Vertical jitter to apply to ticks, as in `seaborn.stripplot`.
+    size : float, default 200
+        Size of each tick mark, in points squared.
+    margin : float, optional
+        Extra vertical padding above the first row and below the last, in
+        row heights. Rows are half a row apart from the edges without it.
     **kwargs
-        Passed through to `seaborn.stripplot`.
+        Passed through to `Axes.scatter`.
 
     Returns
     -------
@@ -86,13 +90,16 @@ def barcode_plot(
         lf.with_row_index()
         .select("index", term)
         .filter(pl.col(term_name).is_in(targets))
+        .with_columns(
+            pl.col(term_name).replace_strict(
+                {target: row for row, target in enumerate(targets)}
+            )
+        )
         .collect()
     )
 
-    # Reduce before crossing into Python: `data` can hold millions of matches,
-    # but at most one distinct value per target.
-    found = set(data[term_name].unique().to_list())
-    if missing := [target for target in targets if target not in found]:
+    found = data[term_name].unique()
+    if missing := [target for row, target in enumerate(targets) if row not in found]:
         warnings.warn(
             f"{', '.join(repr(target) for target in missing)} "
             f"{'do' if len(missing) > 1 else 'does'} not occur in the corpus's "
@@ -100,21 +107,28 @@ def barcode_plot(
             stacklevel=2,
         )
 
-    ax = sns.stripplot(
-        x="index",
-        y=term_name,
-        data=data,
-        # Keep the rows in the order asked for, and give a word that occurs
-        # nowhere a row of its own rather than dropping it off the plot.
-        order=targets,
+    if ax is None:
+        _, ax = plt.subplots()
+
+    ax.scatter(
+        data["index"],
+        data[term_name],
         marker="|",
         linewidth=linewidth,
-        size=size,
-        jitter=jitter,
+        sizes=[size],
         **kwargs,
     )
-    ax.set(xlabel="index", title=f"Barcode plot: {term_name}")
 
+    ax.set(xlabel="index")
+
+    # Set the rows rather than autoscaling to them: a target that occurs nowhere
+    # has no points to scale to, but still gets a row of its own.
+    pad = 0.5 + (margin or 0)
+    ax.set_yticks(range(len(targets)), targets)
+    ax.set_ylim(len(targets) - 1 + pad, -pad)
+
+    for spine in ax.spines.values():
+        spine.set_visible(False)
     return ax
 
 
