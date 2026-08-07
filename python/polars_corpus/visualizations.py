@@ -2,7 +2,6 @@ import warnings
 
 import matplotlib.pyplot as plt
 import polars as pl
-import seaborn as sns
 from matplotlib.axes import Axes
 
 from ._typing import IntoExpr, T_Frame
@@ -138,9 +137,10 @@ def dispersion_plot(
     target: str,
     file_id_column: str = "file_id",
     relative: bool = True,
+    ax: Axes | None = None,
     linewidth: float = 0.75,
-    size: float = 20,
-    jitter: float | bool = 0,
+    size: float = 200,
+    margin: float | None = None,
     **kwargs,
 ) -> Axes:
     """
@@ -164,20 +164,23 @@ def dispersion_plot(
     relative : bool, default True
         Plot each occurrence's position as a fraction of its file's length
         rather than a raw index, so files of different lengths line up.
+    ax : Axes, optional
+        Axes to draw on. A new figure and axes are created if not given.
     linewidth : float, default 0.75
         Width of each tick mark.
-    size : float, default 20
-        Height of each tick mark.
-    jitter : float | bool, default 0
-        Vertical jitter to apply to ticks, as in `seaborn.stripplot`.
+    size : float, default 200
+        Size of each tick mark, in points squared.
+    margin : float, optional
+        Extra vertical padding above the first row and below the last, in
+        row heights. Rows are half a row apart from the edges without it.
     **kwargs
-        Passed through to `seaborn.stripplot`.
+        Passed through to `Axes.scatter`.
 
     Returns
     -------
     Axes
         The matplotlib axes the plot was drawn on, one row per file `target`
-        occurs in.
+        occurs in, in corpus order.
 
     Raises
     ------
@@ -220,21 +223,26 @@ def dispersion_plot(
             f"so there is nothing to plot"
         )
 
-    ax = sns.stripplot(
-        x="index",
-        y=file_id_column,
-        data=data,
+    if ax is None:
+        _, ax = plt.subplots()
+
+    ax.scatter(
+        data["index"],
+        data[file_id_column],
         marker="|",
         linewidth=linewidth,
-        size=size,
-        jitter=jitter,
+        sizes=[size],
         **kwargs,
     )
-    ax.set(
-        xlabel="relative index" if relative else "index",
-        title=f"Dispersion plot: {target}",
-    )
 
+    ax.set(xlabel="relative index" if relative else "index")
+
+    # Rows read top to bottom, in corpus order, as in `barcode_plot`.
+    pad = 0.5 + (margin or 0)
+    ax.set_ylim(data[file_id_column].n_unique() - 1 + pad, -pad)
+
+    for spine in ax.spines.values():
+        spine.set_visible(False)
     return ax
 
 

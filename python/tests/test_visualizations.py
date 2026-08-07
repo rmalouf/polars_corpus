@@ -4,7 +4,6 @@ import polars as pl
 import pytest
 
 # Plotting is the "examples" extra, not a core dependency.
-pytest.importorskip("seaborn")
 matplotlib = pytest.importorskip("matplotlib")
 # Draw to a buffer: these tests read the axes back rather than showing them.
 matplotlib.use("Agg")
