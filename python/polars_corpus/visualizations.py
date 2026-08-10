@@ -3,6 +3,7 @@ import warnings
 import matplotlib.pyplot as plt
 import polars as pl
 from matplotlib.axes import Axes
+import mplcursors
 
 from ._typing import IntoExpr, T_Frame
 from .utils import (
@@ -12,7 +13,7 @@ from .utils import (
     check_expr,
 )
 
-__all__ = ["barcode_plot", "dispersion_plot", "keyword_plot"]
+__all__ = ["barcode_plot", "dispersion_plot", "keyword_plot", "text_plot"]
 
 
 def barcode_plot(
@@ -356,6 +357,54 @@ def keyword_plot(
         spine.set_visible(False)
 
     return ax
+
+
+
+def text_plot(
+        xy, labels, ax:Axes|None=None, adjust:bool=True, show_labels: bool = True,
+        hover: bool= False
+) -> Axes:
+
+    try:
+        from adjustText import adjust_text
+    except ImportError:
+        raise ImportError()
+
+    if ax is None:
+        _, ax = plt.subplots()
+
+    if show_labels:
+        size = 0
+    else:
+        size = 5
+
+    scatter = ax.scatter(xy[:,0], xy[:,1], s=size)
+
+    if hover:
+        raise NotImplementedError("hover doesn't work yet")
+        # cursor = mplcursors.cursor(scatter, hover=True)
+        # @cursor.connect("add")
+        # def on_add(sel):
+        #     sel.annotation.set_text(labels[sel.index])
+
+    if show_labels:
+        texts = [ ]
+        for point, label in zip(xy, labels):
+            texts.append(ax.text(point[0], point[1], label, ha='center', va='center'))
+
+        if adjust:
+            adjust_text(texts, ax=ax, time_lim=2)
+
+    for spine in ax.spines.values():
+        spine.set_visible(False)
+
+    ax.set_xticks([])
+    ax.set_yticks([])
+    ax.set_aspect(1)
+
+    return ax
+
+
 
 
 ## TODO:

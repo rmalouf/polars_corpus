@@ -42,6 +42,8 @@ dependencies = [
 # interchange path for a polars frame and warns on every plot. It goes when
 # seaborn does.
 examples = ["great_tables", "scipy", "matplotlib", "seaborn", "pyarrow>=14"]
+embeddings = ["sentence-transformers", "model2vec", "adjusttext", "umap-learn",
+    "mplcursors", "hdbscan"]
 
 [project.urls]
 Repository = "https://github.com/rmalouf/polars_corpus"
