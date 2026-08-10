@@ -279,6 +279,10 @@ class TestSlicing:
 
         assert [m.span.start for m in sliced._matches] == expected
 
+    def test_len_counts_the_matches(self, ten):
+        assert len(ten) == 10
+        assert len(ten.head(3)) == 3
+
     @pytest.mark.parametrize("method", ["head", "tail", "sample"])
     def test_negative_n(self, ten, method):
         with pytest.raises(ValueError, match="must be a non-negative integer"):

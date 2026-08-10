@@ -102,6 +102,10 @@ class SearchResults:
             es = ""
         return f"SearchResults<'{self._query}'; {len(self._matches):,} match{es}>"
 
+    def __len__(self) -> int:
+        """Number of matches found."""
+        return len(self._matches)
+
     def concordance(
         self,
         expr: IntoExprColumn | list[IntoExprColumn] = "token",

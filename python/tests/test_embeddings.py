@@ -1,8 +1,10 @@
 """Tests for embeddings: encoding text, encoding matches in context, centroids."""
 
+import math
+
 import polars as pl
 import pytest
-from polars_corpus import Match, SearchResults, Span, centroid, encode
+from polars_corpus import Match, SearchResults, Span, centroid, encode, encode_terms
 
 from .helpers import corpus
 
@@ -196,3 +198,106 @@ class TestCentroid:
 
         assert out["centroid"].dtype == pl.Array(pl.Float32, DIM)
         assert out.height == 1
+
+
+class TestEncodeTerms:
+    """One vector per term, averaged over the uses the corpus has of it"""
+
+    @pytest.fixture
+    def df(self):
+        return corpus(token="the cat sat on the mat . the dog sat on the log .")
+
+    def test_one_vector_per_term(self, df, model):
+        out = encode_terms(["cat", "dog"], df, model)
+
+        assert out.columns == ["token", "vector"]
+        assert out["token"].to_list() == ["cat", "dog"]
+        assert out["vector"].dtype == pl.Array(pl.Float32, DIM)
+
+    def test_vectors_are_unit_length(self, df, model):
+        """Terms are averaged with `centroid`, so they stay comparable."""
+        out = encode_terms(["cat", "sat"], df, model)
+
+        for vector in out["vector"].to_list():
+            assert math.sqrt(sum(x * x for x in vector)) == pytest.approx(1.0)
+
+    def test_matches_are_encoded_with_context(self, df, model):
+        encode_terms(["sat"], df, model, window=2)
+
+        assert model.seen == ["the cat sat on the", "the dog sat on the"]
+
+    def test_chunk_column(self, model):
+        df = corpus(token="the cat sat . the dog sat .", chunks="B I I I B I I I")
+        encode_terms(["cat"], df, model, chunk_column="chunks")
+
+        assert model.seen == ["the cat sat ."]
+
+    def test_term_with_no_matches_is_null(self, df, model):
+        out = encode_terms(["cat", "zebra"], df, model)
+
+        assert out["vector"].to_list()[1] is None
+
+    def test_other_columns_are_kept(self, df, model):
+        terms = pl.DataFrame({"token": ["cat", "dog"], "count": [1, 1]})
+        out = encode_terms(terms, df, model)
+
+        assert out.columns == ["token", "count", "vector"]
+        assert out["count"].to_list() == [1, 1]
+
+    def test_term_column(self, df, model):
+        terms = pl.DataFrame({"word": ["cat", "dog"]})
+        out = encode_terms(terms, df, model, term_column="word")
+
+        assert out.columns == ["word", "vector"]
+
+    def test_missing_term_column(self, df, model):
+        terms = pl.DataFrame({"word": ["cat"]})
+
+        with pytest.raises(ValueError, match="the term list has no column 'token'"):
+            encode_terms(terms, df, model)
+
+    def test_max_matches_caps_the_encoding(self, df, model):
+        """ "the" occurs four times, but only two of them are paid for."""
+        encode_terms(["the"], df, model, max_matches=2)
+
+        assert len(model.seen) == 2
+
+    def test_sampling_is_repeatable(self, df):
+        """The default seed makes a student's second run match their first."""
+        first, second = StubModel(), StubModel()
+        encode_terms(["the"], df, first, max_matches=2)
+        encode_terms(["the"], df, second, max_matches=2)
+
+        assert first.seen == second.seen
+
+    def test_kwargs_reach_search(self, model):
+        """file_id_column keeps a match from running over a file boundary."""
+        df = pl.DataFrame(
+            {
+                "token": ["the", "cat", "sat", "on", "the", "mat"],
+                "file_id": ["1", "1", "1", "2", "2", "2"],
+            }
+        )
+        out = encode_terms(["sat on"], df, model, file_id_column="file_id")
+
+        assert out["vector"].to_list() == [None]
+
+    @pytest.mark.parametrize(
+        "terms,message",
+        [
+            (pl.Series(["cat"]).to_frame().lazy(), "terms must be a DataFrame"),
+            ("cat", "terms must be a DataFrame"),
+        ],
+        ids=["lazy", "bare string"],
+    )
+    def test_bad_terms(self, df, model, terms, message):
+        with pytest.raises(ValueError, match=message):
+            encode_terms(terms, df, model)
+
+    def test_lazy_corpus(self, df, model):
+        with pytest.raises(ValueError, match="corpus must be an eager"):
+            encode_terms(["cat"], df.lazy(), model)
+
+    def test_max_matches_must_be_positive(self, df, model):
+        with pytest.raises(ValueError, match="max_matches must be a positive"):
+            encode_terms(["cat"], df, model, max_matches=0)
