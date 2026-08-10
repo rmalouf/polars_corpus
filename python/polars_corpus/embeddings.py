@@ -1,15 +1,20 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 
 import polars as pl
 from polars._typing import IntoExprColumn
-from sentence_transformers import SentenceTransformer
 
 from ._typing import IntoExpr
 from .matcher import search
 from .utils import as_expr, check_columns
+
+if TYPE_CHECKING:
+    # sentence-transformers is in the `embeddings` extra, and importing it here
+    # would put torch behind every `import polars_corpus`. Only the annotations
+    # need it, and those aren't evaluated.
+    from sentence_transformers import SentenceTransformer
 
 __all__ = ["encode", "centroid", "encode_terms"]
 
