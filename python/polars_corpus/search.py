@@ -1,13 +1,16 @@
 from __future__ import annotations
 
 import random
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 
 import polars as pl
 from polars._typing import IntoExprColumn
 
 from ._internal import Match, py_concordance, py_kwic, spans_to_chunks
 from .utils import check_columns, output_name
+
+if TYPE_CHECKING:
+    from sentence_transformers import SentenceTransformer
 
 __all__ = ["SearchResults", "concordance", "collocates"]
 
@@ -505,6 +508,82 @@ class SearchResults:
         spans = [match.span for match in self._matches]
         return self._df.with_columns(
             spans_to_chunks(spans, self._df.height).alias(name)
+        )
+
+    def encode(
+        self,
+        model: SentenceTransformer,
+        expr: IntoExprColumn = "token",
+        window: int = 5,
+        chunk_column: Optional[str] = None,
+        metadata: Optional[str | list[str]] = None,
+    ) -> pl.DataFrame:
+        """Embed each match together with its context.
+
+        Builds a concordance, joins each line back into a single string, and
+        encodes it with `model`, so that matches used in similar contexts get
+        similar vectors.
+
+        Parameters
+        ----------
+        model : SentenceTransformer
+            Model used to encode the concordance lines.
+        expr : IntoExprColumn, default "token"
+            Column name or Polars expression holding the text to encode. It
+            must name a single column.
+        window : int, default 5
+            Number of tokens of context on both sides of each match. Pass 0
+            to encode the matches on their own. Ignored when chunk_column is
+            given.
+        chunk_column : str, optional
+            Column name defining chunk boundaries, as in `concordance`. When
+            given, context extends to the chunk holding the match.
+        metadata : str or list[str], optional
+            Column name(s) from the source corpus to carry through to the
+            result, e.g. file_id or category.
+
+        Returns
+        -------
+        pl.DataFrame
+            One row per match, with the concordance line under the output name
+            of `expr`, its embedding in a "vector" column of
+            `Array(Float32, dim)`, and a column for each name in metadata.
+
+        Examples
+        --------
+        >>> from sentence_transformers import SentenceTransformer
+        >>> model = SentenceTransformer("all-MiniLM-L6-v2")
+        >>> results.encode(model, window=10)
+        >>> results.encode(model, chunk_column="sentence_tag", metadata="file_id")
+        """
+        from .embeddings import encode
+
+        # The context columns are named after the expression's output name, so
+        # the expression has to name one column, not several.
+        if isinstance(expr, (list, tuple)):
+            raise ValueError(
+                "expr must name a single column to encode, not a list of them; "
+                "call encode() once per column instead"
+            )
+        name = output_name(expr)
+        conc = self.concordance(
+            expr, window=window, chunk_column=chunk_column, metadata=metadata
+        )
+        # window=0 leaves the match with no context columns around it.
+        parts = [
+            column
+            for column in (f"{name}_left_context", name, f"{name}_right_context")
+            if column in conc.columns
+        ]
+        keep = [metadata] if isinstance(metadata, str) else list(metadata or [])
+        return (
+            conc.lazy()
+            # Joining the lists rather than the joined strings keeps an empty
+            # context -- a match at the edge of the corpus -- from padding the
+            # line with a stray space.
+            .select(pl.concat_list(parts).list.join(" ").alias(name), *keep)
+            .with_columns(vector=encode(model, name))
+            .collect()
         )
 
 

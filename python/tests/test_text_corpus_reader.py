@@ -4,7 +4,7 @@ import polars as pl
 import polars_corpus as plc
 import pytest
 from polars_corpus import read_text_corpus, scan_text_corpus
-from polars_corpus.io import TextCorpusReader
+from polars_corpus.corpus_io import TextCorpusReader
 
 SAMPLE = """The/DT quick/JJ brown/NN fox/NN
 jumps/VBZ over/IN the/DT lazy/JJ dog/NN

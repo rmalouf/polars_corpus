@@ -63,7 +63,7 @@ tests.
 - **Proximity operators** (`<<s>>`, `<<3>>`, `<<5<<`, `>>5>>`) in the Simple
   query language. See SIMPLE_QUERY_STATUS.md.
 - **`file_id` from the text corpus readers**, so a match can straddle the
-  boundary between two documents (`io.py` carries a TODO).
+  boundary between two documents (`corpus_io.py` carries a TODO).
 
 ---
 

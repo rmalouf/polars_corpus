@@ -10,6 +10,7 @@
 ::: polars_corpus.visualizations.barcode_plot
 ::: polars_corpus.visualizations.dispersion_plot
 ::: polars_corpus.visualizations.keyword_plot
+::: polars_corpus.visualizations.text_plot
 
 ## Utilities
 

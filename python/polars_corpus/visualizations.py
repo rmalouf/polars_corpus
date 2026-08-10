@@ -3,7 +3,6 @@ import warnings
 import matplotlib.pyplot as plt
 import polars as pl
 from matplotlib.axes import Axes
-import mplcursors
 
 from ._typing import IntoExpr, T_Frame
 from .utils import (
@@ -359,40 +358,65 @@ def keyword_plot(
     return ax
 
 
-
 def text_plot(
-        xy, labels, ax:Axes|None=None, adjust:bool=True, show_labels: bool = True,
-        hover: bool= False
+    xy, labels, ax: Axes | None = None, adjust: bool = True, show_labels: bool = True
 ) -> Axes:
+    """
+    Plot labeled points on a two-dimensional map.
 
-    try:
-        from adjustText import adjust_text
-    except ImportError:
-        raise ImportError()
+    Draws each row of `xy` with its label, for reading a projection of
+    embedding vectors (e.g. from UMAP) down to two dimensions. The axes carry
+    no scale, since the coordinates only mean something relative to each other.
 
+    Parameters
+    ----------
+    xy : array-like of shape (n, 2)
+        Coordinates to plot, one row per label.
+    labels : sequence of str
+        Label for each row of `xy`, e.g. the token or the concordance line the
+        vector was built from.
+    ax : Axes, optional
+        Axes to draw on. A new figure and axes are created if not given.
+    adjust : bool, default True
+        Nudge overlapping labels apart with `adjustText`. Ignored when
+        `show_labels` is False.
+    show_labels : bool, default True
+        Draw the labels. When False, the points are drawn as a plain scatter
+        instead.
+
+    Returns
+    -------
+    Axes
+        The axes drawn on.
+
+    Examples
+    --------
+    >>> import umap
+    >>> xy = umap.UMAP().fit_transform(df["vector"].to_numpy())
+    >>> plc.text_plot(xy, df["token"])
+    >>> plc.text_plot(xy, df["token"], show_labels=False)
+    """
     if ax is None:
         _, ax = plt.subplots()
 
-    if show_labels:
-        size = 0
-    else:
-        size = 5
-
-    scatter = ax.scatter(xy[:,0], xy[:,1], s=size)
-
-    if hover:
-        raise NotImplementedError("hover doesn't work yet")
-        # cursor = mplcursors.cursor(scatter, hover=True)
-        # @cursor.connect("add")
-        # def on_add(sel):
-        #     sel.annotation.set_text(labels[sel.index])
+    # Labeled points are placed by their text, so the marker only shows where
+    # there is nothing else to see.
+    size = 0 if show_labels else 5
+    ax.scatter(xy[:, 0], xy[:, 1], s=size)
 
     if show_labels:
-        texts = [ ]
+        texts = []
         for point, label in zip(xy, labels):
-            texts.append(ax.text(point[0], point[1], label, ha='center', va='center'))
+            texts.append(ax.text(point[0], point[1], label, ha="center", va="center"))
 
         if adjust:
+            try:
+                from adjustText import adjust_text
+            except ImportError:
+                raise ImportError(
+                    "text_plot(adjust=True) needs adjustText: "
+                    "pip install 'polars-corpus[embeddings]', or pass adjust=False"
+                ) from None
             adjust_text(texts, ax=ax, time_lim=2)
 
     for spine in ax.spines.values():
@@ -403,8 +427,6 @@ def text_plot(
     ax.set_aspect(1)
 
     return ax
-
-
 
 
 ## TODO:
