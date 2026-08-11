@@ -7,19 +7,24 @@ Simple queries are translated internally into CQP expressions. In most cases you
 ## Quick reference
 
 | Query                    | Meaning                                                         |
-| ------------------------ | --------------------------------------------------------------- |
+|--------------------------|-----------------------------------------------------------------|
 | `fox`                    | the word *fox*                                                  |
 | `s?ng`                   | a word such as *sing*, *sang*, or *song*                        |
 | `*able`                  | a word ending in *able*                                         |
 | `walk+`                  | a word beginning with *walk* followed by one or more characters |
-| `[car,truck]`            | either *car* or *truck*                                         |
+| `*[able,ability]`        | any word ending with *able* or *ability*                        |
 | `neighbo[u,]r`           | either *neighbour* or *neighbor*                                |
 | `quick brown fox`        | the three words in sequence                                     |
 | `fox + over`             | *fox*, one intervening token, then *over*                       |
 | `fox * over`             | *fox*, zero or one intervening token, then *over*               |
+| `as *** as`              | *as*, up to three intervening tokens, then *as*                 |
+| `as +* as`               | *as*, one or two intervening tokens, then *as*                  |
 | `lights_NN2`             | *lights* with POS tag `NN2`                                     |
 | `_NN2`                   | any token with POS tag `NN2`                                    |
 | `fox_{N}`                | *fox* with a noun tag                                           |
+| `the _{N}`               | *the* followed by any noun                                      |
+| `[the,a] _{N}`           | *the* or *a* followed by any noun                               |
+| `New\_York_NNP`          | the word *New_York* with POS tag `NNP`                          |
 | `{light}`                | a token whose lemma is *light*                                  |
 | `{light/V}`              | lemma *light* with a verb tag                                   |
 | `{walk}_VBD`             | lemma *walk* with POS tag `VBD`                                 |
@@ -582,43 +587,3 @@ atom        := word
 Adjacent items form a sequence.
 
 An empty query is not valid.
-
----
-
-## Common patterns
-
-| Pattern                                | Syntax                          |
-|----------------------------------------|---------------------------------|
-| A word followed by a noun              | `the _{N}`                      |
-| Either of two words followed by a noun | `[the,a] _{N}`                  |
-| A form of a lemma                      | `{run}`                         |
-| A verbal use of a lemma                | `{run/V}`                       |
-| An exact tagged form                   | `running_VVG`                   |
-| One unspecified intervening token      | `as + as`                       |
-| Up to three intervening tokens         | `as *** as`                     |
-| One or two intervening tokens          | `as +* as`                      |
-| Alternative phrases                    | `(as soon as\|as long as)`      | 
-| Optional modifier                      | `(very)? good`                  |
-| Capture a target                       | `$target: {run}`                |
-| Capture a multi token target           | `$target: (New\_York_NNP city)` |
-
----
-
-## Choosing among similar constructs
-
-Several pieces of syntax look similar but operate at different linguistic levels.
-
-| Syntax                      | Operates on                        | Example                 |
-| --------------------------- | ---------------------------------- | ----------------------- |
-| `?`, `*`, `+` inside a word | characters within one token        | `walk*`                 |
-| standalone `+` / `*`        | number of intervening tokens       | `walk + home`           |
-| `[a,b]`                     | alternatives within one word form  | `neighbo[u,]r`          |
-| `(a\|b)`                    | alternative query expressions      | `(red fox\|blue whale)` |
-| `{run}`                     | lemma                              | `{run}`                 |
-| `_VBD`                      | POS tag                            | `_VBD`                  |
-| `{run/V}`                   | lemma plus POS family              | `{run/V}`               |
-| `{run}_VBD`                 | lemma plus explicit POS pattern    | `{run}_VBD`             |
-| `(expr)?`                   | optional grouped expression        | `(very)? good`          |
-| `$x: expr`                  | variable binding                   | `$x: {run}`             |
-
-These distinctions are particularly important for `*` and `+`: when attached to characters in a word or POS pattern they are character wildcards, while an atom made entirely from `*` and `+` describes a token gap.
