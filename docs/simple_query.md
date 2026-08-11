@@ -64,6 +64,8 @@ fox
 
 matches *fox*, *Fox*, or *FOX* or any combination of upper and lower case.
 
+A word form may contain any character, so `don't`, `U.S.`, and `café` are all queries in their own right. The few characters that carry syntax are written with a backslash before them; see [Literal characters and escaping](#literal-characters-and-escaping).
+
 ### Character wildcards
 
 Three wildcards can be used inside word forms:
@@ -506,21 +508,29 @@ $x: (cat|dog)
 
 ## Literal characters and escaping
 
-A backslash can be used for query punctuation that would otherwise have syntactic meaning.
+Any character can appear in a word form. Punctuation and letters outside ASCII need nothing special:
 
-For example, a literal colon within a word can be written as:
+```text
+don't
+U.S.
+café
+```
+
+A handful of characters carry syntax, and a backslash makes one of them literal instead:
+
+```text
+? * + , : $ / ( ) | [ ] { } _ < > \
+```
+
+together with the space that separates one query item from the next.
+
+So a literal colon within a word is written:
 
 ```text
 foo\:bar
 ```
 
-and a literal slash as:
-
-```text
-foo\/bar
-```
-
-An underscore in a word form must be escaped because an unescaped underscore introduces a POS constraint:
+and an underscore must be escaped because an unescaped one introduces a POS constraint:
 
 ```text
 New\_York_NNP
@@ -528,13 +538,7 @@ New\_York_NNP
 
 This searches for word form `New_York` with POS tag `NNP`.
 
-The parser recognizes escapes for the following query metacharacters:
-
-```text
-? * + , : @ $ / ( ) [ ] { } _ - < >
-```
-
-and space.
+A backslash always begins an escape, so a word containing a backslash doubles it (`a\\b`), and a backslash before a letter or a digit is an error rather than a literal.
 
 ### Escaped wildcards
 
@@ -548,11 +552,13 @@ matches the token `*able`, while the unescaped `*able` matches `able`, `table`, 
 
 Escapes work the same way inside alternatives and lemma constraints, so `[x\*x,a\,b]` matches the tokens `x*x` and `a,b`, and `{a\/b}` searches for the lemma `a/b` rather than lemma `a` with POS tag `b`.
 
-### Character restrictions in plain words
+### Tags made of punctuation
 
-Plain word expressions accept letters, digits, wildcards, recognized escape sequences, and a limited set of punctuation characters. Some punctuation, including characters such as `.` and `'`, cannot currently occur directly in a plain `WORD` expression.
+The same rules apply to a POS tag, which matters for the Penn Treebank tags that are punctuation marks. `_.` and `_''` can be written directly, while the tags `:`, `,`, `$`, and `(` need a backslash:
 
-The lemma and square-bracket syntaxes accept a broader range of characters, so the exact restrictions differ by query construct.
+```text
+_\:
+```
 
 ---
 

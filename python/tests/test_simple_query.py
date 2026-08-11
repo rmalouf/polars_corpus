@@ -1,6 +1,7 @@
 import polars as pl
 import polars_corpus as plc
 import pytest
+from lark.exceptions import LarkError
 from polars_corpus.simple_parser import simple_to_cqp
 
 from .helpers import corpus
@@ -318,7 +319,7 @@ class TestEscapes:
     """Backslash-escaped metacharacters are literals, not wildcards"""
 
     @pytest.fixture
-    def punctuation_corpus(self) -> pl.DataFrame:
+    def wildcard_corpus(self) -> pl.DataFrame:
         return corpus(
             token="x*x xyx x?x x+x a,b a/b New_York xx",
             lemma="x*x xyx x?x x+x a,b a/b new_york xx",
@@ -353,9 +354,9 @@ class TestEscapes:
         ],
     )
     def test_escaped_metacharacters_match_literals(
-        self, punctuation_corpus, query, expected
+        self, wildcard_corpus, query, expected
     ):
-        assert matches(punctuation_corpus, query) == expected
+        assert matches(wildcard_corpus, query) == expected
 
     @pytest.mark.parametrize(
         "query,expected",
@@ -368,6 +369,59 @@ class TestEscapes:
     )
     def test_translation_to_cqp(self, query, expected):
         assert simple_to_cqp(query) == expected
+
+
+class TestLiteralCharacters:
+    """Any character can appear in a word, escaped where it carries syntax"""
+
+    # 16 tokens; the pos row gives the punctuation ones their Penn tags
+    TOKENS = r""". don't U.S. café 100% x-ray 日本 " a"b a\b a:b a$b a(b a|b a<b a}b"""
+    POS = """. VBP NNP NN CD JJ NN '' NN NN : $ ( CC NN NN"""
+
+    @pytest.fixture
+    def punctuation_corpus(self) -> pl.DataFrame:
+        return corpus(token=self.TOKENS, pos=self.POS, lemma=self.TOKENS)
+
+    @pytest.mark.parametrize(
+        "query,expected",
+        [
+            # punctuation and non-ASCII letters need no escape
+            (".", [(0, 1, ".")]),
+            ("don't", [(1, 2, "don't")]),
+            ("U.S.", [(2, 3, "U.S.")]),
+            ("café", [(3, 4, "café")]),
+            ("100%", [(4, 5, "100%")]),
+            ("x-ray", [(5, 6, "x-ray")]),
+            ("日本", [(6, 7, "日本")]),
+            # a quote has to survive the CQP string it is compiled into
+            ('"', [(7, 8, '"')]),
+            ('a"b', [(8, 9, 'a"b')]),
+            # characters that carry syntax, written with a backslash
+            (r"a\\b", [(9, 10, "a\\b")]),
+            (r"a\:b", [(10, 11, "a:b")]),
+            (r"a\$b", [(11, 12, "a$b")]),
+            (r"a\(b", [(12, 13, "a(b")]),
+            (r"a\|b", [(13, 14, "a|b")]),
+            (r"a\<b", [(14, 15, "a<b")]),
+            (r"a\}b", [(15, 16, "a}b")]),
+            # and the same characters in lemma and POS positions
+            ("{U.S.}", [(2, 3, "U.S.")]),
+            (r"{a\}b}", [(15, 16, "a}b")]),
+            ("U.S._NNP", [(2, 3, "U.S.")]),
+            ("_.", [(0, 1, ".")]),
+            (r"_\:", [(10, 11, "a:b")]),
+            (r"_\$", [(11, 12, "a$b")]),
+            ("_''", [(7, 8, '"')]),
+        ],
+    )
+    def test_literal_characters_match(self, punctuation_corpus, query, expected):
+        assert matches(punctuation_corpus, query) == expected
+
+    @pytest.mark.parametrize("query", [r"a\b", "\\", r"{a\b}"])
+    def test_backslash_must_escape_a_non_alphanumeric(self, query):
+        """A backslash introduces an escape, so it cannot stand for itself"""
+        with pytest.raises(LarkError):
+            simple_to_cqp(query)
 
 
 class TestBindings:

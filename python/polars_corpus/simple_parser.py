@@ -60,13 +60,16 @@ _POS_CLASSES = sorted(name.lower() for name in _POS_MAPPING)
 
 # Regex fragments (injected into the Lark grammar). `/` must be escaped as `\/`
 # because Lark uses `/` as the regex-literal delimiter in its grammar syntax.
-_META_CC = r"?*+,:@$\/()\[\]{}_\- <>"  # metacharacters a backslash can escape
-_ESC = rf"\\[{_META_CC}]"  # matches a \X escape sequence
-_WC = r"[A-Za-z0-9!@#%^&=\\\-]"  # word character (non-wildcard); `$` is excluded to leave it for variable bindings
+# Characters that carry syntax; a word can hold any other character, punctuation
+# and non-ASCII letters included, and these too once a backslash escapes them.
+_SPECIAL = r"\s?*+,:$\/()|\[\]{}_\\<>"
+_ESC = r"\\[^A-Za-z0-9]"  # a \X escape sequence: X is any non-alphanumeric
+_WC = rf"[^{_SPECIAL}]"  # word character (non-wildcard)
 _WL = r"[?*+]"  # wildcard
 _ALT = r"\[[^\]]*\]"  # bracketed alternative group, e.g. `[u,]`
 _NW = f"(?:{_ESC}|{_WC}|{_ALT})"  # non-wildcard part (escape, plain char, or group)
 _PC = f"(?:{_ESC}|{_WC}|{_WL}|{_ALT})"  # part char (including wildcards)
+_LI = rf"(?:{_ESC}|[^\\}}])+"  # inside `{...}`: anything but a bare backslash or brace
 
 
 _GRAMMAR = rf"""
@@ -82,8 +85,8 @@ RPAREN_QUANT: /\)(?:[?+*]|\{{\d+(?:,\d+)?\}})?/
 _LPAREN: "("
 _PIPE: "|"
 
-LEMMA_POS_TAG: /\{{[^\}}]+\}}_(?:\{{[A-Za-z]+\}}|{_PC}+)/
-LEMMA: /\{{[^\}}]+\}}/
+LEMMA_POS_TAG: /\{{{_LI}\}}_(?:\{{[A-Za-z]+\}}|{_PC}+)/
+LEMMA: /\{{{_LI}\}}/
 // POS_TAG and WORD overlap (e.g. "fox_NN" could start with a WORD match on
 // "fox"); give POS_TAG higher priority so Lark's lexer prefers it over the
 // shorter WORD match. Longest-match alone isn't reliable here with complex
@@ -111,6 +114,11 @@ _LEMMA_SEP = re.compile(r"(?<!\\)/")
 _WILDCARDS = {"?": ".", "*": ".*", "+": ".+"}
 
 
+def _literal(char: str) -> str:
+    """Regex matching `char` itself, safe to place in a CQP double-quoted value."""
+    return r"\"" if char == '"' else re.escape(char)
+
+
 def wildcard_to_regex(pattern: str) -> str:
     """Convert simple query wildcards to regex pattern.
 
@@ -119,14 +127,14 @@ def wildcard_to_regex(pattern: str) -> str:
     - * = zero or more characters (.*)
     - + = one or more characters (.+)
 
-    A backslash-escaped metacharacter is a literal, so `x\\*x` matches `x*x`.
+    A backslash-escaped character is a literal, so `x\\*x` matches `x*x`.
     """
     parts = []
     for part in _PATTERN_PARTS.findall(pattern):
         if len(part) == 2:  # `\X` escape: the escaped character is a literal
-            parts.append(re.escape(part[1]))
+            parts.append(_literal(part[1]))
         else:
-            parts.append(_WILDCARDS.get(part, re.escape(part)))
+            parts.append(_WILDCARDS.get(part, _literal(part)))
     return "".join(parts)
 
 

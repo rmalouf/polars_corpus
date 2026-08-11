@@ -14,11 +14,13 @@ word_token ::= simple_word
             | wildcard_word
             | escaped_char
 
-simple_word ::= ( letter | digit | [!@#$%^&_=\-] )+
+simple_word ::= ( word_char | escaped_char )+
+
+word_char ::= any character except whitespace and metacharacter
 
 wildcard_word ::= wildcard_pattern
 
-wildcard_pattern ::= ( letter | digit | [!@#$%^&_=\-] | wildcard | alternative_list )+
+wildcard_pattern ::= ( word_char | escaped_char | wildcard | alternative_list )+
 
 wildcard ::= "?" | "*" | "+"
 
@@ -28,10 +30,10 @@ alternative_sequence ::= alternative ( "," alternative )*
 
 alternative ::= wildcard_word?
 
-escaped_char ::= "\" metacharacter
+escaped_char ::= "\" ( metacharacter | any other non-alphanumeric character )
 
-metacharacter ::= "?" | "*" | "+" | "," | ":" | "@" | "/" | "(" | ")" 
-               | "[" | "]" | "{" | "}" | "_" | "-" | "<" | ">"
+metacharacter ::= "?" | "*" | "+" | "," | ":" | "$" | "/" | "(" | ")" | "|"
+               | "[" | "]" | "{" | "}" | "_" | "<" | ">" | "\"
 
 gap_token ::= "+" | "*"
 
@@ -103,5 +105,6 @@ digit ::= [0-9]
 
 ### Escaping
 - **Backslash**: `\?` for literal question mark
-- **Metacharacters**: `? * + , : @ / ( ) [ ] { } _ - < >`
+- **Metacharacters**: `? * + , : $ / ( ) | [ ] { } _ < > \` and space
+- Every other character, punctuation and non-ASCII alike, is a word character
 
