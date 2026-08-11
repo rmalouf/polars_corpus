@@ -8,8 +8,9 @@ matplotlib = pytest.importorskip("matplotlib")
 # Draw to a buffer: these tests read the axes back rather than showing them.
 matplotlib.use("Agg")
 
-import matplotlib.pyplot as plt
-from polars_corpus import barcode_plot, dispersion_plot, keyword_plot
+# Imported after the skip check and the backend switch, hence not at the top.
+import matplotlib.pyplot as plt  # noqa: E402
+from polars_corpus import barcode_plot, dispersion_plot, keyword_plot  # noqa: E402
 
 # Two files of four tokens each. "cat" is in both, "dog" only in f1, and "eel"
 # occurs nowhere.

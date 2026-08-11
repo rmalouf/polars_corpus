@@ -76,11 +76,18 @@ python-source = "python"
 ignore-missing-imports = ["polars_corpus._internal"]
 
 [dependency-groups]
-dev = [
-    "coverage>=7.10",
+# What `mkdocs build` needs and nothing else, so the docs workflow can install
+# it with `uv sync --only-group docs` and skip building the Rust extension.
+docs = [
     "mkdocs",
     "mkdocstrings[python]",
     "mkdocs-jupyter",
+    # mkdocstrings formats the signatures it renders with ruff, if it is there.
+    "ruff>=0.15,<0.16",
+]
+dev = [
+    {include-group = "docs"},
+    "coverage>=7.10",
     "jupyterlab>=4.4.0",
     "maturin>=1.8.3",
     "notebook>=7.4.0",

@@ -10,8 +10,6 @@ import pytest
 from polars_corpus import Match, SearchResults, Span
 from polars_corpus.view import ConcordanceWidget
 
-from .helpers import corpus
-
 
 @pytest.fixture
 def results():

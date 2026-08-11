@@ -12,6 +12,9 @@ plugins:
   - mkdocstrings:
       handlers:
         python:
+          # Read the sources here rather than an installed polars_corpus, so a
+          # docs build needs neither the venv nor the compiled extension.
+          paths: [python]
           options:
             heading_level: 2
             docstring_style: numpy
@@ -24,7 +27,9 @@ plugins:
             docstring_section_style: list
 
   - mkdocs-jupyter:
-      execute: true
+      # Render the outputs committed with the notebooks. Executing here would
+      # need the corpora they read, which are too large to keep in the repo.
+      execute: false
       include_requirejs: true
       custom_mathjax_url: "https://cdn.jsdelivr.net/npm/mathjax@4/tex-svg.js"
 
