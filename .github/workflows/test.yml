@@ -90,11 +90,13 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/nltk_data
-          key: nltk-${{ runner.os }}-${{ hashFiles('python/tests/test_convert.py') }}
+          key: nltk-${{ runner.os }}-${{ hashFiles('.github/workflows/test.yml') }}
+      # punkt_tab is not a corpus: state_union ships no sentence boundaries, so
+      # its reader tokenizes them with PunktTokenizer.
       - name: Download nltk corpora
         run: >
           uv run --no-sync python -m nltk.downloader
-          brown treebank state_union panlex_swadesh lin_thesaurus
+          brown treebank state_union panlex_swadesh lin_thesaurus punkt_tab
 
       # No pyrefly step yet: `pyrefly check python/polars_corpus/` still reports
       # errors from third-party stubs, so it cannot gate a PR.
