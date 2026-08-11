@@ -7,7 +7,8 @@ translates simple queries directly to CQP expressions.
 Supports variable bindings using $varname: pattern syntax, which translates
 to CQP's $varname: (pattern) format with automatic parenthesis wrapping.
 
-See simple_grammar.md for the full grammar specification.
+`_GRAMMAR` below is the grammar; docs/simple_query.md documents the language it
+accepts.
 """
 
 from __future__ import annotations
@@ -21,17 +22,6 @@ from lark.exceptions import VisitError
 from .utils import check_choice
 
 __all__ = ["simple_to_cqp"]
-
-
-# Helper functions for building CQP expressions
-def _make_constraint(col: str, pattern: str) -> str:
-    """Build a single column constraint. All matching is case-insensitive."""
-    return f'{col}="{pattern}"%c'
-
-
-def _make_token(*constraints: str) -> str:
-    """Build a token constraint with one or more conditions."""
-    return f"[{' & '.join(constraints)}]"
 
 
 # Simplified POS classes, written `_{CLASS}` -- supports both BNC CLAWS-5 and
@@ -70,6 +60,7 @@ _ALT = r"\[[^\]]*\]"  # bracketed alternative group, e.g. `[u,]`
 _NW = f"(?:{_ESC}|{_WC}|{_ALT})"  # non-wildcard part (escape, plain char, or group)
 _PC = f"(?:{_ESC}|{_WC}|{_WL}|{_ALT})"  # part char (including wildcards)
 _LI = rf"(?:{_ESC}|[^\\}}])+"  # inside `{...}`: anything but a bare backslash or brace
+_TAG = rf"(?:\{{[A-Za-z]+\}}|{_PC}+)"  # a `_TAG` suffix: `{{CLASS}}` or a tag pattern
 
 
 _GRAMMAR = rf"""
@@ -85,13 +76,13 @@ RPAREN_QUANT: /\)(?:[?+*]|\{{\d+(?:,\d+)?\}})?/
 _LPAREN: "("
 _PIPE: "|"
 
-LEMMA_POS_TAG: /\{{{_LI}\}}_(?:\{{[A-Za-z]+\}}|{_PC}+)/
+LEMMA_POS_TAG: /\{{{_LI}\}}_{_TAG}/
 LEMMA: /\{{{_LI}\}}/
 // POS_TAG and WORD overlap (e.g. "fox_NN" could start with a WORD match on
 // "fox"); give POS_TAG higher priority so Lark's lexer prefers it over the
 // shorter WORD match. Longest-match alone isn't reliable here with complex
 // character classes in the Lark basic lexer.
-POS_TAG.2: /{_PC}*_(?:\{{[A-Za-z]+\}}|{_PC}+)/
+POS_TAG.2: /{_PC}*_{_TAG}/
 GAPS: /[+*]+/
 WORD: /{_PC}*{_NW}{_PC}*/
 
@@ -99,15 +90,20 @@ WORD: /{_PC}*{_NW}{_PC}*/
 """
 
 
-# Splits a pattern into escape sequences and single characters.
-_PATTERN_PARTS = re.compile(rf"{_ESC}|.", re.S)
-# Splits a word into escape sequences, alternative groups, and single characters.
-_WORD_PARTS = re.compile(rf"{_ESC}|{_ALT}|.", re.S)
+# A terminal reaches the transformer as one undivided string, so each is matched
+# again here to recover its parts. Built from the fragments the grammar itself
+# uses, so the two cannot drift; the greedy `_LI` is what stops an escaped brace
+# inside a lemma from being read as the closing one.
+_POS_TAG_PARTS = re.compile(rf"(?P<word>{_PC}*)_(?P<tag>{_TAG})", re.S)
+_LEMMA_PARTS = re.compile(rf"\{{(?P<lemma>{_LI})\}}(?:_(?P<tag>{_TAG}))?", re.S)
+
+# Splits a pattern into escapes, alternative groups, and single characters.
+_PARTS = re.compile(rf"{_ESC}|{_ALT}|.", re.S)
 # Whitespace padding an alternative, which is layout rather than part of the
 # pattern. An escaped space (`\ `) is a literal and so is left alone.
 _ALT_PAD = re.compile(r"^\s+|(?<!\\)\s+$")
 # Separators that only separate when unescaped: `,` between alternatives,
-# `/` between a lemma and its POS constraint.
+# `/` between a lemma and its POS class.
 _ALT_SEP = re.compile(r"(?<!\\),")
 _LEMMA_SEP = re.compile(r"(?<!\\)/")
 
@@ -119,74 +115,54 @@ def _literal(char: str) -> str:
     return r"\"" if char == '"' else re.escape(char)
 
 
-def wildcard_to_regex(pattern: str) -> str:
-    """Convert simple query wildcards to regex pattern.
+def _to_regex(pattern: str) -> str:
+    r"""Convert a simple query pattern to regex.
 
-    Wildcards:
-    - ? = single character (.)
-    - * = zero or more characters (.*)
-    - + = one or more characters (.+)
-
-    A backslash-escaped character is a literal, so `x\\*x` matches `x*x`.
+    Wildcards are `?` (one character), `*` (zero or more) and `+` (one or more);
+    `[a,b]` alternates between its comma-separated parts, which may be empty or
+    hold wildcards of their own; and a backslash makes the next character a
+    literal, so `x\*x` matches `x*x`.
     """
     parts = []
-    for part in _PATTERN_PARTS.findall(pattern):
-        if len(part) == 2:  # `\X` escape: the escaped character is a literal
+    for part in _PARTS.findall(pattern):
+        if part.startswith("["):  # `[a,b]` group -- alternatives are patterns too
+            alts = "|".join(
+                _to_regex(_ALT_PAD.sub("", alt)) for alt in _ALT_SEP.split(part[1:-1])
+            )
+            parts.append(f"(?:{alts})")
+        elif len(part) == 2:  # `\X` escape: the escaped character is a literal
             parts.append(_literal(part[1]))
         else:
             parts.append(_WILDCARDS.get(part, _literal(part)))
     return "".join(parts)
 
 
-def word_to_regex(word: str) -> str:
-    """Convert a word pattern to regex, expanding `[a,b]` alternative groups.
-
-    Groups may appear anywhere in the word (`neighbo[u,]r`) and their
-    alternatives may be empty or contain wildcards.
-    """
-    parts = []
-    for part in _WORD_PARTS.findall(word):
-        if part.startswith("["):
-            alts = "|".join(
-                wildcard_to_regex(_ALT_PAD.sub("", alt))
-                for alt in _ALT_SEP.split(part[1:-1])
-            )
-            parts.append(f"(?:{alts})")
-        else:
-            parts.append(wildcard_to_regex(part))
-    return "".join(parts)
-
-
 def _split_lemma(inner: str) -> tuple[str, str]:
-    """Split `lemma[/POS]` on the first unescaped slash."""
+    """Split `lemma[/CLASS]` on the first unescaped slash."""
     parts = _LEMMA_SEP.split(inner, maxsplit=1)
     return parts[0], parts[1] if len(parts) > 1 else ""
 
 
 def _gap_tokens(gap_str: str) -> str:
-    plus_count = gap_str.count("+")
-    star_count = gap_str.count("*")
-    min_tokens = plus_count
-    max_tokens = plus_count + star_count
-
-    if min_tokens == max_tokens:
-        return f"[]{{{min_tokens}}}"
-    if max_tokens == min_tokens + 1:
-        if min_tokens == 0:
-            return "[]?"
-        return f"[]{{{min_tokens}}} []?"
-    return f"[]{{{min_tokens},{max_tokens}}}"
+    """Expand a run of gap markers: `+` requires a token, `*` allows one."""
+    low = gap_str.count("+")
+    high = low + gap_str.count("*")
+    if low == high:
+        return f"[]{{{low}}}"
+    if low == 0 and high == 1:
+        return "[]?"
+    return f"[]{{{low},{high}}}"
 
 
 def _resolve_pos_tag(raw: str) -> str:
-    """Convert a captured POS tag fragment to a CQP pattern.
+    """Convert a `_TAG` suffix to a CQP pattern.
 
     `{CLASS}` names a simplified class; anything else is a literal tag pattern,
     even where it spells one of the class names.
     """
     if raw.startswith("{") and raw.endswith("}"):
         return _pos_class(raw[1:-1])
-    return word_to_regex(raw)
+    return _to_regex(raw)
 
 
 def _pos_class(name: str) -> str:
@@ -201,70 +177,48 @@ class SimpleCompiler(Transformer):
         self.pos_column = pos_column
         self.lemma_column = lemma_column
 
+    def _token(self, word: str = "", lemma: str = "", pos: str = "") -> str:
+        """Join a terminal's translated patterns into one CQP token constraint.
+
+        Whichever parts the terminal supplied; all matching is case-insensitive.
+        """
+        columns = (
+            (self.token_column, word),
+            (self.lemma_column, lemma),
+            (self.pos_column, pos),
+        )
+        constraints = [f'{col}="{pattern}"%c' for col, pattern in columns if pattern]
+        return f"[{' & '.join(constraints)}]"
+
     # --- terminals -----------------------------------------------------
 
     def WORD(self, token: Any) -> str:
-        pattern = word_to_regex(str(token))
-        return _make_token(_make_constraint(self.token_column, pattern))
+        return self._token(word=_to_regex(str(token)))
 
     def GAPS(self, token: Any) -> str:
         return _gap_tokens(str(token))
 
     def POS_TAG(self, token: Any) -> str:
-        raw = str(token)
-        # Split on the first underscore that introduces the tag. The word part
-        # cannot contain a literal `_` (only wildcards/word chars/escapes), and
-        # the tag part starts with either `{` or a word/wildcard char.
-        idx = self._split_pos(raw)
-        word_part = raw[:idx]
-        tag_part = raw[idx + 1 :]
-        pos_pattern = _resolve_pos_tag(tag_part)
-        constraints = [_make_constraint(self.pos_column, pos_pattern)]
-        if word_part:
-            word_pattern = word_to_regex(word_part)
-            constraints.insert(0, _make_constraint(self.token_column, word_pattern))
-        return _make_token(*constraints)
-
-    @staticmethod
-    def _split_pos(raw: str) -> int:
-        # Find the first `_` that isn't inside an escape sequence or `[...]` group.
-        i = 0
-        while i < len(raw):
-            ch = raw[i]
-            if ch == "\\" and i + 1 < len(raw):
-                i += 2
-                continue
-            if ch == "[":
-                i = raw.index("]", i) + 1
-                continue
-            if ch == "_":
-                return i
-            i += 1
-        raise ValueError(f"POS_TAG has no unescaped underscore: {raw!r}")
+        parts = _POS_TAG_PARTS.fullmatch(str(token))
+        assert parts is not None  # lexed from this same shape
+        return self._token(
+            word=_to_regex(parts["word"]), pos=_resolve_pos_tag(parts["tag"])
+        )
 
     def LEMMA(self, token: Any) -> str:
-        raw = str(token)[1:-1]  # strip braces
-        lemma_part, pos_part = _split_lemma(raw)
-        lemma_pattern = wildcard_to_regex(lemma_part)
-        constraints = [_make_constraint(self.lemma_column, lemma_pattern)]
-        if pos_part:
-            pos_pattern = _POS_MAPPING.get(pos_part.upper(), pos_part + ".*")
-            constraints.append(_make_constraint(self.pos_column, pos_pattern))
-        return _make_token(*constraints)
+        """Handle `{lemma}`, `{lemma/CLASS}` and `{lemma}_TAG` alike."""
+        parts = _LEMMA_PARTS.fullmatch(str(token))
+        assert parts is not None
+        lemma, klass = _split_lemma(parts["lemma"])
+        # The `/CLASS` slot only ever names a simplified class -- `{walk}_VB*`
+        # is how to ask for a tag pattern -- so the two spellings stay distinct.
+        if parts["tag"]:
+            pos = _resolve_pos_tag(parts["tag"])
+        else:
+            pos = _pos_class(klass) if klass else ""
+        return self._token(lemma=_to_regex(lemma), pos=pos)
 
-    def LEMMA_POS_TAG(self, token: Any) -> str:
-        raw = str(token)
-        # Matches `{lemma[/POS]}_TAG` — find the `}_` boundary.
-        brace_end = raw.index("}")
-        lemma_inner = raw[1:brace_end]
-        tag_part = raw[brace_end + 2 :]  # skip `}_`
-        lemma_part, _ = _split_lemma(lemma_inner)
-        lemma_pattern = wildcard_to_regex(lemma_part)
-        pos_pattern = _resolve_pos_tag(tag_part)
-        return _make_token(
-            _make_constraint(self.lemma_column, lemma_pattern),
-            _make_constraint(self.pos_column, pos_pattern),
-        )
+    LEMMA_POS_TAG = LEMMA
 
     # --- rules ---------------------------------------------------------
 
@@ -296,7 +250,7 @@ def simple_to_cqp(
     pos_column: str = "pos",
     lemma_column: str = "lemma",
 ) -> str:
-    """Parse a simple query and convert it to CQP syntax.
+    r"""Parse a simple query and convert it to CQP syntax.
 
     Parameters
     ----------
@@ -319,7 +273,8 @@ def simple_to_cqp(
     lark.exceptions.LarkError
         If the query syntax is invalid
     ValueError
-        If a `_{CLASS}` tag does not name a simplified POS class
+        If a `_{CLASS}` tag or a `{lemma/CLASS}` slot does not name a
+        simplified POS class
 
     Examples
     --------
@@ -344,6 +299,9 @@ def simple_to_cqp(
     >>> simple_to_cqp("fox + over")
     '[token="fox"%c] []{1} [token="over"%c]'
 
+    >>> simple_to_cqp("fox +* over")
+    '[token="fox"%c] []{1,2} [token="over"%c]'
+
     >>> simple_to_cqp("lights_NN2")
     '[token="lights"%c & pos="NN2"%c]'
 
@@ -367,6 +325,12 @@ def simple_to_cqp(
 
     >>> simple_to_cqp("{box}_{SUBST}")
     '[lemma="box"%c & pos="N.*"%c]'
+
+    >>> simple_to_cqp("{[car,truck]}")
+    '[lemma="(?:car|truck)"%c]'
+
+    >>> simple_to_cqp(r"{a\}b}_NN")
+    '[lemma="a\\}b"%c & pos="NN"%c]'
 
     >>> simple_to_cqp("$x: fox")
     '$x: ([token="fox"%c])'

@@ -161,6 +161,7 @@ def test_word_patterns(sample_corpus, query, expected):
         ("fox * over", [(3, 6, "fox jumps over")]),  # * is 0 or 1 token
         ("fox + over", [(3, 6, "fox jumps over")]),  # + is 1+ tokens
         ("The ++ fox", [(0, 4, "The quick brown fox")]),  # ++ is exactly 2 tokens
+        ("The +* fox", [(0, 4, "The quick brown fox")]),  # 1-2 tokens
         ("A *** student", [(10, 14, "A very capable student")]),  # 0-3 tokens
         ("fox +++** dog", [(3, 9, "fox jumps over the lazy dog")]),  # 3-5 tokens
     ],
@@ -249,9 +250,23 @@ def test_tagset_spelling_class_names(query, expected):
     assert matches(ud_corpus, query) == expected
 
 
-@pytest.mark.parametrize("query", ["_{FOO}", "walk_{FOO}", "{walk}_{FOO}"])
+@pytest.mark.parametrize(
+    "query", ["_{FOO}", "walk_{FOO}", "{walk}_{FOO}", "{walk/FOO}"]
+)
 def test_unknown_pos_class_raises(query):
     with pytest.raises(ValueError, match="Unknown POS class 'FOO'"):
+        simple_to_cqp(query)
+
+
+@pytest.mark.parametrize("query", ["{table/NN}", "{table/N*}"])
+def test_lemma_slot_is_class_only(query):
+    """`{lemma/X}` names a simplified class and nothing else.
+
+    A literal tag goes in the `_TAG` suffix instead, so `{table}_NN*` is how to
+    ask for a tag pattern. Keeping the two apart means `{sing/ADJ}` is never
+    ambiguous between the class and a tagset that spells a tag `ADJ`.
+    """
+    with pytest.raises(ValueError, match="Unknown POS class"):
         simple_to_cqp(query)
 
 
@@ -262,8 +277,12 @@ def test_unknown_pos_class_raises(query):
         ("{sing}", [(29, 30, "sing"), (30, 31, "sang")]),
         ("{walk}", [(14, 15, "walked")]),
         ("{capable/A}", [(12, 13, "capable"), (40, 41, "capable")]),
+        ("{capable/ADJ}", [(12, 13, "capable"), (40, 41, "capable")]),
         ("{table/N}", [(50, 51, "table")]),  # the noun, not the VB at index 38
         ("{be/V}", [(35, 36, "are"), (51, 52, "is")]),
+        # a group works in a lemma just as it does in a word form
+        ("{[car,truck]}", [(21, 22, "car"), (24, 25, "truck")]),
+        ("{neighbo[u,]r}", [(57, 58, "neighbour"), (59, 60, "neighbor")]),
         # lemma combined with sequence and gap operators
         ("{sing} sang", [(29, 31, "sing sang")]),
         ("{be} {able}", [(35, 37, "are able")]),
@@ -407,6 +426,9 @@ class TestLiteralCharacters:
             # and the same characters in lemma and POS positions
             ("{U.S.}", [(2, 3, "U.S.")]),
             (r"{a\}b}", [(15, 16, "a}b")]),
+            # the escaped brace is not the one that closes the lemma
+            (r"{a\}b}_NN", [(15, 16, "a}b")]),
+            (r"{a\}b}_{SUBST}", [(15, 16, "a}b")]),
             ("U.S._NNP", [(2, 3, "U.S.")]),
             ("_.", [(0, 1, ".")]),
             (r"_\:", [(10, 11, "a:b")]),

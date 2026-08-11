@@ -233,23 +233,22 @@ Curly braces specify a lemma:
 
 This matches tokens whose lemma is *light*, regardless of their surface form.
 
-Lemma searches may contain the same `?`, `*`, and `+` character wildcards used for word forms:
+Lemma searches may contain the same `?`, `*`, and `+` character wildcards and `[a,b]` alternatives used for word forms:
 
 ```text
 {walk*}
+{[car,truck]}
 ```
 
 Lemma matching is case-insensitive.
 
-A POS specification can be included inside the braces after `/`:
+A generic word class can be included inside the braces after `/`:
 
 ```text
 {light/V}
 ```
 
-This matches lemma *light* with a verb POS tag.
-
-For the recognized generic categories, the mappings in the preceding section are used:
+This matches lemma *light* with a verb POS tag, using the mappings in the preceding section:
 
 ```text
 {box/SUBST}
@@ -257,13 +256,7 @@ For the recognized generic categories, the mappings in the preceding section are
 
 matches lemma *box* with a noun tag.
 
-If the name after `/` is not one of the predefined generic categories, it is interpreted as the beginning of a POS tag. For example:
-
-```text
-{word/NN}
-```
-
-produces a POS pattern beginning with `NN`.
+The name after `/` must be one of the generic categories; anything else is an error naming the ones that are available. A literal tag goes after the closing brace instead, so `{word}_NN` is how to ask for the tag `NN` and `{word}_NN*` for any tag beginning with it. Keeping the two apart means `{light/ADJ}` always means the adjective class, never a tagset whose adjective tag happens to be spelled `ADJ`.
 
 A lemma can also be followed by an underscore and POS specification:
 

@@ -64,7 +64,11 @@ bad-override-mutable-attribute = "ignore"
 python-preference = "only-managed"
 
 [tool.pytest.ini_options]
-testpaths = ["python/tests"]
+# simple_parser's docstring examples are the reference for the query language,
+# so they are executed. importlib mode keeps it importable as part of the
+# package, which its relative imports need.
+addopts = "--doctest-modules --import-mode=importlib"
+testpaths = ["python/tests", "python/polars_corpus/simple_parser.py"]
 
 [tool.maturin]
 module-name = "polars_corpus._internal"

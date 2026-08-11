@@ -1,6 +1,6 @@
 # Simple Query Language Implementation Status
 
-**Last updated:** 2026-08-04
+**Last updated:** 2026-08-11
 **Status:** Feature-complete except proximity operators
 
 The Simple query language is the BNCweb-style syntax that `search()` accepts by
@@ -11,12 +11,17 @@ no intermediate AST and no separate execution path.
 The grammar is defined in **lark** (`_GRAMMAR` in `simple_parser.py`) and
 compiled once at import as an LALR parser; each call instantiates a
 `SimpleCompiler` transformer with the requested column names, whose methods emit
-CQP fragments. An earlier implementation used pyparsing and rebuilt its grammar
-per call; it was replaced, so any description of `Forward()`, `Combine`, or
-parse actions no longer applies. `simple_grammar.md` holds the grammar
-specification and `Simple_query_language.pdf` the original BNCweb documentation.
+CQP fragments. `docs/simple_query.md` documents the language for users; the
+grammar itself is the specification.
 
-Covered by 79 tests in `python/tests/test_simple_query.py`.
+Because whitespace separates query items, a whole token (`{walk}_VB*`) has to
+lex as a single terminal rather than as a rule over smaller ones. The
+transformer therefore matches each terminal again to recover its parts, against
+regexes (`_POS_TAG_PARTS`, `_LEMMA_PARTS`) built from the same fragments the
+grammar is built from, so the two cannot drift apart.
+
+Covered by 143 tests in `python/tests/test_simple_query.py`, plus the docstring
+examples on `simple_to_cqp()`, which pytest executes (`--doctest-modules`).
 
 ---
 
@@ -26,14 +31,14 @@ Covered by 79 tests in `python/tests/test_simple_query.py`.
 |---|---|---|---|
 | Basic word | `word` | `fox` | `[token="fox"%c]` |
 | Wildcards | `?` `*` `+` | `s?ng`, `*able` | `[token="s.ng"%c]` |
-| Alternatives | `[a,b]` | `[car,truck]`, `neighbo[u,]r` | `[token="(?:car\|truck)"%c]` |
+| Alternatives | `[a,b]` | `[car,truck]`, `neighbo[u,]r`, `{[car,truck]}` | `[token="(?:car\|truck)"%c]` |
 | Sequences | `a b` | `quick brown fox` | three tokens |
 | Gaps | `*` `+` | `fox * over` | `[]?` between tokens |
 | Repeated gaps | `++` `***` | `++` | `[]{2}` |
 | POS tags | `word_TAG`, `_TAG` | `lights_NN2`, `_PNX` | `& pos="NN2"%c` |
 | Simplified POS | `_{CLASS}` | `{box}_{SUBST}` | `pos="N.*"%c` |
 | Lemmas | `{lemma}` | `{light}` | `[lemma="light"%c]` |
-| Lemma + class | `{lemma/POS}` | `{light/V}` | `& pos="V.*"%c` |
+| Lemma + class | `{lemma/CLASS}` | `{light/V}` | `& pos="V.*"%c` |
 | Lemma + tag | `{lemma}_TAG` | `{walk}_VBD` | `& pos="VBD"%c` |
 | Groups | `(...)` with `? + * {m,n}` | `(very)? big`, `(quick){2}` | `(...)?`, `(...){2}` |
 | Disjunction | `(a \| b \| c)` | `(a \| b \| c)` | `([..]\|[..]\|[..])` |
@@ -53,10 +58,15 @@ Column names are configurable throughout: `token_column`, `pos_column`,
 | `A`, `ADJ` | `(AJ.*\|JJ.*)` | AJ0, JJ, JJR, JJS |
 | `ADV` | `(AV.*\|RB.*)` | AV0, RB, RBR |
 
-Chosen to cover both BNC CLAWS-5 and Penn Treebank tagsets. The braces are
-required: `_SUBST` is the literal tag `SUBST`, so a corpus tagged with a scheme
-that uses these names -- Universal Dependencies `ADJ`, `PRON`, ... -- keeps
-every one of its tags searchable.
+Chosen to cover both BNC CLAWS-5 and Penn Treebank tagsets. In a `_TAG` suffix
+the braces are required: `_SUBST` is the literal tag `SUBST`, so a corpus tagged
+with a scheme that uses these names -- Universal Dependencies `ADJ`, `PRON`, ...
+-- keeps every one of its tags searchable.
+
+The `{lemma/CLASS}` slot is the other way round: it holds a class name and
+nothing else, and an unrecognized one is an error rather than a tag prefix.
+`{walk}_VB*` is how to ask for a tag pattern alongside a lemma. Neither
+spelling is ambiguous, which is the point of splitting them this way.
 
 ---
 
@@ -85,5 +95,5 @@ column, which `with_chunk_index()` can already supply.
 
 ## Known Wrinkles
 
-- One comment in `simple_parser.py` still refers to the pyparsing
-  implementation.
+- `{lemma/CLASS}_TAG` gives both a class and a tag; the `_TAG` wins and the
+  class is dropped without complaint.

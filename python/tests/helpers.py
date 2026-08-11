@@ -6,7 +6,8 @@ import polars as pl
 def corpus(**columns: str) -> pl.DataFrame:
     """Build a corpus from whitespace-separated strings, one per column.
 
-    >>> corpus(token="the dog", pos="DT NN")
+    >>> corpus(token="the dog", pos="DT NN").shape
+    (2, 2)
     """
     return pl.DataFrame({name: value.split() for name, value in columns.items()})
 
