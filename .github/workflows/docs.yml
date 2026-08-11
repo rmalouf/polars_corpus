@@ -1,0 +1,73 @@
+name: Documentation
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'docs/**'
+      - 'mkdocs.yml'
+      - 'pyproject.toml'
+      - 'python/polars_corpus/**'
+      - '.github/workflows/docs.yml'
+  pull_request:
+    paths:
+      - 'docs/**'
+      - 'mkdocs.yml'
+      - 'pyproject.toml'
+      - 'python/polars_corpus/**'
+      - '.github/workflows/docs.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pages-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: astral-sh/setup-uv@v9.0.0
+        with:
+          enable-cache: true
+          # Distinct from the CI workflow's caches, which otherwise derive the
+          # same key and race to reserve it when both workflows run on a push.
+          cache-suffix: docs
+
+      # --only-group installs mkdocs without building the Rust extension.
+      # mkdocstrings reads the sources under python/ (see mkdocs.yml), and the
+      # notebooks are rendered from their committed outputs, so the docs need
+      # neither the extension nor the corpora.
+      - name: Install documentation dependencies
+        run: uv sync --only-group docs
+
+      - name: Build documentation
+        run: uv run --no-sync mkdocs build --strict
+
+      - name: Upload artifact
+        if: github.event_name != 'pull_request'
+        uses: actions/upload-pages-artifact@v5
+        with:
+          path: ./site
+
+  deploy:
+    name: Deploy to GitHub Pages
+    if: github.event_name != 'pull_request'
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v5
