@@ -53,7 +53,10 @@ Column names are configurable throughout: `token_column`, `pos_column`,
 | `A`, `ADJ` | `(AJ.*\|JJ.*)` | AJ0, JJ, JJR, JJS |
 | `ADV` | `(AV.*\|RB.*)` | AV0, RB, RBR |
 
-Chosen to cover both BNC CLAWS-5 and Penn Treebank tagsets.
+Chosen to cover both BNC CLAWS-5 and Penn Treebank tagsets. The braces are
+required: `_SUBST` is the literal tag `SUBST`, so a corpus tagged with a scheme
+that uses these names -- Universal Dependencies `ADJ`, `PRON`, ... -- keeps
+every one of its tags searchable.
 
 ---
 

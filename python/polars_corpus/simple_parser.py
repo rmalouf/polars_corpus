@@ -16,6 +16,9 @@ import re
 from typing import Any
 
 from lark import Lark, Transformer
+from lark.exceptions import VisitError
+
+from .utils import check_choice
 
 __all__ = ["simple_to_cqp"]
 
@@ -31,7 +34,10 @@ def _make_token(*constraints: str) -> str:
     return f"[{' & '.join(constraints)}]"
 
 
-# Simplified POS tag mapping - supports both BNC CLAWS-5 and Penn Treebank tagsets
+# Simplified POS classes, written `_{CLASS}` -- supports both BNC CLAWS-5 and
+# Penn Treebank tagsets. An unbraced `_TAG` is always a literal tag pattern, so
+# that a corpus whose tagset uses these names (`ADJ`, `PRON`, ... in Universal
+# Dependencies) can still be searched for them.
 _POS_MAPPING = {
     "V": "V.*",
     "VERB": "V.*",
@@ -49,13 +55,12 @@ _POS_MAPPING = {
     "STOP": "PU.*",
     "UNC": "UNC",
 }
+_POS_CLASSES = sorted(name.lower() for name in _POS_MAPPING)
 
 
-# Metacharacters that can be escaped with a backslash.
-_META_CHARS = r"?*+,:@$/()[]{}_- <>"
 # Regex fragments (injected into the Lark grammar). `/` must be escaped as `\/`
 # because Lark uses `/` as the regex-literal delimiter in its grammar syntax.
-_META_CC = r"?*+,:@$\/()\[\]{}_\- <>"  # same set, for use inside a char class
+_META_CC = r"?*+,:@$\/()\[\]{}_\- <>"  # metacharacters a backslash can escape
 _ESC = rf"\\[{_META_CC}]"  # matches a \X escape sequence
 _WC = r"[A-Za-z0-9!@#%^&=\\\-]"  # word character (non-wildcard); `$` is excluded to leave it for variable bindings
 _WL = r"[?*+]"  # wildcard
@@ -89,11 +94,6 @@ WORD: /{_PC}*{_NW}{_PC}*/
 
 %ignore /[ \t\r\n]+/
 """
-
-
-def _unescape(text: str) -> str:
-    """Strip backslashes from escape sequences (\\X -> X)."""
-    return re.sub(rf"\\([{re.escape(_META_CHARS)}])", r"\1", text)
 
 
 # Splits a pattern into escape sequences and single characters.
@@ -171,16 +171,19 @@ def _gap_tokens(gap_str: str) -> str:
 
 
 def _resolve_pos_tag(raw: str) -> str:
-    """Convert a captured POS tag fragment to a CQP pattern."""
-    # Braced form: {TAG} — simplified, lookup required.
+    """Convert a captured POS tag fragment to a CQP pattern.
+
+    `{CLASS}` names a simplified class; anything else is a literal tag pattern,
+    even where it spells one of the class names.
+    """
     if raw.startswith("{") and raw.endswith("}"):
-        key = raw[1:-1].upper()
-        return _POS_MAPPING[key]
-    # Unbraced form: may still match a simplified key (mirrors pyparsing impl).
-    unescaped = _unescape(raw)
-    if unescaped.isalpha() and unescaped.upper() in _POS_MAPPING:
-        return _POS_MAPPING[unescaped.upper()]
+        return _pos_class(raw[1:-1])
     return word_to_regex(raw)
+
+
+def _pos_class(name: str) -> str:
+    """Expand a simplified POS class name, e.g. `SUBST` -> `N.*`."""
+    return _POS_MAPPING[check_choice(name, _POS_CLASSES, param="POS class").upper()]
 
 
 class SimpleCompiler(Transformer):
@@ -307,6 +310,8 @@ def simple_to_cqp(
     ------
     lark.exceptions.LarkError
         If the query syntax is invalid
+    ValueError
+        If a `_{CLASS}` tag does not name a simplified POS class
 
     Examples
     --------
@@ -337,6 +342,9 @@ def simple_to_cqp(
     >>> simple_to_cqp("_PNX")
     '[pos="PNX"%c]'
 
+    >>> simple_to_cqp("_{SUBST}")
+    '[pos="N.*"%c]'
+
     >>> simple_to_cqp("{light}")
     '[lemma="light"%c]'
 
@@ -363,4 +371,7 @@ def simple_to_cqp(
     """
     tree = _parser.parse(query)
     compiler = SimpleCompiler(token_column, pos_column, lemma_column)
-    return compiler.transform(tree)
+    try:
+        return compiler.transform(tree)
+    except VisitError as exc:  # lark wraps the cause; the caller wants it plain
+        raise exc.orig_exc from None

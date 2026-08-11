@@ -19,7 +19,7 @@ Simple queries are translated internally into CQP expressions. In most cases you
 | `fox * over`             | *fox*, zero or one intervening token, then *over*               |
 | `lights_NN2`             | *lights* with POS tag `NN2`                                     |
 | `_NN2`                   | any token with POS tag `NN2`                                    |
-| `fox_N`                  | *fox* with a noun tag                                           |
+| `fox_{N}`                | *fox* with a noun tag                                           |
 | `{light}`                | a token whose lemma is *light*                                  |
 | `{light/V}`              | lemma *light* with a verb tag                                   |
 | `{walk}_VBD`             | lemma *walk* with POS tag `VBD`                                 |
@@ -176,19 +176,13 @@ Likewise, word-form wildcards and POS constraints can be combined:
 walk*_V*
 ```
 
-Several generic POS categories are recognized and expanded to patterns appropriate for BNC CLAWS-5 and Penn Treebank-style tagsets.
-
-They may be written directly:
-
-```text
-fox_N
-```
-
-or in braces:
+Several generic POS categories are recognized and expanded to patterns appropriate for BNC CLAWS-5 and Penn Treebank-style tagsets. A category name must be written **in braces**:
 
 ```text
 fox_{SUBST}
 ```
+
+Without them the name is an ordinary tag pattern, so `fox_N` looks for the literal tag `N`. This keeps every tag reachable in corpora tagged with a scheme that spells its tags the way these categories are spelled, such as Universal Dependencies, where `_ADJ` and `_PRON` are tags in their own right.
 
 The available names are:
 
@@ -209,10 +203,10 @@ The available names are:
 For example:
 
 ```text
-_N
+_{N}
 ```
 
-matches a token with a POS tag beginning with `N`.
+matches a token with a POS tag beginning with `N`, and
 
 ```text
 _{ADJ}
@@ -220,7 +214,7 @@ _{ADJ}
 
 matches tags beginning with `AJ` or `JJ`.
 
-Braced POS names must be one of the recognized names in the table.
+A braced name must be one of the names in the table; anything else is an error.
 
 ### Lemmas
 
@@ -595,8 +589,8 @@ An empty query is not valid.
 
 | Pattern                                | Syntax                          |
 |----------------------------------------|---------------------------------|
-| A word followed by a noun              | `the _N`                        |
-| Either of two words followed by a noun | `[the,a] _N`                    |
+| A word followed by a noun              | `the _{N}`                      |
+| Either of two words followed by a noun | `[the,a] _{N}`                  |
 | A form of a lemma                      | `{run}`                         |
 | A verbal use of a lemma                | `{run/V}`                       |
 | An exact tagged form                   | `running_VVG`                   |

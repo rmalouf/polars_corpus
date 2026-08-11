@@ -12,6 +12,7 @@ plc.search(c, 'neighbo[u,]r')         #   (an empty alternative is allowed)
 # With linguistic annotations
 plc.search(c, 'word_TAG')             # Word + POS tag
 plc.search(c, '_TAG')                 # POS tag only
+plc.search(c, '_{SUBST}')             # Simplified POS class (braces required)
 plc.search(c, '{light}')              # Lemma (all forms)
 plc.search(c, '{light/V}')            # Lemma + simplified POS
 plc.search(c, '{walk}_VBD')           # Lemma + exact POS

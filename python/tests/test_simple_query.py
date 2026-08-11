@@ -216,17 +216,42 @@ def test_quantifier_vs_gap_whitespace_sensitivity(sample_corpus):
                 (48, 51, "The big table"),
             ],
         ),
-        # --- simplified tags via _{TAG}, equivalent to the _VB* style wildcard ---
+        # --- simplified classes via _{CLASS}, equivalent to a _VB* wildcard ---
         ("_{VERB}", VERB_MATCHES),
         ("_VB*", VERB_MATCHES),
         ("_{SUBST}", NOUN_MATCHES),
         ("walked_{VERB}", [(14, 15, "walked")]),
         ("*ly_{ADV}", [(15, 16, "slowly")]),
         ("the _{ADJ} dog", [(6, 9, "the lazy dog")]),
+        # without braces a class name is a literal tag, which nothing here has
+        ("_SUBST", []),
+        ("fox_N", []),
+        ("{box}_SUBST", []),
     ],
 )
 def test_pos_tag_patterns(sample_corpus, query, expected):
     assert matches(sample_corpus, query) == expected
+
+
+@pytest.mark.parametrize(
+    "query,expected",
+    [
+        ("_ADJ", [(1, 2, "big")]),  # the tagset's own ADJ, not the class
+        ("_{ADJ}", []),  # the class, which expands to AJ.*|JJ.*
+        ("_PRON", [(4, 5, "it")]),
+        ("_{PRON}", []),
+    ],
+)
+def test_tagset_spelling_class_names(query, expected):
+    """A tagset whose tags are spelled the way the simplified classes are"""
+    ud_corpus = corpus(token="the big dog barks it", pos="DET ADJ NOUN VERB PRON")
+    assert matches(ud_corpus, query) == expected
+
+
+@pytest.mark.parametrize("query", ["_{FOO}", "walk_{FOO}", "{walk}_{FOO}"])
+def test_unknown_pos_class_raises(query):
+    with pytest.raises(ValueError, match="Unknown POS class 'FOO'"):
+        simple_to_cqp(query)
 
 
 @pytest.mark.parametrize(
