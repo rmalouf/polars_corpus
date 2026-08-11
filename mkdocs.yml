@@ -1,4 +1,6 @@
-site_name: polars-corpus
+site_name: polars_corpus
+site_description: Polars extensions for corpus linguistics
+repo_url: https://github.com/rmalouf/polars_corpus
 
 theme:
   name: mkdocs
@@ -36,4 +38,6 @@ nav:
       - Dispersion: notebooks/dispersion.ipynb
   - Reference:
 #      - Corpus: api/corpus.md
+      - Simple query language: simple_query.md
       - API: api.md
+
