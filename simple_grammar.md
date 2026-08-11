@@ -12,14 +12,13 @@ sequence_item ::= word_token
 
 word_token ::= simple_word
             | wildcard_word
-            | alternative_list
             | escaped_char
 
 simple_word ::= ( letter | digit | [!@#$%^&_=\-] )+
 
 wildcard_word ::= wildcard_pattern
 
-wildcard_pattern ::= ( letter | digit | [!@#$%^&_=\-] | wildcard )+
+wildcard_pattern ::= ( letter | digit | [!@#$%^&_=\-] | wildcard | alternative_list )+
 
 wildcard ::= "?" | "*" | "+"
 
@@ -27,7 +26,7 @@ alternative_list ::= "[" alternative_sequence "]"
 
 alternative_sequence ::= alternative ( "," alternative )*
 
-alternative ::= wildcard_word
+alternative ::= wildcard_word?
 
 escaped_char ::= "\" metacharacter
 
@@ -99,7 +98,7 @@ digit ::= [0-9]
 - **Chained**: `day <<5>> month <<5>> year`
 
 ### Modifiers
-- **Case sensitivity**: Default case-insensitive
+- **Case sensitivity**: Case-insensitive, including POS tags
 - **Accent insensitive**: `:d` modifier (`fiancee:d`)
 
 ### Escaping

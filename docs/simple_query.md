@@ -13,6 +13,7 @@ Simple queries are translated internally into CQP expressions. In most cases you
 | `*able`                  | a word ending in *able*                                         |
 | `walk+`                  | a word beginning with *walk* followed by one or more characters |
 | `[car,truck]`            | either *car* or *truck*                                         |
+| `neighbo[u,]r`           | either *neighbour* or *neighbor*                                |
 | `quick brown fox`        | the three words in sequence                                     |
 | `fox + over`             | *fox*, one intervening token, then *over*                       |
 | `fox * over`             | *fox*, zero or one intervening token, then *over*               |
@@ -32,7 +33,7 @@ Simple queries are translated internally into CQP expressions. In most cases you
 
 ---
 
-## 1. Word forms
+## Tokens
 
 A plain word matches a token with that word form:
 
@@ -50,19 +51,15 @@ This matches three consecutive tokens.
 
 Whitespace between query elements is not significant. Spaces, tabs, and line breaks may all be used to separate elements.
 
-### Case
-
-Word-form searches are case-insensitive. For example:
+Word-form searches are **case-insensitive**. For example:
 
 ```text
 fox
 ```
 
-can match token values that differ only in case.
+matches *fox*, *Fox*, or *FOX* or any combination of upper and lower case.
 
----
-
-## 2. Wildcards
+### Character wildcards
 
 Three wildcards can be used inside word forms:
 
@@ -78,7 +75,7 @@ For example:
 s?ng
 ```
 
-matches four-character forms such as *sing*, *sang*, and *song*.
+matches four-character forms with any second character, such as *sing*, *sang*, and *song*.
 
 ```text
 *able
@@ -92,21 +89,11 @@ walk+
 
 matches a token beginning with *walk* and containing at least one additional character.
 
-Wildcards operate on **characters within a token**. This is different from a `+` or `*` appearing by itself, which denotes a gap between tokens; see [Gaps](#5-gaps).
+Wildcards operate on **characters within a token**. This is different from a `+` or `*` appearing by itself, which denotes a gap between tokens; see [Token Sequences](#gap)
 
-A query consisting entirely of wildcard characters is interpreted as a gap rather than as a word-form pattern. Thus:
+### Alternatives
 
-```text
-*
-```
-
-does not mean “any word form”; it means a gap of zero or one token.
-
----
-
-## 3. Token alternatives
-
-Square brackets specify alternative word forms:
+Square brackets list comma-separated alternatives for one part of a word form:
 
 ```text
 [car,truck]
@@ -114,7 +101,23 @@ Square brackets specify alternative word forms:
 
 matches either *car* or *truck*.
 
-Alternatives may themselves contain wildcards:
+Bracketed list can be combined with other characters and with wildcards:
+
+```text
+??+[able,ability]
+```
+
+matches *capable*, *capability*, *availability*, … — any token with at least three characters before *able* or *ability*.
+
+An alternative may be empty, which makes the rest of the group optional:
+
+```text
+neighbo[u,]r
+```
+
+matches both *neighbour* and *neighbor*.
+
+The alternatives themselves may contain wildcards:
 
 ```text
 [walk*,run*]
@@ -122,35 +125,20 @@ Alternatives may themselves contain wildcards:
 
 matches a token satisfying either pattern.
 
-The alternatives are separated by commas and apply to a **single token position**. For alternatives involving complete sequences, use a parenthesized group instead.
-
-For example:
+A word may contain more than one bracketed list, and a list may also appear in the word part or the tag part of a POS constraint:
 
 ```text
-(red fox|blue whale)
+walk[s,ed]_V*
 ```
 
-matches either two-token sequence.
-
-### Spaces inside an alternative list
-
-Whitespace inside square brackets is part of the alternative itself rather than ordinary query-separating whitespace. Thus it is normally best to write:
+Whitespace around an alternative is ignored, so these are equivalent:
 
 ```text
 [cat,dog]
-```
-
-rather than:
-
-```text
 [cat, dog]
 ```
 
-unless a space is genuinely part of the token value being searched.
-
----
-
-## 4. Part-of-speech constraints
+### Part-of-speech constraints
 
 A POS constraint is introduced by an underscore:
 
@@ -187,8 +175,6 @@ Likewise, word-form wildcards and POS constraints can be combined:
 ```text
 walk*_V*
 ```
-
-### Simplified POS names
 
 Several generic POS categories are recognized and expanded to patterns appropriate for BNC CLAWS-5 and Penn Treebank-style tagsets.
 
@@ -236,13 +222,7 @@ matches tags beginning with `AJ` or `JJ`.
 
 Braced POS names must be one of the recognized names in the table.
 
-### POS matching is case-sensitive
-
-Unlike word and lemma constraints, POS constraints are matched case-sensitively.
-
----
-
-## 5. Lemmas
+### Lemmas
 
 Curly braces specify a lemma:
 
@@ -259,8 +239,6 @@ Lemma searches may contain the same `?`, `*`, and `+` character wildcards used f
 ```
 
 Lemma matching is case-insensitive.
-
-### Lemma plus a generic POS category
 
 A POS specification can be included inside the braces after `/`:
 
@@ -285,10 +263,6 @@ If the name after `/` is not one of the predefined generic categories, it is int
 ```
 
 produces a POS pattern beginning with `NN`.
-
----
-
-## 6. Lemma plus an explicit POS tag
 
 A lemma can also be followed by an underscore and POS specification:
 
@@ -325,7 +299,7 @@ When an external `_TAG` is present, the implementation uses that tag constraint 
 
 ---
 
-## 7. Gaps between tokens
+## Token sequences
 
 A sequence consisting only of `+` and `*` characters denotes a variable-length gap between query elements.
 
@@ -370,8 +344,7 @@ More generally, the minimum gap length is the number of `+` characters, and the 
 
 The order of `+` and `*` within a gap does not affect these bounds. For example, `+*` and `*+` both describe a gap of one or two tokens.
 
-### Gap syntax versus word wildcards
-
+<a name="gap"></a>
 Whether `+` and `*` are interpreted as character wildcards or gap operators depends on context:
 
 ```text
@@ -386,9 +359,7 @@ walk * quickly
 
 contains a **zero-or-one-token gap** between *walk* and *quickly*.
 
----
-
-## 8. Groups and alternatives
+### Groups and alternatives
 
 Parentheses group one or more query elements:
 
@@ -426,81 +397,51 @@ blue whale
 
 Alternatives can themselves contain any valid query items, including nested groups.
 
-Use square brackets when choosing among alternatives for one token position and parenthesized `|` alternatives when choosing among larger query expressions.
-
----
-
-## 9. Repetition and optional groups
+### Repetition and optional groups
 
 A parenthesized group may be followed immediately by a repetition operator.
 
-### Optional
+- Optional expressions
+  ```text
+  (very)? good
+  ```
+   matches either *good* or *very good*.
 
-```text
-(very)? good
-```
+- Zero or more repetitions
+  ```text
+  (very)* good
+  ```
+  allows any number of repetitions of *very* before *good*.
 
-matches either *good* or *very good*.
+- One or more repetitions
+  ```text
+  (ha)+
+  ```
+  matches *ha*, *ha ha*, *ha ha ha*, *ha ha ha ha*, and so on
 
-### Zero or more repetitions
+- Exact repetition
+  ```text
+  (ha){3}
+  ```
+  requires exactly three occurrences: *ha ha ha*
 
-```text
-(very)* good
-```
-
-allows any number of repetitions of *very* before *good*.
-
-### One or more repetitions
-
-```text
-(ha)+
-```
-
-requires one or more occurrences of *ha*.
-
-### Exact repetition
-
-```text
-(ha){3}
-```
-
-requires exactly three occurrences.
-
-### Bounded repetition
-
-```text
-(ha){2,4}
-```
+- Bounded repetition
+  ```text
+  (ha){2,4}
+  ```
+  requires between two and four occurrences: *ha ha*, *ha ha ha*, or *ha ha ha ha*
 
 allows between two and four occurrences.
 
 A repeated group may contain a complete sequence:
-
 ```text
-(very very){2}
+(very good){2}
 ```
-
-repeats the two-token sequence twice.
-
-### No whitespace before a quantifier
-
-The quantifier must immediately follow the closing parenthesis:
-
-```text
-(foo){2}
-```
-
-not:
-
-```text
-(foo) {2}
-```
-
-These are parsed differently.
+matches the two-token sequence twice: *very good very good*
 
 ---
 
-## 10. Variable bindings
+## Variable bindings
 
 A matched expression can be assigned to a CQP variable using:
 
@@ -564,7 +505,7 @@ $x: (cat|dog)
 
 ---
 
-## 11. Literal characters and escaping
+## Literal characters and escaping
 
 A backslash can be used for query punctuation that would otherwise have syntactic meaning.
 
@@ -596,25 +537,17 @@ The parser recognizes escapes for the following query metacharacters:
 
 and space.
 
-### Current wildcard-escaping behavior
+### Escaped wildcards
 
-In the current implementation, backslashes are removed before wildcard conversion. As a result, escaped `?`, `*`, and `+` are still interpreted as wildcards rather than literal characters.
-
-For example:
+An escaped `?`, `*`, or `+` is a literal character rather than a wildcard:
 
 ```text
 \*able
 ```
 
-currently behaves like:
+matches the token `*able`, while the unescaped `*able` matches `able`, `table`, `capable`, and so on.
 
-```text
-*able
-```
-
-rather than searching for a literal asterisk.
-
-This is an implementation limitation to keep in mind when querying token values containing literal wildcard characters.
+Escapes work the same way inside alternatives and lemma constraints, so `[x\*x,a\,b]` matches the tokens `x*x` and `a,b`, and `{a\/b}` searches for the lemma `a/b` rather than lemma `a` with POS tag `b`.
 
 ### Character restrictions in plain words
 
@@ -624,7 +557,7 @@ The lemma and square-bracket syntaxes accept a broader range of characters, so t
 
 ---
 
-## 12. Query structure
+## Query structure
 
 At a high level, a query consists of one or more items:
 
@@ -646,7 +579,6 @@ quantifier  := "?"
              | "{" INTEGER "," INTEGER "}"
 
 atom        := word
-             | alternatives
              | gap
              | pos_constraint
              | lemma
@@ -659,97 +591,26 @@ An empty query is not valid.
 
 ---
 
-## 13. Matching behavior
+## Common patterns
 
-The default query compiler distinguishes three corpus attributes:
-
-| Query feature | Default corpus column | Case-sensitive? |
-| ------------- | --------------------- | --------------- |
-| word form     | `token`               | No              |
-| lemma         | `lemma`               | No              |
-| POS tag       | `pos`                 | Yes             |
-
-The concordancer can configure different underlying column names without changing the Simple Query Language itself.
-
----
-
-## 14. Common patterns
-
-### A word followed by a noun
-
-```text
-the _N
-```
-
-### Either of two words followed by a noun
-
-```text
-[the,a] _N
-```
-
-### A form of a lemma
-
-```text
-{run}
-```
-
-### A verbal use of a lemma
-
-```text
-{run/V}
-```
-
-### An exact tagged form
-
-```text
-running_VVG
-```
-
-### One unspecified intervening token
-
-```text
-as + as
-```
-
-### Up to three intervening tokens
-
-```text
-as *** as
-```
-
-### One or two intervening tokens
-
-```text
-as +* as
-```
-
-### Alternative phrases
-
-```text
-(as soon as|as long as)
-```
-
-### Optional modifier
-
-```text
-(very)? good
-```
-
-### Capture a target
-
-```text
-$target: {run}
-```
-
-### Capture a multi-token target
-
-```text
-$target: (New\_York_NNP city)
-```
+| Pattern                                | Syntax                          |
+|----------------------------------------|---------------------------------|
+| A word followed by a noun              | `the _N`                        |
+| Either of two words followed by a noun | `[the,a] _N`                    |
+| A form of a lemma                      | `{run}`                         |
+| A verbal use of a lemma                | `{run/V}`                       |
+| An exact tagged form                   | `running_VVG`                   |
+| One unspecified intervening token      | `as + as`                       |
+| Up to three intervening tokens         | `as *** as`                     |
+| One or two intervening tokens          | `as +* as`                      |
+| Alternative phrases                    | `(as soon as\|as long as)`      | 
+| Optional modifier                      | `(very)? good`                  |
+| Capture a target                       | `$target: {run}`                |
+| Capture a multi token target           | `$target: (New\_York_NNP city)` |
 
 ---
 
-## 15. Choosing among similar constructs
+## Choosing among similar constructs
 
 Several pieces of syntax look similar but operate at different linguistic levels.
 
@@ -757,7 +618,7 @@ Several pieces of syntax look similar but operate at different linguistic levels
 | --------------------------- | ---------------------------------- | ----------------------- |
 | `?`, `*`, `+` inside a word | characters within one token        | `walk*`                 |
 | standalone `+` / `*`        | number of intervening tokens       | `walk + home`           |
-| `[a,b]`                     | alternatives at one token position | `[car,truck]`           |
+| `[a,b]`                     | alternatives within one word form  | `neighbo[u,]r`          |
 | `(a\|b)`                    | alternative query expressions      | `(red fox\|blue whale)` |
 | `{run}`                     | lemma                              | `{run}`                 |
 | `_VBD`                      | POS tag                            | `_VBD`                  |

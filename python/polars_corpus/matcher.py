@@ -154,7 +154,7 @@ def search(
 
     This function uses the simple query syntax similar to BNCweb, which is
     more intuitive than CQP for basic searches. Queries are case-insensitive
-    by default and support wildcards, alternatives, word sequences, POS tags,
+    throughout and support wildcards, alternatives, word sequences, POS tags,
     and lemma searches.
 
     Parameters

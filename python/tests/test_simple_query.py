@@ -38,13 +38,12 @@ def sample_corpus() -> pl.DataFrame:
     return corpus(token=TOKENS, pos=POS, lemma=LEMMA)
 
 
-def found(df: pl.DataFrame, results) -> list[tuple[int, int, str]]:
-    """Flatten search results to (start, end, matched text) tuples."""
-    if results is None:
-        return []
+def matches(df: pl.DataFrame, query: str) -> list[tuple[int, int, str]]:
+    """Search `df`, flattening the results to (start, end, matched text) tuples."""
+    results = plc.search(df, query)
     return [
         (m.span.start, m.span.end, " ".join(df["token"][m.span.start : m.span.end]))
-        for m in results._matches
+        for m in (results._matches if results is not None else ())
     ]
 
 
@@ -52,6 +51,56 @@ def bound(df: pl.DataFrame, match, var: str) -> str:
     """The text captured by variable `var` in `match`."""
     span = match.bindings[var]
     return " ".join(df["token"][span.start : span.end])
+
+
+# Expected results shared by several tests, in corpus order.
+ABLE_MATCHES = [
+    (12, 13, "capable"),
+    (36, 37, "able"),
+    (38, 39, "table"),
+    (40, 41, "capable"),
+    (50, 51, "table"),
+    (52, 53, "suitable"),
+    (54, 55, "available"),
+]
+
+VERB_MATCHES = [
+    (4, 5, "jumps"),  # VBZ
+    (14, 15, "walked"),  # VBD
+    (25, 26, "parked"),  # VBD
+    (29, 30, "sing"),  # VBP
+    (30, 31, "sang"),  # VBD
+    (35, 36, "are"),  # VBP
+    (38, 39, "table"),  # VB
+    (51, 52, "is"),  # VBZ
+    (61, 62, "came"),  # VBD
+]
+
+VBD_MATCHES = [
+    (14, 15, "walked"),
+    (25, 26, "parked"),
+    (30, 31, "sang"),
+    (61, 62, "came"),
+]
+
+NN_MATCHES = [
+    (3, 4, "fox"),
+    (8, 9, "dog"),
+    (13, 14, "student"),
+    (17, 18, "school"),
+    (21, 22, "car"),
+    (24, 25, "truck"),
+    (31, 32, "song"),
+    (41, 42, "motion"),
+    (43, 44, "Voodoo"),
+    (45, 46, "schoolroom"),
+    (50, 51, "table"),
+    (57, 58, "neighbour"),
+    (59, 60, "neighbor"),
+]
+
+# The simplified SUBST class also covers the plural tag NNS.
+NOUN_MATCHES = sorted(NN_MATCHES + [(46, 47, "mysteries")])
 
 
 @pytest.mark.parametrize(
@@ -75,41 +124,34 @@ def bound(df: pl.DataFrame, match, var: str) -> str:
         ("qu*", [(1, 2, "quick")]),
         ("+uck", [(24, 25, "truck")]),
         ("s?ng", [(29, 30, "sing"), (30, 31, "sang"), (31, 32, "song")]),
-        (
-            "*able",
-            [
-                (12, 13, "capable"),
-                (36, 37, "able"),
-                (38, 39, "table"),
-                (40, 41, "capable"),
-                (50, 51, "table"),
-                (52, 53, "suitable"),
-                (54, 55, "available"),
-            ],
-        ),
-        (
-            "+able",  # unlike *, requires at least one character before "able"
-            [
-                (12, 13, "capable"),
-                (38, 39, "table"),
-                (40, 41, "capable"),
-                (50, 51, "table"),
-                (52, 53, "suitable"),
-                (54, 55, "available"),
-            ],
-        ),
+        ("*able", ABLE_MATCHES),
+        # unlike *, + requires at least one character before "able"
+        ("+able", [m for m in ABLE_MATCHES if m != (36, 37, "able")]),
         # --- bracketed alternatives ---
         ("[car,truck]", [(21, 22, "car"), (24, 25, "truck")]),
         ("[qu*,br*]", [(1, 2, "quick"), (2, 3, "brown")]),
-        ("[neighbour,neighbor]", [(57, 58, "neighbour"), (59, 60, "neighbor")]),
+        # a group is part of a word, not a whole token, and may be empty
+        ("neighbo[u,]r", [(57, 58, "neighbour"), (59, 60, "neighbor")]),
+        ("[s,][a,i]ng", [(29, 30, "sing"), (30, 31, "sang")]),
+        (
+            "??+[able,ability]",  # 3+ characters before the group, so not "table"
+            [
+                (12, 13, "capable"),
+                (40, 41, "capable"),
+                (52, 53, "suitable"),
+                (54, 55, "available"),
+            ],
+        ),
+        # whitespace around alternatives is layout, not part of the pattern
+        ("[ car , truck ]", [(21, 22, "car"), (24, 25, "truck")]),
+        (r"[\ truck,x]", []),  # an escaped space is a literal, so nothing matches
         # --- multi-word sequences ---
         ("quick brown", [(1, 3, "quick brown")]),
-        ("the lazy dog", [(6, 9, "the lazy dog")]),
         ("quick br*", [(1, 3, "quick brown")]),
     ],
 )
 def test_word_patterns(sample_corpus, query, expected):
-    assert found(sample_corpus, plc.search(sample_corpus, query)) == expected
+    assert matches(sample_corpus, query) == expected
 
 
 @pytest.mark.parametrize(
@@ -117,14 +159,13 @@ def test_word_patterns(sample_corpus, query, expected):
     [
         ("fox * over", [(3, 6, "fox jumps over")]),  # * is 0 or 1 token
         ("fox + over", [(3, 6, "fox jumps over")]),  # + is 1+ tokens
-        ("red * and", [(20, 23, "red car and")]),
         ("The ++ fox", [(0, 4, "The quick brown fox")]),  # ++ is exactly 2 tokens
         ("A *** student", [(10, 14, "A very capable student")]),  # 0-3 tokens
         ("fox +++** dog", [(3, 9, "fox jumps over the lazy dog")]),  # 3-5 tokens
     ],
 )
 def test_gap_tokens(sample_corpus, query, expected):
-    assert found(sample_corpus, plc.search(sample_corpus, query)) == expected
+    assert matches(sample_corpus, query) == expected
 
 
 @pytest.mark.parametrize(
@@ -140,7 +181,7 @@ def test_gap_tokens(sample_corpus, query, expected):
     ],
 )
 def test_group_quantifiers(sample_corpus, query, expected):
-    assert found(sample_corpus, plc.search(sample_corpus, query)) == expected
+    assert matches(sample_corpus, query) == expected
 
 
 def test_quantifier_vs_gap_whitespace_sensitivity(sample_corpus):
@@ -149,41 +190,8 @@ def test_quantifier_vs_gap_whitespace_sensitivity(sample_corpus):
     `(pattern)+` repeats the group; `(pattern) +` is the group followed by a
     mandatory filler token.
     """
-    quantifier = plc.search(sample_corpus, "(red)+ car")
-    assert found(sample_corpus, quantifier) == [(20, 22, "red car")]
-
-    gap = plc.search(sample_corpus, "(red) + and")
-    assert found(sample_corpus, gap) == [(20, 23, "red car and")]
-
-
-VERB_MATCHES = [
-    (4, 5, "jumps"),  # VBZ
-    (14, 15, "walked"),  # VBD
-    (25, 26, "parked"),  # VBD
-    (29, 30, "sing"),  # VBP
-    (30, 31, "sang"),  # VBD
-    (35, 36, "are"),  # VBP
-    (38, 39, "table"),  # VB
-    (51, 52, "is"),  # VBZ
-    (61, 62, "came"),  # VBD
-]
-
-NOUN_MATCHES = [
-    (3, 4, "fox"),
-    (8, 9, "dog"),
-    (13, 14, "student"),
-    (17, 18, "school"),
-    (21, 22, "car"),
-    (24, 25, "truck"),
-    (31, 32, "song"),
-    (41, 42, "motion"),
-    (43, 44, "Voodoo"),
-    (45, 46, "schoolroom"),
-    (46, 47, "mysteries"),  # NNS
-    (50, 51, "table"),
-    (57, 58, "neighbour"),
-    (59, 60, "neighbor"),
-]
+    assert matches(sample_corpus, "(red)+ car") == [(20, 22, "red car")]
+    assert matches(sample_corpus, "(red) + and") == [(20, 23, "red car and")]
 
 
 @pytest.mark.parametrize(
@@ -191,18 +199,13 @@ NOUN_MATCHES = [
     [
         # --- exact tags via _TAG ---
         ("fox_NN", [(3, 4, "fox")]),
+        ("fox_nn", [(3, 4, "fox")]),  # tags match case-insensitively
         ("*ly_RB", [(15, 16, "slowly")]),  # wildcard in the word part
         ("sing_V*", [(29, 30, "sing")]),  # wildcard in the tag part
-        (
-            "_VBD",
-            [
-                (14, 15, "walked"),
-                (25, 26, "parked"),
-                (30, 31, "sang"),
-                (61, 62, "came"),
-            ],
-        ),
-        ("_NN", [m for m in NOUN_MATCHES if m != (46, 47, "mysteries")]),
+        ("walk[s,ed]_V*", [(14, 15, "walked")]),  # group in the word part
+        ("sang_[VBD,VBN]", [(30, 31, "sang")]),  # group in the tag part
+        ("_VBD", VBD_MATCHES),
+        ("_NN", NN_MATCHES),
         ("the _JJ dog", [(6, 9, "the lazy dog")]),
         (
             "_DT _JJ _NN",
@@ -223,7 +226,7 @@ NOUN_MATCHES = [
     ],
 )
 def test_pos_tag_patterns(sample_corpus, query, expected):
-    assert found(sample_corpus, plc.search(sample_corpus, query)) == expected
+    assert matches(sample_corpus, query) == expected
 
 
 @pytest.mark.parametrize(
@@ -247,7 +250,7 @@ def test_pos_tag_patterns(sample_corpus, query, expected):
     ],
 )
 def test_lemma_patterns(sample_corpus, query, expected):
-    assert found(sample_corpus, plc.search(sample_corpus, query)) == expected
+    assert matches(sample_corpus, query) == expected
 
 
 @pytest.mark.parametrize(
@@ -257,18 +260,19 @@ def test_lemma_patterns(sample_corpus, query, expected):
         ("(red | blue) truck", [(23, 25, "blue truck")]),  # "red" precedes "car"
         ("(quick brown | red) fox", [(1, 4, "quick brown fox")]),
         ("(and)+ (schoolroom | mysteries)", [(44, 46, "and schoolroom")]),
+        ("(*able | *ible)", ABLE_MATCHES),  # a branch that matches nothing
+        # results come back in corpus order, not branch order
         (
-            "(*able | *ible)",
-            [
-                (12, 13, "capable"),
-                (36, 37, "able"),
-                (38, 39, "table"),
-                (40, 41, "capable"),
-                (50, 51, "table"),
-                (52, 53, "suitable"),
-                (54, 55, "available"),
-            ],
+            "(truck | fox | car | dog)",
+            [(3, 4, "fox"), (8, 9, "dog"), (21, 22, "car"), (24, 25, "truck")],
         ),
+        ("(_NN | _VBD)", sorted(NN_MATCHES + VBD_MATCHES)),
+        # branches of unequal length: each jump must skip all the branches after it
+        (
+            "(red car | blue truck | dog)",
+            [(8, 9, "dog"), (20, 22, "red car"), (23, 25, "blue truck")],
+        ),
+        ("(car | (truck | dog))", [(8, 9, "dog"), (21, 22, "car"), (24, 25, "truck")]),
         (
             "the (_{ADJ} | _{SUBST})",
             [
@@ -282,42 +286,63 @@ def test_lemma_patterns(sample_corpus, query, expected):
     ],
 )
 def test_disjunction(sample_corpus, query, expected):
-    assert found(sample_corpus, plc.search(sample_corpus, query)) == expected
+    assert matches(sample_corpus, query) == expected
 
 
-def test_disjunction_of_pos_tags(sample_corpus):
-    """(_NN | _VBD) is the union of the two tag sets, in corpus order"""
-    expected = sorted(
-        [m for m in NOUN_MATCHES if m != (46, 47, "mysteries")]
-        + [(14, 15, "walked"), (25, 26, "parked"), (30, 31, "sang"), (61, 62, "came")]
+class TestEscapes:
+    """Backslash-escaped metacharacters are literals, not wildcards"""
+
+    @pytest.fixture
+    def punctuation_corpus(self) -> pl.DataFrame:
+        return corpus(
+            token="x*x xyx x?x x+x a,b a/b New_York xx",
+            lemma="x*x xyx x?x x+x a,b a/b new_york xx",
+            pos="NN NN NN NN NN NN NNP NN",
+        )
+
+    @pytest.mark.parametrize(
+        "query,expected",
+        [
+            (r"x\*x", [(0, 1, "x*x")]),
+            (r"x\?x", [(2, 3, "x?x")]),
+            (r"x\+x", [(3, 4, "x+x")]),
+            # the same pattern unescaped: `*` is a wildcard again
+            (
+                "x*x",
+                [
+                    (0, 1, "x*x"),
+                    (1, 2, "xyx"),
+                    (2, 3, "x?x"),
+                    (3, 4, "x+x"),
+                    (7, 8, "xx"),
+                ],
+            ),
+            (r"a\,b", [(4, 5, "a,b")]),
+            (r"a\/b", [(5, 6, "a/b")]),
+            (r"New\_York_NNP", [(6, 7, "New_York")]),
+            # escapes inside alternative groups and lemma constraints
+            (r"[x\*x,a\,b]", [(0, 1, "x*x"), (4, 5, "a,b")]),
+            (r"{x\*x}", [(0, 1, "x*x")]),
+            (r"{a\/b}", [(5, 6, "a/b")]),
+            (r"{x\*x}_NN", [(0, 1, "x*x")]),
+        ],
     )
-    assert found(sample_corpus, plc.search(sample_corpus, "(_NN | _VBD)")) == expected
+    def test_escaped_metacharacters_match_literals(
+        self, punctuation_corpus, query, expected
+    ):
+        assert matches(punctuation_corpus, query) == expected
 
-
-@pytest.mark.parametrize(
-    "query,expected",
-    [
-        (
-            "(car | truck | dog)",
-            [(8, 9, "dog"), (21, 22, "car"), (24, 25, "truck")],
-        ),
-        (
-            "(fox | dog | car | truck)",
-            [(3, 4, "fox"), (8, 9, "dog"), (21, 22, "car"), (24, 25, "truck")],
-        ),
-        # branches of unequal length: each jump must skip all the branches after it
-        (
-            "(red car | blue truck | dog)",
-            [(8, 9, "dog"), (20, 22, "red car"), (23, 25, "blue truck")],
-        ),
-        (
-            "(car | (truck | dog))",
-            [(8, 9, "dog"), (21, 22, "car"), (24, 25, "truck")],
-        ),
-    ],
-)
-def test_n_way_disjunction(sample_corpus, query, expected):
-    assert found(sample_corpus, plc.search(sample_corpus, query)) == expected
+    @pytest.mark.parametrize(
+        "query,expected",
+        [
+            (r"x\*x", r'[token="x\*x"%c]'),
+            (r"{x\*x}", r'[lemma="x\*x"%c]'),
+            (r"{a\/b}", '[lemma="a/b"%c]'),
+            ("{light/V}", '[lemma="light"%c & pos="V.*"%c]'),  # unescaped / separates
+        ],
+    )
+    def test_translation_to_cqp(self, query, expected):
+        assert simple_to_cqp(query) == expected
 
 
 class TestBindings:
@@ -327,7 +352,6 @@ class TestBindings:
         "query,var,expected",
         [
             ("$target: fox", "target", "fox"),
-            ("$word: quick", "word", "quick"),
             ("$suffix: *able", "suffix", "capable"),
             ("$pos: _NN", "pos", "fox"),
             ("$lemma: {sing}", "lemma", "sing"),
@@ -349,15 +373,17 @@ class TestBindings:
         assert bound(sample_corpus, match, "noun") == "fox"
 
     @pytest.mark.parametrize(
-        "query,expected_fragments",
+        "query,expected",
         [
-            ("$x: fox", ["$x: ([token=", "fox"]),
-            ("$a: quick $b: brown", ["$a:", "$b:"]),
-            ("$suffix: *able", ["$suffix:", ".*able"]),
-            ("$phrase: (quick brown)", ["$phrase: ("]),
+            ("$x: fox", '$x: ([token="fox"%c])'),
+            ("$a: quick $b: brown", '$a: ([token="quick"%c]) $b: ([token="brown"%c])'),
+            ("$suffix: *able", '$suffix: ([token=".*able"%c])'),
+            (
+                "$phrase: (quick brown)",
+                '$phrase: (([token="quick"%c] [token="brown"%c]))',
+            ),
+            ("($mods: very)+", '($mods: ([token="very"%c]))+'),
         ],
     )
-    def test_translation_to_cqp(self, query, expected_fragments):
-        cqp = simple_to_cqp(query)
-        for fragment in expected_fragments:
-            assert fragment in cqp
+    def test_translation_to_cqp(self, query, expected):
+        assert simple_to_cqp(query) == expected

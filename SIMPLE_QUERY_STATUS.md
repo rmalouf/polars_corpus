@@ -26,21 +26,23 @@ Covered by 79 tests in `python/tests/test_simple_query.py`.
 |---|---|---|---|
 | Basic word | `word` | `fox` | `[token="fox"%c]` |
 | Wildcards | `?` `*` `+` | `s?ng`, `*able` | `[token="s.ng"%c]` |
-| Alternatives | `[a,b]` | `[car,truck]` | `[token="car\|truck"%c]` |
+| Alternatives | `[a,b]` | `[car,truck]`, `neighbo[u,]r` | `[token="(?:car\|truck)"%c]` |
 | Sequences | `a b` | `quick brown fox` | three tokens |
 | Gaps | `*` `+` | `fox * over` | `[]?` between tokens |
 | Repeated gaps | `++` `***` | `++` | `[]{2}` |
-| POS tags | `word_TAG`, `_TAG` | `lights_NN2`, `_PNX` | `& pos="NN2"` |
-| Simplified POS | `_{CLASS}` | `{box}_{SUBST}` | `pos="N.*"` |
+| POS tags | `word_TAG`, `_TAG` | `lights_NN2`, `_PNX` | `& pos="NN2"%c` |
+| Simplified POS | `_{CLASS}` | `{box}_{SUBST}` | `pos="N.*"%c` |
 | Lemmas | `{lemma}` | `{light}` | `[lemma="light"%c]` |
-| Lemma + class | `{lemma/POS}` | `{light/V}` | `& pos="V.*"` |
-| Lemma + tag | `{lemma}_TAG` | `{walk}_VBD` | `& pos="VBD"` |
+| Lemma + class | `{lemma/POS}` | `{light/V}` | `& pos="V.*"%c` |
+| Lemma + tag | `{lemma}_TAG` | `{walk}_VBD` | `& pos="VBD"%c` |
 | Groups | `(...)` with `? + * {m,n}` | `(very)? big`, `(quick){2}` | `(...)?`, `(...){2}` |
 | Disjunction | `(a \| b \| c)` | `(a \| b \| c)` | `([..]\|[..]\|[..])` |
 | Variable bindings | `$name: pattern` | `$x: fox` | `$x: ([token="fox"%c])` |
+| Escapes | `\` + metacharacter | `x\*x`, `New\_York` | `[token="x\*x"%c]` |
 
-Searches are case-insensitive by default (`%c`). Column names are configurable
-throughout: `token_column`, `pos_column`, `lemma_column`.
+All matching -- word forms, lemmas, and POS tags -- is case-insensitive (`%c`).
+Column names are configurable throughout: `token_column`, `pos_column`,
+`lemma_column`.
 
 ### Simplified POS classes
 
@@ -76,19 +78,9 @@ There is no direct CQP equivalent, so it needs one of:
 Sentence-level proximity (`<<s>>`) additionally needs a sentence boundary
 column, which `with_chunk_index()` can already supply.
 
-### Embedded alternatives
-
-`neighbo[u,]r` is meant to match *neighbour* and *neighbor*. It currently
-**parses without error and produces the wrong query** — three separate tokens,
-`[token="neighbo"%c] [token="u|"%c] [token="r"%c]` — rather than failing
-loudly. Worth rejecting explicitly until it is supported.
-
-Workaround: `[neighbour,neighbor]`.
-
 ---
 
 ## Known Wrinkles
 
-- Escaping (`\?`, `\*`) is supported but has no dedicated tests.
 - One comment in `simple_parser.py` still refers to the pyparsing
   implementation.

@@ -6,7 +6,8 @@ Case-insensitive, user-friendly syntax:
 # Basic patterns
 plc.search(c, 'quick brown fox')      # Word sequence
 plc.search(c, '*able')                # Wildcards: ? (one), * (zero+), + (one+)
-plc.search(c, '[car,truck]')          # Alternatives
+plc.search(c, '[car,truck]')          # Alternatives, in whole or part of a word
+plc.search(c, 'neighbo[u,]r')         #   (an empty alternative is allowed)
 
 # With linguistic annotations
 plc.search(c, 'word_TAG')             # Word + POS tag

@@ -21,30 +21,14 @@ __all__ = ["simple_to_cqp"]
 
 
 # Helper functions for building CQP expressions
-def _make_constraint(col: str, pattern: str, case_sensitive: bool = False) -> str:
-    """Build a single column constraint."""
-    flag = "" if case_sensitive else "%c"
-    return f'{col}="{pattern}"{flag}'
+def _make_constraint(col: str, pattern: str) -> str:
+    """Build a single column constraint. All matching is case-insensitive."""
+    return f'{col}="{pattern}"%c'
 
 
 def _make_token(*constraints: str) -> str:
     """Build a token constraint with one or more conditions."""
     return f"[{' & '.join(constraints)}]"
-
-
-def wildcard_to_regex(pattern: str) -> str:
-    """Convert simple query wildcards to regex pattern.
-
-    Wildcards:
-    - ? = single character (.)
-    - * = zero or more characters (.*)
-    - + = one or more characters (.+)
-    """
-    result = re.escape(pattern)
-    result = result.replace(r"\?", ".")
-    result = result.replace(r"\*", ".*")
-    result = result.replace(r"\+", ".+")
-    return result
 
 
 # Simplified POS tag mapping - supports both BNC CLAWS-5 and Penn Treebank tagsets
@@ -75,8 +59,9 @@ _META_CC = r"?*+,:@$\/()\[\]{}_\- <>"  # same set, for use inside a char class
 _ESC = rf"\\[{_META_CC}]"  # matches a \X escape sequence
 _WC = r"[A-Za-z0-9!@#%^&=\\\-]"  # word character (non-wildcard); `$` is excluded to leave it for variable bindings
 _WL = r"[?*+]"  # wildcard
-_NW = f"(?:{_ESC}|{_WC})"  # non-wildcard part (escape or plain char)
-_PC = f"(?:{_ESC}|{_WC}|{_WL})"  # part char (including wildcards)
+_ALT = r"\[[^\]]*\]"  # bracketed alternative group, e.g. `[u,]`
+_NW = f"(?:{_ESC}|{_WC}|{_ALT})"  # non-wildcard part (escape, plain char, or group)
+_PC = f"(?:{_ESC}|{_WC}|{_WL}|{_ALT})"  # part char (including wildcards)
 
 
 _GRAMMAR = rf"""
@@ -85,7 +70,7 @@ seq: item+
 ?item: binding | group | atom
 binding: BINDING_HEAD (group | atom)
 group: _LPAREN seq (_PIPE seq)* RPAREN_QUANT
-?atom: LEMMA_POS_TAG | LEMMA | POS_TAG | ALT_LIST | GAPS | WORD
+?atom: LEMMA_POS_TAG | LEMMA | POS_TAG | GAPS | WORD
 
 BINDING_HEAD: /\$[A-Za-z][A-Za-z0-9_]*:/
 RPAREN_QUANT: /\)(?:[?+*]|\{{\d+(?:,\d+)?\}})?/
@@ -99,7 +84,6 @@ LEMMA: /\{{[^\}}]+\}}/
 // shorter WORD match. Longest-match alone isn't reliable here with complex
 // character classes in the Lark basic lexer.
 POS_TAG.2: /{_PC}*_(?:\{{[A-Za-z]+\}}|{_PC}+)/
-ALT_LIST: /\[[^\]]*\]/
 GAPS: /[+*]+/
 WORD: /{_PC}*{_NW}{_PC}*/
 
@@ -110,6 +94,65 @@ WORD: /{_PC}*{_NW}{_PC}*/
 def _unescape(text: str) -> str:
     """Strip backslashes from escape sequences (\\X -> X)."""
     return re.sub(rf"\\([{re.escape(_META_CHARS)}])", r"\1", text)
+
+
+# Splits a pattern into escape sequences and single characters.
+_PATTERN_PARTS = re.compile(rf"{_ESC}|.", re.S)
+# Splits a word into escape sequences, alternative groups, and single characters.
+_WORD_PARTS = re.compile(rf"{_ESC}|{_ALT}|.", re.S)
+# Whitespace padding an alternative, which is layout rather than part of the
+# pattern. An escaped space (`\ `) is a literal and so is left alone.
+_ALT_PAD = re.compile(r"^\s+|(?<!\\)\s+$")
+# Separators that only separate when unescaped: `,` between alternatives,
+# `/` between a lemma and its POS constraint.
+_ALT_SEP = re.compile(r"(?<!\\),")
+_LEMMA_SEP = re.compile(r"(?<!\\)/")
+
+_WILDCARDS = {"?": ".", "*": ".*", "+": ".+"}
+
+
+def wildcard_to_regex(pattern: str) -> str:
+    """Convert simple query wildcards to regex pattern.
+
+    Wildcards:
+    - ? = single character (.)
+    - * = zero or more characters (.*)
+    - + = one or more characters (.+)
+
+    A backslash-escaped metacharacter is a literal, so `x\\*x` matches `x*x`.
+    """
+    parts = []
+    for part in _PATTERN_PARTS.findall(pattern):
+        if len(part) == 2:  # `\X` escape: the escaped character is a literal
+            parts.append(re.escape(part[1]))
+        else:
+            parts.append(_WILDCARDS.get(part, re.escape(part)))
+    return "".join(parts)
+
+
+def word_to_regex(word: str) -> str:
+    """Convert a word pattern to regex, expanding `[a,b]` alternative groups.
+
+    Groups may appear anywhere in the word (`neighbo[u,]r`) and their
+    alternatives may be empty or contain wildcards.
+    """
+    parts = []
+    for part in _WORD_PARTS.findall(word):
+        if part.startswith("["):
+            alts = "|".join(
+                wildcard_to_regex(_ALT_PAD.sub("", alt))
+                for alt in _ALT_SEP.split(part[1:-1])
+            )
+            parts.append(f"(?:{alts})")
+        else:
+            parts.append(wildcard_to_regex(part))
+    return "".join(parts)
+
+
+def _split_lemma(inner: str) -> tuple[str, str]:
+    """Split `lemma[/POS]` on the first unescaped slash."""
+    parts = _LEMMA_SEP.split(inner, maxsplit=1)
+    return parts[0], parts[1] if len(parts) > 1 else ""
 
 
 def _gap_tokens(gap_str: str) -> str:
@@ -137,7 +180,7 @@ def _resolve_pos_tag(raw: str) -> str:
     unescaped = _unescape(raw)
     if unescaped.isalpha() and unescaped.upper() in _POS_MAPPING:
         return _POS_MAPPING[unescaped.upper()]
-    return wildcard_to_regex(unescaped)
+    return word_to_regex(raw)
 
 
 class SimpleCompiler(Transformer):
@@ -150,14 +193,8 @@ class SimpleCompiler(Transformer):
     # --- terminals -----------------------------------------------------
 
     def WORD(self, token: Any) -> str:
-        pattern = wildcard_to_regex(_unescape(str(token)))
+        pattern = word_to_regex(str(token))
         return _make_token(_make_constraint(self.token_column, pattern))
-
-    def ALT_LIST(self, token: Any) -> str:
-        inner = str(token)[1:-1]
-        alts = [wildcard_to_regex(_unescape(a)) for a in inner.split(",")]
-        combined = "|".join(alts)
-        return _make_token(_make_constraint(self.token_column, combined))
 
     def GAPS(self, token: Any) -> str:
         return _gap_tokens(str(token))
@@ -171,22 +208,23 @@ class SimpleCompiler(Transformer):
         word_part = raw[:idx]
         tag_part = raw[idx + 1 :]
         pos_pattern = _resolve_pos_tag(tag_part)
-        constraints = [
-            _make_constraint(self.pos_column, pos_pattern, case_sensitive=True)
-        ]
+        constraints = [_make_constraint(self.pos_column, pos_pattern)]
         if word_part:
-            word_pattern = wildcard_to_regex(_unescape(word_part))
+            word_pattern = word_to_regex(word_part)
             constraints.insert(0, _make_constraint(self.token_column, word_pattern))
         return _make_token(*constraints)
 
     @staticmethod
     def _split_pos(raw: str) -> int:
-        # Find the first `_` that isn't part of an escape sequence.
+        # Find the first `_` that isn't inside an escape sequence or `[...]` group.
         i = 0
         while i < len(raw):
             ch = raw[i]
             if ch == "\\" and i + 1 < len(raw):
                 i += 2
+                continue
+            if ch == "[":
+                i = raw.index("]", i) + 1
                 continue
             if ch == "_":
                 return i
@@ -195,14 +233,12 @@ class SimpleCompiler(Transformer):
 
     def LEMMA(self, token: Any) -> str:
         raw = str(token)[1:-1]  # strip braces
-        lemma_part, _, pos_part = raw.partition("/")
-        lemma_pattern = wildcard_to_regex(_unescape(lemma_part))
+        lemma_part, pos_part = _split_lemma(raw)
+        lemma_pattern = wildcard_to_regex(lemma_part)
         constraints = [_make_constraint(self.lemma_column, lemma_pattern)]
         if pos_part:
             pos_pattern = _POS_MAPPING.get(pos_part.upper(), pos_part + ".*")
-            constraints.append(
-                _make_constraint(self.pos_column, pos_pattern, case_sensitive=True)
-            )
+            constraints.append(_make_constraint(self.pos_column, pos_pattern))
         return _make_token(*constraints)
 
     def LEMMA_POS_TAG(self, token: Any) -> str:
@@ -211,12 +247,12 @@ class SimpleCompiler(Transformer):
         brace_end = raw.index("}")
         lemma_inner = raw[1:brace_end]
         tag_part = raw[brace_end + 2 :]  # skip `}_`
-        lemma_part, _, _ = lemma_inner.partition("/")
-        lemma_pattern = wildcard_to_regex(_unescape(lemma_part))
+        lemma_part, _ = _split_lemma(lemma_inner)
+        lemma_pattern = wildcard_to_regex(lemma_part)
         pos_pattern = _resolve_pos_tag(tag_part)
         return _make_token(
             _make_constraint(self.lemma_column, lemma_pattern),
-            _make_constraint(self.pos_column, pos_pattern, case_sensitive=True),
+            _make_constraint(self.pos_column, pos_pattern),
         )
 
     # --- rules ---------------------------------------------------------
@@ -284,34 +320,37 @@ def simple_to_cqp(
     '[token=".*able"%c]'
 
     >>> simple_to_cqp("[car,truck]")
-    '[token="car|truck"%c]'
+    '[token="(?:car|truck)"%c]'
+
+    >>> simple_to_cqp("neighbo[u,]r")
+    '[token="neighbo(?:u|)r"%c]'
 
     >>> simple_to_cqp("quick brown fox")
     '[token="quick"%c] [token="brown"%c] [token="fox"%c]'
 
     >>> simple_to_cqp("fox + over")
-    '[token="fox"%c] []+ [token="over"%c]'
+    '[token="fox"%c] []{1} [token="over"%c]'
 
     >>> simple_to_cqp("lights_NN2")
-    '[token="lights"%c & pos="NN2"]'
+    '[token="lights"%c & pos="NN2"%c]'
 
     >>> simple_to_cqp("_PNX")
-    '[pos="PNX"]'
+    '[pos="PNX"%c]'
 
     >>> simple_to_cqp("{light}")
     '[lemma="light"%c]'
 
     >>> simple_to_cqp("{light/V}")
-    '[lemma="light"%c & pos="V.*"]'
+    '[lemma="light"%c & pos="V.*"%c]'
 
     >>> simple_to_cqp("{walk}_VBD")
-    '[lemma="walk"%c & pos="VBD"]'
+    '[lemma="walk"%c & pos="VBD"%c]'
 
     >>> simple_to_cqp("{be}_V*")
-    '[lemma="be"%c & pos="V.*"]'
+    '[lemma="be"%c & pos="V.*"%c]'
 
     >>> simple_to_cqp("{box}_{SUBST}")
-    '[lemma="box"%c & pos="N.*"]'
+    '[lemma="box"%c & pos="N.*"%c]'
 
     >>> simple_to_cqp("$x: fox")
     '$x: ([token="fox"%c])'
@@ -320,7 +359,7 @@ def simple_to_cqp(
     '$det: ([token="the"%c]) $noun: ([token="fox"%c])'
 
     >>> simple_to_cqp("$phrase: (quick brown)")
-    '$phrase: ([token="quick"%c] [token="brown"%c])'
+    '$phrase: (([token="quick"%c] [token="brown"%c]))'
     """
     tree = _parser.parse(query)
     compiler = SimpleCompiler(token_column, pos_column, lemma_column)
