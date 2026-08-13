@@ -44,6 +44,11 @@ impl Match {
 struct MatchBuffers {
     stack: Vec<(usize, usize)>,
     var_stack: Vec<Option<usize>>,
+    // TODO: these two are shared by every task on `stack` rather than saved and
+    // restored with it, so which bindings survive to the winning path depends on
+    // the order the branches were tried. A binding that matched no token comes
+    // back as an empty span or as no binding at all, depending on the query.
+    // See Known Issues 6 in DEVELOPMENT_STATUS.md.
     bindings_stack: Vec<(usize, Span)>,
     match_bindings: Vec<(usize, Span)>,
 }

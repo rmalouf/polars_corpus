@@ -9,6 +9,7 @@ def py_concordance(
     matches: list[Match],
     chunk_tag: pl.Series,
     metadata: pl.DataFrame | None,
+    bindings: list[str],
 ) -> pl.DataFrame: ...
 def py_kwic(
     df: pl.DataFrame,
@@ -16,6 +17,7 @@ def py_kwic(
     left_window: int,
     right_window: int,
     metadata: pl.DataFrame | None,
+    bindings: list[str],
 ) -> pl.DataFrame: ...
 def spans_to_chunks(spans: list[Span], n: int) -> pl.Series: ...
 

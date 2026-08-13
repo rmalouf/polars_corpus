@@ -1,6 +1,7 @@
 """Tests for concordancing: context windows, collocates, and result slicing."""
 
 import polars as pl
+import polars_corpus as plc
 import pytest
 from polars_corpus import Match, SearchResults, Span
 
@@ -157,6 +158,130 @@ class TestChunkColumn:
         conc = results.concordance("token", chunk_column="chunks", window=1)
 
         assert conc["token_left_context"].to_list() == [["the", "cat"]]
+
+
+class TestBindings:
+    """The `$name:` bindings a query captured, as columns of their own"""
+
+    @pytest.fixture
+    def bound(self):
+        """ "the big cat" and "the old dog", with the adjective and noun bound."""
+        df = corpus(
+            token="the big cat sat . the old dog sat .",
+            pos="DT JJ NN VB . DT JJ NN VB .",
+        )
+        return plc.search_cqp(
+            df, '[pos="DT"] $adj: [pos="JJ"] $noun: [pos="NN"]', file_id_column=None
+        )
+
+    def test_a_column_per_variable(self, bound):
+        conc = bound.concordance("token", window=1)
+
+        # The bound columns follow the match and its context, so the matched
+        # column is still the first list column the widget finds.
+        assert conc.columns == [
+            "token_left_context",
+            "token",
+            "token_right_context",
+            "token_adj",
+            "token_noun",
+        ]
+        assert conc["token_adj"].to_list() == [["big"], ["old"]]
+        assert conc["token_noun"].to_list() == [["cat"], ["dog"]]
+
+    def test_variables_in_the_order_the_query_binds_them(self, bound):
+        assert bound.variables == ["adj", "noun"]
+
+    def test_every_expr_column_is_bound(self, bound):
+        conc = bound.concordance(["token", "pos"])
+
+        assert conc.columns == [
+            "token",
+            "token_adj",
+            "token_noun",
+            "pos",
+            "pos_adj",
+            "pos_noun",
+        ]
+        assert conc["pos_adj"].to_list() == [["JJ"], ["JJ"]]
+
+    def test_bindings_reach_the_chunk_concordance(self, bound):
+        df = bound._df.with_columns(chunks=pl.lit("I"))
+        chunked = SearchResults(df, "", bound._matches, bound.variables)
+        conc = chunked.concordance("token", chunk_column="chunks")
+
+        assert conc["token_adj"].to_list() == [["big"], ["old"]]
+
+    @pytest.mark.parametrize(
+        "bindings,expected",
+        [
+            (True, ["token", "token_adj", "token_noun"]),
+            (False, ["token"]),
+            ("noun", ["token", "token_noun"]),
+            (["noun", "adj"], ["token", "token_noun", "token_adj"]),
+            (["noun", "noun"], ["token", "token_noun"]),
+        ],
+        ids=["all", "none", "one", "named-order", "repeat-dropped"],
+    )
+    def test_choosing_variables(self, bound, bindings, expected):
+        assert bound.concordance("token", bindings=bindings).columns == expected
+
+    def test_a_query_that_binds_nothing_adds_nothing(self, results):
+        assert results.variables == []
+        assert results.concordance("token", window=1).columns == [
+            "token_left_context",
+            "token",
+            "token_right_context",
+        ]
+
+    def test_unbound_variable_is_null(self):
+        """A branch of the query that never bound the name leaves a null."""
+        df = corpus(token="the dog and the big cat", pos="DT NN CC DT JJ NN")
+        results = plc.search_cqp(df, '[pos="DT"] ($mods: [pos="JJ"]+)? [pos="NN"]')
+        conc = results.concordance("token")
+
+        assert conc["token_mods"].to_list() == [None, ["big"]]
+
+    def test_binding_that_matched_no_token_is_empty(self):
+        """A zero-width binding is an empty list, as against an unbound null."""
+        df = corpus(token="a b c")
+        results = SearchResults(
+            df, "", [Match(Span(0, 2), {"x": Span(0, 0)}), Match(Span(2, 3), {})]
+        )
+
+        assert results.concordance("token")["token_x"].to_list() == [[], None]
+
+    def test_variables_of_hand_built_matches(self):
+        """With no query to read the order off, the names are alphabetical."""
+        df = corpus(token="a b c")
+        results = SearchResults(
+            df,
+            "",
+            [
+                Match(Span(0, 1), {"z": Span(0, 1)}),
+                Match(Span(1, 2), {"y": Span(1, 2)}),
+            ],
+        )
+
+        assert results.variables == ["y", "z"]
+
+    @pytest.mark.parametrize(
+        "method,args", [("head", (1,)), ("sample", (1,)), ("shuffle", ())]
+    )
+    def test_slicing_keeps_the_variables(self, bound, method, args):
+        assert getattr(bound, method)(*args).variables == ["adj", "noun"]
+
+    def test_unknown_variable(self, bound):
+        with pytest.raises(ValueError, match="no variable 'nuon'.*Did you mean 'noun'"):
+            bound.concordance("token", bindings="nuon")
+
+    def test_no_variables_to_name(self, results):
+        with pytest.raises(ValueError, match="bound no variables"):
+            results.concordance("token", bindings="adj")
+
+    def test_bad_bindings_type(self, bound):
+        with pytest.raises(ValueError, match="bindings must be True, False"):
+            bound.concordance("token", bindings=3)
 
 
 class TestArgumentChecks:

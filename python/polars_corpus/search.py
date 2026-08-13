@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import random
+from difflib import get_close_matches
 from typing import TYPE_CHECKING, Optional
 
 import polars as pl
@@ -40,6 +41,30 @@ def _select(
         raise ValueError(f"the corpus cannot evaluate {param}: {err}") from err
 
 
+def _check_variables(value: object, available: list[str]) -> list[str]:
+    """Check that `value` names variables the query bound, keeping their order."""
+    names = [value] if isinstance(value, str) else value
+    if not isinstance(names, (list, tuple)):
+        raise ValueError(
+            f"bindings must be True, False, a variable name, or a list of them; "
+            f"got {type(value).__name__}"
+        )
+    for name in names:
+        if name not in available:
+            if not available:
+                raise ValueError(
+                    f"the query bound no variables, so there is no {name!r} to "
+                    f"show; write ${name}: in the query to bind it"
+                )
+            close = get_close_matches(str(name), available, n=1)
+            hint = f" Did you mean {close[0]!r}?" if close else ""
+            raise ValueError(
+                f"the query bound no variable {name!r}. It bound: "
+                f"{', '.join(available)}.{hint}"
+            )
+    return list(dict.fromkeys(names))
+
+
 def _check_count(value: object, param: str, hint: str = "") -> int:
     """Check that `value` is a count: an integer, zero or more."""
     if not isinstance(value, int) or isinstance(value, bool) or value < 0:
@@ -65,6 +90,9 @@ class SearchResults:
         The CQP query string that generated these results.
     matches : list[Match]
         List of Match objects representing the matched text positions and bindings.
+    variables : list[str], optional
+        Names the query bound, in the order to show them. Read off the matches
+        when not given.
 
     Attributes
     ----------
@@ -90,10 +118,34 @@ class SearchResults:
         df: pl.DataFrame,
         query: str,
         matches: list[Match],
+        variables: Optional[list[str]] = None,
     ) -> None:
         self._df = df
         self._query = query
         self._matches = matches
+        self._variables = variables
+
+    @property
+    def variables(self) -> list[str]:
+        """Names the query's `$name:` bindings capture, in the order it binds them.
+
+        A binding the query can skip -- one under `?`, or in an alternative not
+        taken -- is named here all the same, and is null in the concordance for
+        the matches that did not capture it.
+
+        Examples
+        --------
+        >>> results = plc.search(corpus, "$det: the $noun: _NN1")
+        >>> results.variables
+        ['det', 'noun']
+        """
+        if self._variables is None:
+            # Matches built by hand carry no query to read the order off, and
+            # each one holds its bindings unordered, so name them alphabetically.
+            self._variables = sorted(
+                {name for m in self._matches for name in m.bindings}
+            )
+        return self._variables
 
     def __repr__(self) -> str:
         if len(self._matches) != 1:
@@ -112,6 +164,7 @@ class SearchResults:
         window: int = 0,
         chunk_column: Optional[str] = None,
         metadata: Optional[str | list[str]] = None,
+        bindings: bool | str | list[str] = True,
     ) -> pl.DataFrame:
         """Generate a KWIC (Key Word In Context) concordance DataFrame.
 
@@ -138,6 +191,12 @@ class SearchResults:
             Column name(s) from the source corpus to attach to each match as
             plain (non-list) columns, e.g. file_id or category. The value is
             taken from the first token of each match.
+        bindings : bool, str or list[str], default True
+            Which of the query's `$name:` bindings to give a column of their
+            own. True takes them all -- and so does nothing to a query that
+            binds none -- while False takes none. A name, or a list of names,
+            takes just those; see the `variables` attribute for what a query
+            bound.
 
         Returns
         -------
@@ -147,6 +206,7 @@ class SearchResults:
             - "{column}_left_context": List of tokens before the match
             - "{column}": List of matched tokens
             - "{column}_right_context": List of tokens after the match
+            - "{column}_{variable}": List of tokens bound to each variable
             Context columns are omitted when window=0.
             Each name in metadata adds a single scalar column with that name.
 
@@ -156,6 +216,10 @@ class SearchResults:
         run from the end of one file into the start of the next even when the
         search was confined to files with `file_id_column`.
 
+        A binding column holds an empty list where the variable matched no
+        token, as an optional one can, and a null where the match went down a
+        branch of the query that never bound it at all.
+
         Examples
         --------
         >>> results.concordance("token", window=3)
@@ -163,7 +227,19 @@ class SearchResults:
         >>> results.concordance("token", chunk_column="sentence_tag")  # Chunk boundaries
         >>> results.concordance(["token", "pos"], window=5)  # Multiple columns
         >>> results.concordance("token", window=5, metadata=["file_id", "category"])
+
+        >>> # A column per bound variable: token_adj and token_noun
+        >>> results = plc.search(corpus, "$adj: _AJ0 $noun: _NN1")
+        >>> results.concordance("token", window=5)
+        >>> results.concordance("token", bindings="adj")  # Just the one
         """
+        if bindings is True:
+            names = list(self.variables)
+        elif bindings is False:
+            names = []
+        else:
+            names = _check_variables(bindings, self.variables)
+
         if metadata is None:
             metadata_df = None
         else:
@@ -190,6 +266,7 @@ class SearchResults:
                 self._matches,
                 chunk_tags,
                 metadata_df,
+                names,
             )
 
         window = _check_count(window, "window", " Use window=0 for no context.")
@@ -199,6 +276,7 @@ class SearchResults:
             window,
             window,
             metadata_df,
+            names,
         )
 
     def collocates(
@@ -265,7 +343,7 @@ class SearchResults:
                 "them; call collocates() once per column instead"
             )
         name = output_name(expr)
-        conc = self.concordance(expr, window=window)
+        conc = self.concordance(expr, window=window, bindings=False)
         return (
             conc.lazy()
             .select(
@@ -332,8 +410,14 @@ class SearchResults:
         """
         from .view import ConcordanceWidget
 
+        # The widget shows the matched column and its context, so the bound
+        # variables would only take up room.
         conc = self.concordance(
-            expr, window=window, chunk_column=chunk_column, metadata=metadata
+            expr,
+            window=window,
+            chunk_column=chunk_column,
+            metadata=metadata,
+            bindings=False,
         )
         # The widget shows one column; the concordance holds the matched ones
         # ahead of any metadata, so its first is the one asked for.
@@ -365,7 +449,7 @@ class SearchResults:
         _check_count(n, "n")
         if n >= len(self._matches):
             return self
-        return SearchResults(self._df, self._query, self._matches[:n])
+        return SearchResults(self._df, self._query, self._matches[:n], self._variables)
 
     def tail(self, n: int) -> SearchResults:
         """Return the last n search results.
@@ -395,7 +479,10 @@ class SearchResults:
             return self
         # matches[-0:] is the whole list, not an empty one.
         return SearchResults(
-            self._df, self._query, self._matches[len(self._matches) - n :]
+            self._df,
+            self._query,
+            self._matches[len(self._matches) - n :],
+            self._variables,
         )
 
     def sample(self, k: int, seed: Optional[int] = None) -> SearchResults:
@@ -438,7 +525,12 @@ class SearchResults:
         state = random.getstate()
         random.seed(seed)
         try:
-            return SearchResults(self._df, self._query, random.sample(self._matches, k))
+            return SearchResults(
+                self._df,
+                self._query,
+                random.sample(self._matches, k),
+                self._variables,
+            )
         finally:
             random.setstate(state)
 
@@ -474,6 +566,7 @@ class SearchResults:
                 self._df,
                 self._query,
                 random.sample(self._matches, len(self._matches)),
+                self._variables,
             )
         finally:
             random.setstate(state)
@@ -571,7 +664,11 @@ class SearchResults:
             )
         name = output_name(expr)
         conc = self.concordance(
-            expr, window=window, chunk_column=chunk_column, metadata=metadata
+            expr,
+            window=window,
+            chunk_column=chunk_column,
+            metadata=metadata,
+            bindings=False,
         )
         # window=0 leaves the match with no context columns around it.
         parts = [
@@ -597,6 +694,7 @@ def concordance(
     window: int = 0,
     chunk_column: Optional[str] = None,
     metadata: Optional[str | list[str]] = None,
+    bindings: bool | str | list[str] = True,
 ) -> pl.DataFrame:
     """Generate a concordance from search results (functional interface).
 
@@ -618,6 +716,9 @@ def concordance(
     metadata : str or list[str], optional
         Column name(s) from the source corpus to attach to each match as
         plain (non-list) columns, e.g. file_id or category.
+    bindings : bool, str or list[str], default True
+        Which of the query's `$name:` bindings to give a column of their own.
+        True takes them all, False none, and a name or list of them just those.
 
     Returns
     -------
@@ -634,7 +735,7 @@ def concordance(
     >>> conc = concordance(results, "token", window=5)
     >>> conc = concordance(results, "token", chunk_column="sentence_tag")
     """
-    return search_results.concordance(expr, window, chunk_column, metadata)
+    return search_results.concordance(expr, window, chunk_column, metadata, bindings)
 
 
 def collocates(

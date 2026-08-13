@@ -59,13 +59,27 @@ plc.search(c, '$vehicle: [car,truck]')       # Captures whichever matches
 ```
 
 **Accessing bindings:**
+
+Each bound variable gets a concordance column of its own, named after the
+column it was taken from:
 ```python
 results = plc.search(corpus, '$det: the $noun: fox')
+results.variables                            # ['det', 'noun']
+conc = results.concordance('token', window=5)
+conc['token_det']                            # [['the'], ...]
+conc['token_noun']                           # [['fox'], ...]
+
+results.concordance('token', bindings='noun')   # just the one
+results.concordance('token', bindings=False)    # none of them
+```
+A variable is null on the lines whose match never bound it, and an empty list
+where it bound no token.
+
+The spans themselves are on the matches:
+```python
 for match in results._matches:
     det_span = match.bindings['det']
-    noun_span = match.bindings['noun']
     det_text = corpus['token'][det_span.start:det_span.end]
-    noun_text = corpus['token'][noun_span.start:noun_span.end]
 ```
 
 **Notes:**
@@ -106,7 +120,8 @@ plc.search_cqp(c, '$phrase: (($det: [pos="DT"]) [pos="JJ"] [pos="NN"])')
 - Single-token bindings: `$var: [feature="value"]` (no parens needed)
 - Multi-token or quantified bindings: `$var: (pattern)` (parens required)
 - Variable names must be unique within a query
-- Bindings are accessible via `match.bindings[varname]` → `Span(start, end)`
+- Each binding gets a `{column}_{varname}` column in the concordance; `results.variables` names them
+- Bindings are also accessible via `match.bindings[varname]` → `Span(start, end)`
 - Empty spans (start==end) for zero-width matches (e.g., optional patterns that didn't match)
 
 ## Translation

@@ -25,13 +25,15 @@ def compute_masks(df: pl.DataFrame, opcodes: list[Opcode]) -> pl.DataFrame:
     return df.rechunk()
 
 
-def check_bindings(opcodes: list[Opcode]):
-    seen: set[str] = set()
+def check_bindings(opcodes: list[Opcode]) -> list[str]:
+    """The names the program binds, in the order it binds them."""
+    seen: list[str] = []
     for op in opcodes:
         if isinstance(op, Opcode.BindVar):
             if op._0 in seen:
                 raise ValueError(f"Duplicate variable binding: ${op._0}")
-            seen.add(op._0)
+            seen.append(op._0)
+    return seen
 
 
 def propagate_masks(df: pl.DataFrame, opcodes: list[Opcode], pc: int) -> pl.DataFrame:
@@ -70,13 +72,16 @@ def propagate_masks(df: pl.DataFrame, opcodes: list[Opcode], pc: int) -> pl.Data
     return df
 
 
-def get_matches(
+def run_query(
     df: pl.DataFrame, query: str, file_id_column: Optional[str] = None
-) -> Optional[list[Match]]:
-    """Parse query and retrieve matching spans.
+) -> tuple[Optional[list[Match]], list[str]]:
+    """Matches for `query`, with the variables it binds in the order it binds them.
 
     If `file_id_column` is given, matches are confined to runs of equal values
     in it; otherwise they may span the whole corpus.
+
+    The names come from the query rather than the matches, so one an optional
+    subpattern never got to bind is still named, and gets an empty column.
     """
     # Checked ahead of the empty-corpus shortcut so a bad column name is
     # reported the same way whether or not the corpus happens to be empty.
@@ -84,19 +89,19 @@ def get_matches(
         check_columns(df, [file_id_column], param="file_id_column")
 
     if df.is_empty():
-        return None
+        return None, []
 
     opcodes = cqp(query)
     opcodes.append(Opcode.Match())
 
-    check_bindings(opcodes)
+    variables = check_bindings(opcodes)
     mask_df = compute_masks(df, opcodes)
     masks = [mask_df.get_column(col) for col in mask_df.columns]
 
     file_ids = None if file_id_column is None else df.get_column(file_id_column)
     opcode_matcher = OpcodeMatcher(opcodes, masks, file_ids)
 
-    return opcode_matcher.matchall()
+    return opcode_matcher.matchall(), variables
 
 
 def search_cqp(
@@ -136,8 +141,9 @@ def search_cqp(
     >>> search_cqp(corpus, '[pos="NN.*"]+ [pos="VB.*"]')
 
     """
-    if matched_spans := get_matches(df, query, file_id_column):
-        return SearchResults(df, query, matched_spans)
+    matched_spans, variables = run_query(df, query, file_id_column)
+    if matched_spans:
+        return SearchResults(df, query, matched_spans, variables)
     else:
         return None
 
@@ -254,7 +260,8 @@ def search(
     cqp_query = simple_to_cqp(query, token_column, pos_column, lemma_column)
 
     # Use the CQP search function
-    if matched_spans := get_matches(df, cqp_query, file_id_column):
-        return SearchResults(df, query, matched_spans)
+    matched_spans, variables = run_query(df, cqp_query, file_id_column)
+    if matched_spans:
+        return SearchResults(df, query, matched_spans, variables)
     else:
         return None

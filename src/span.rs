@@ -38,13 +38,21 @@ pub fn py_concordance(
     matches: Vec<Match>,
     py_chunk_tag: PySeries,
     metadata: Option<PyDataFrame>,
+    bindings: Vec<String>,
 ) -> PyResult<PyDataFrame> {
     let df: DataFrame = py_df.0;
     let chunk_tag = py_chunk_tag.0;
     let metadata_df = metadata.map(|m| m.0);
+    let bound_spans = bound_spans(&matches, &bindings);
     let matched_spans: Vec<Span> = matches.into_iter().map(|m| m.span).collect();
-    let out_df = concordance_df(&df, &matched_spans, &chunk_tag, metadata_df.as_ref())
-        .map_err(PyPolarsErr::from)?;
+    let out_df = concordance_df(
+        &df,
+        &matched_spans,
+        &chunk_tag,
+        metadata_df.as_ref(),
+        &bound_spans,
+    )
+    .map_err(PyPolarsErr::from)?;
     Ok(PyDataFrame(out_df))
 }
 
@@ -53,6 +61,7 @@ fn concordance_df(
     matched_spans: &[Span],
     chunk_tag: &Series,
     metadata: Option<&DataFrame>,
+    bound_spans: &[(&str, Vec<Option<Span>>)],
 ) -> PolarsResult<DataFrame> {
     // Every column takes its context from the same positions, so the spans
     // are built once and read by all of them.
@@ -67,9 +76,43 @@ fn concordance_df(
             Some(&right_spans),
             &mut result_columns,
         )?;
+        add_binding_columns(column, bound_spans, &mut result_columns)?;
     }
     add_metadata_columns(metadata, matched_spans, &mut result_columns)?;
     DataFrame::new_infer_height(result_columns)
+}
+
+/// The span each match bound to each name, in the order the names are given.
+/// A match that never bound a name gets `None`, and so a null in its column.
+fn bound_spans<'a>(matches: &[Match], names: &'a [String]) -> Vec<(&'a str, Vec<Option<Span>>)> {
+    names
+        .iter()
+        .map(|name| {
+            let spans = matches
+                .iter()
+                .map(|m| m.bindings.get(name).cloned())
+                .collect();
+            (name.as_str(), spans)
+        })
+        .collect()
+}
+
+fn add_binding_columns(
+    column: &Column,
+    bound_spans: &[(&str, Vec<Option<Span>>)],
+    result_columns: &mut Vec<Column>,
+) -> PolarsResult<()> {
+    let column_name = column.name();
+    let series = column.as_materialized_series();
+    for (name, spans) in bound_spans {
+        let bound = implode_series_by_bound_spans(series, spans)?;
+        result_columns.push(
+            bound
+                .with_name(format!("{column_name}_{name}").into())
+                .into(),
+        );
+    }
+    Ok(())
 }
 
 fn add_metadata_columns(
@@ -164,7 +207,9 @@ pub fn py_kwic(
     left_window: i32,
     right_window: i32,
     metadata: Option<PyDataFrame>,
+    bindings: Vec<String>,
 ) -> PyResult<PyDataFrame> {
+    let bound_spans = bound_spans(&matches, &bindings);
     let matched_spans: Vec<Span> = matches.into_iter().map(|m| m.span).collect();
     let df: DataFrame = py_df.0;
     let metadata_df = metadata.map(|m| m.0);
@@ -174,6 +219,7 @@ pub fn py_kwic(
         left_window,
         right_window,
         metadata_df.as_ref(),
+        &bound_spans,
     )
     .map_err(PyPolarsErr::from)?;
     Ok(PyDataFrame(out_df))
@@ -185,6 +231,7 @@ fn kwic_df(
     left_window: i32,
     right_window: i32,
     metadata: Option<&DataFrame>,
+    bound_spans: &[(&str, Vec<Option<Span>>)],
 ) -> PolarsResult<DataFrame> {
     // Every column takes its context from the same positions, so the spans
     // are built once and read by all of them.
@@ -207,6 +254,7 @@ fn kwic_df(
             right_spans.as_deref(),
             &mut result_columns,
         )?;
+        add_binding_columns(column, bound_spans, &mut result_columns)?;
     }
     add_metadata_columns(metadata, matched_spans, &mut result_columns)?;
     DataFrame::new_infer_height(result_columns)
@@ -244,6 +292,24 @@ fn implode_series_by_spans(s: &Series, spans: &[Span]) -> PolarsResult<Series> {
         let clipped_end = end.min(s.len());
         let slice = s.slice(start as i64, clipped_end - start);
         builder.append_series(&slice)?;
+    }
+
+    let out_series = builder.finish().into_series();
+    Ok(out_series)
+}
+
+fn implode_series_by_bound_spans(s: &Series, spans: &[Option<Span>]) -> PolarsResult<Series> {
+    let values_cap: usize = spans.iter().flatten().map(|sp| sp.end - sp.start).sum();
+    let mut builder = get_list_builder(s.dtype(), spans.len(), values_cap, s.name().clone());
+
+    for span in spans {
+        match span {
+            // A bound span lies within the match, so it needs no clipping.
+            Some(sp) => builder.append_series(&s.slice(sp.start as i64, sp.end - sp.start))?,
+            // The match never bound this name: null, as against the empty list
+            // a binding that matched no token gets.
+            None => builder.append_null(),
+        }
     }
 
     let out_series = builder.finish().into_series();

@@ -36,7 +36,8 @@ tests.
 1. **Search engine** — NFA matcher in Rust; CQP and Simple query languages;
    variable bindings (`$x: ...`) in both.
 2. **Concordancing** — KWIC generation in Rust, `SearchResults.concordance()`,
-   interactive `ConcordanceWidget` (anywidget) with pagination and sorting.
+   a column per bound variable, interactive `ConcordanceWidget` (anywidget)
+   with pagination and sorting.
 3. **Collocation and keywords** — `collocates()`, `keywords()`, `crosstab()`
    bundling frequencies into a `freqs` struct consumed by the association
    measures.
@@ -86,7 +87,19 @@ tests.
 5. **`__init__.py` leaks names.** Modules without `__all__` are star-imported,
    so `polars_corpus.pl`, `.Any`, `.Optional` and most submodule names are bound
    at top level. The `keywords` function also shadows the `keywords` module.
-6. **No published wheels or PyPI release.**
+6. **A zero-width binding is reported inconsistently.** `bindings_stack` in
+   `MatchBuffers` is not part of the backtracking state: `_match_opcodes` pushes
+   and pops `(cursor, pc)` tasks, but every task shares one binding stack, so
+   which bindings reach the winning path depends on the order the branches were
+   tried. A `*` or `?` binding that matched no token therefore sometimes reports
+   an empty span and sometimes no binding at all —
+   `[pos="DT"] ($mods: [pos="JJ"]*) [pos="NN"]` over "the dog" reports no
+   `mods`, while `$adjs: ([pos="JJ"]*) [pos="NN"]` reports `Span(18, 18)` in
+   test_matcher.py's `star-zero-match-empty-span`. `concordance()` shows the
+   first as a null and the second as an empty list, which is now the visible
+   face of the bug. The fix is probably to record the binding stack's depth
+   with each task and truncate back to it when the task is resumed.
+7. **No published wheels or PyPI release.**
 
 Notebooks are excluded from ruff (`[tool.ruff] extend-exclude`). They are
 working scratchpads and are expected to sit in unfinished states, so linting
@@ -106,8 +119,10 @@ them produced only noise.
 5. Add CI, deferred until closer to release.
 
 **Quality**
-6. Rust unit tests for the matcher.
-7. Benchmarks (`examples/bench.py` is a starting point).
+6. Make the binding stack part of the backtracking state, so a zero-width
+   binding always reports its empty span (Known Issues 6).
+7. Rust unit tests for the matcher.
+8. Benchmarks (`examples/bench.py` is a starting point).
 
 ---
 

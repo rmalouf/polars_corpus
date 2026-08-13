@@ -497,6 +497,37 @@ Bindings may likewise be applied to alternatives or repeated groups:
 $x: (cat|dog)
 ```
 
+### Reading the bindings back
+
+A concordance gives each bound variable a column of its own, named after the
+column it was taken from:
+
+```python
+results = plc.search(corpus, "$det: the $adj: _AJ0 $noun: _NN1")
+results.variables                       # ['det', 'adj', 'noun']
+conc = results.concordance("token", window=5)
+conc.columns
+# ['token_left_context', 'token', 'token_right_context',
+#  'token_det', 'token_adj', 'token_noun']
+```
+
+Each holds the tokens the variable captured, so the usual list expressions
+group and count them:
+
+```python
+conc.group_by(pl.col("token_adj").list.join(" ")).len().sort("len", descending=True)
+```
+
+`bindings=` chooses which to include -- a name, a list of names, or `False`
+for none:
+
+```python
+results.concordance("token", window=5, bindings="noun")
+```
+
+A variable is null on the lines whose match never bound it, as an optional
+subpattern's can be, and an empty list where it matched no token at all.
+
 ---
 
 ## Literal characters and escaping

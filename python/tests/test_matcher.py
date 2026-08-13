@@ -1,7 +1,7 @@
 import polars as pl
 import pytest
 from lark.exceptions import LarkError
-from polars_corpus.matcher import Span, get_matches, search
+from polars_corpus.matcher import Span, run_query, search
 
 from .helpers import corpus, spans
 
@@ -77,7 +77,8 @@ def complex_corpus():
     ],
 )
 def test_queries(sample_corpus, query, expected):
-    assert spans(get_matches(sample_corpus, query)) == expected
+    matches, _ = run_query(sample_corpus, query)
+    assert spans(matches) == expected
 
 
 @pytest.mark.parametrize(
@@ -92,7 +93,8 @@ def test_queries(sample_corpus, query, expected):
     ],
 )
 def test_quantifiers(complex_corpus, query, expected):
-    assert spans(get_matches(complex_corpus, query)) == expected
+    matches, _ = run_query(complex_corpus, query)
+    assert spans(matches) == expected
 
 
 @pytest.mark.parametrize(
@@ -105,7 +107,8 @@ def test_quantifiers(complex_corpus, query, expected):
 )
 def test_degenerate_corpora(corpus_columns, expected):
     df = pl.DataFrame(corpus_columns)
-    assert spans(get_matches(df, '[pos="NN"]')) == expected
+    matches, _ = run_query(df, '[pos="NN"]')
+    assert spans(matches) == expected
 
 
 @pytest.mark.parametrize(
@@ -124,18 +127,18 @@ def test_degenerate_corpora(corpus_columns, expected):
 )
 def test_malformed_syntax(sample_corpus, query):
     with pytest.raises((ValueError, LarkError)):
-        get_matches(sample_corpus, query)
+        run_query(sample_corpus, query)
 
 
 def test_unknown_feature(sample_corpus):
     with pytest.raises((ValueError, KeyError, pl.exceptions.ColumnNotFoundError)):
-        get_matches(sample_corpus, '[invalid_feature="value"]')
+        run_query(sample_corpus, '[invalid_feature="value"]')
 
 
 def test_invalid_regex(sample_corpus):
     """A well-formed query whose constraint value is not a valid regex"""
     with pytest.raises(pl.exceptions.ComputeError):
-        get_matches(sample_corpus, '[word="[unclosed"]')
+        run_query(sample_corpus, '[word="[unclosed"]')
 
 
 class TestSpan:
@@ -191,13 +194,13 @@ class TestVariableBindings:
         ],
     )
     def test_basic_bindings(self, sample_corpus, query, var, expected_span):
-        matches = get_matches(sample_corpus, query)
+        matches, _ = run_query(sample_corpus, query)
         assert matches
         assert matches[0].bindings[var] == expected_span
 
     def test_multiple_variables_captured_simultaneously(self, sample_corpus):
         query = '$det: ([pos="DT"]) $adj: ([pos="JJ"]) $noun: ([pos="NN"])'
-        matches = get_matches(sample_corpus, query)
+        matches, _ = run_query(sample_corpus, query)
         assert len(matches) == 1
         assert matches[0].bindings == {
             "det": Span(6, 7),  # "the"
@@ -205,6 +208,33 @@ class TestVariableBindings:
             "noun": Span(8, 9),  # "dog"
         }
         assert matches[0].span == Span(6, 9)
+
+    @pytest.mark.parametrize(
+        "query,expected",
+        [
+            pytest.param('[pos="NN"]', [], id="no-bindings"),
+            pytest.param(
+                '$det: ([pos="DT"]) $adj: ([pos="JJ"]) $noun: ([pos="NN"])',
+                ["det", "adj", "noun"],
+                id="binding-order",
+            ),
+            pytest.param(
+                '$phrase: (($det: ([pos="DT"])) [pos="JJ"] [pos="NN"])',
+                ["det", "phrase"],
+                id="inner-binding-closes-first",
+            ),
+            pytest.param(
+                '($vb: ([pos="VB"]) | [pos="NN"])',
+                ["vb"],
+                id="named-though-no-match-bound-it",
+            ),
+        ],
+    )
+    def test_variables_reported(self, sample_corpus, query, expected):
+        """The names come off the query, in the order it closes them"""
+        _, variables = run_query(sample_corpus, query)
+
+        assert variables == expected
 
     @pytest.mark.parametrize(
         "query,var,match_idx,expected_span",
@@ -250,14 +280,14 @@ class TestVariableBindings:
         self, complex_corpus, query, var, match_idx, expected_span
     ):
         """Quantifiers bind the entire matched sequence, not just the last token"""
-        matches = get_matches(complex_corpus, query)
+        matches, _ = run_query(complex_corpus, query)
         assert matches
         assert matches[match_idx].bindings[var] == expected_span
 
     def test_nested_bindings(self, sample_corpus):
         """Nested bindings capture both the outer and the inner variable"""
         query = '$phrase: (($det: ([pos="DT"])) [pos="JJ"] [pos="NN"])'
-        matches = get_matches(sample_corpus, query)
+        matches, _ = run_query(sample_corpus, query)
         assert len(matches) == 1
         assert matches[0].bindings == {
             "det": Span(6, 7),  # "the"
@@ -267,7 +297,7 @@ class TestVariableBindings:
 
     def test_binding_in_alternation(self, sample_corpus):
         """A single binding around an alternation spans the whole match"""
-        matches = get_matches(sample_corpus, '$target: ([pos="JJ"] | [pos="NN"])')
+        matches, _ = run_query(sample_corpus, '$target: ([pos="JJ"] | [pos="NN"])')
         # quick, brown, fox, lazy, dog
         assert len(matches) == 5
         assert all(m.bindings["target"] == m.span for m in matches)
@@ -283,7 +313,7 @@ class TestVariableBindings:
     def test_variable_reuse_error(self, sample_corpus, query):
         """Variable names cannot be reused within one query"""
         with pytest.raises((ValueError, RuntimeError)):
-            get_matches(sample_corpus, query)
+            run_query(sample_corpus, query)
 
 
 @pytest.fixture
@@ -342,7 +372,7 @@ class TestFileBoundaries:
     def test_boundaries_confine_matches(
         self, two_file_corpus, query, file_id_column, expected
     ):
-        matches = get_matches(two_file_corpus, query, file_id_column)
+        matches, _ = run_query(two_file_corpus, query, file_id_column)
         assert spans(matches) == expected
 
     @pytest.mark.parametrize(
@@ -356,7 +386,7 @@ class TestFileBoundaries:
     def test_missing_column_raises(self, df):
         """Naming an absent column is an error, not a silent no-op"""
         with pytest.raises(ValueError, match="not_a_column"):
-            get_matches(df, '[word="brown"] [word="fox"]', "not_a_column")
+            run_query(df, '[word="brown"] [word="fox"]', "not_a_column")
 
     @pytest.mark.parametrize(
         "dtype",
@@ -368,7 +398,7 @@ class TestFileBoundaries:
         if dtype == pl.UInt32:
             cast = cast.str.strip_prefix("d")
         df = two_file_corpus.with_columns(cast.cast(dtype))
-        matches = get_matches(df, '[word="brown"] [word="fox"]', "file_id")
+        matches, _ = run_query(df, '[word="brown"] [word="fox"]', "file_id")
         assert spans(matches) == [(4, 6)]
 
     @pytest.mark.parametrize(
@@ -396,13 +426,14 @@ class TestFileBoundaries:
     )
     def test_run_detection(self, words, file_ids, expected):
         df = pl.DataFrame({"word": words.split(), "file_id": file_ids})
-        matches = get_matches(df, '[word="brown"] [word="fox"]', "file_id")
+        matches, _ = run_query(df, '[word="brown"] [word="fox"]', "file_id")
         assert spans(matches) == expected
 
     def test_single_token_corpus(self):
         """n < 2 takes the early return in run_starts"""
         df = pl.DataFrame({"word": ["fox"], "file_id": ["d1"]})
-        assert spans(get_matches(df, '[word="fox"]', "file_id")) == [(0, 1)]
+        matches, _ = run_query(df, '[word="fox"]', "file_id")
+        assert spans(matches) == [(0, 1)]
 
 
 @pytest.mark.parametrize(
