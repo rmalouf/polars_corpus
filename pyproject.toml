@@ -40,7 +40,7 @@ dependencies = [
 # pyarrow is seaborn's, not ours: below 14 it takes the deprecated dataframe
 # interchange path for a polars frame and warns on every plot. It goes when
 # seaborn does.
-examples = ["great_tables", "scipy", "matplotlib", "seaborn", "pyarrow>=14"]
+examples = ["great_tables", "scipy", "matplotlib", "seaborn", "pyarrow>=14", "statsmodels"]
 embeddings = ["sentence-transformers", "model2vec", "adjusttext", "umap-learn",
     "hdbscan"]
 

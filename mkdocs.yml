@@ -39,6 +39,7 @@ nav:
 #      - Getting started: guide/getting-started.ipynb
 #      - Working with corpora: guide/corpora.ipynb
   - Examples:
+      - Word frequencies: notebooks/frequencies.ipynb
       - Keyword Analysis: notebooks/keywords.ipynb
       - Dispersion: notebooks/dispersion.ipynb
   - Reference:
