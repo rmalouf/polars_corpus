@@ -222,8 +222,7 @@ def ngrams(n: int, in_expr: IntoExpr, as_str: bool = True) -> pl.Expr:
         Column name or expression holding the tokens to gather.
     as_str : bool, default True
         Join the tokens into one space-separated string. Set to False for a
-        list column instead, which keeps the tokens separate and is safe when
-        they may contain spaces themselves.
+        list column instead.
 
     Returns
     -------
@@ -272,22 +271,7 @@ def proportion(in_expr: IntoExpr, in_group_by: Optional[IntoExpr] = None) -> pl.
     Returns
     -------
     pl.Expr
-        Expression giving each count over the total, so the values sum to 1.
-        Multiply by a basis for a rate that reads more easily than a small
-        decimal: per 10,000 words for common words, per million for rarer
-        ones. Nulls are left out of the total and stay null in the result.
-
-    Notes
-    -----
-    Report the basis alongside the figures, since it is a presentational
-    choice rather than a property of the corpus:
-
-    >>> df.select(pl.col("token"), plc.proportion("count") * 10_000)
-
-    With `in_group_by`, each count is a share of its own group's total, which
-    is what per-file or per-genre rates need:
-
-    >>> df.select(plc.proportion("count", "file_id") * 10_000)
+        Expression giving each count divided by the total, so the values sum to 1.
     """
     expr = as_expr(in_expr)
     if in_group_by is None:
@@ -298,7 +282,7 @@ def proportion(in_expr: IntoExpr, in_group_by: Optional[IntoExpr] = None) -> pl.
 
 
 def is_letters(in_expr: IntoExpr) -> pl.Expr:
-    """Test whether each string is a word rather than punctuation or a number.
+    """Test whether each string is alphabetic.
 
     Parameters
     ----------
@@ -314,19 +298,10 @@ def is_letters(in_expr: IntoExpr) -> pl.Expr:
 
     Notes
     -----
-    "Letter" is the Unicode category, not `[A-Za-z]`, so Greek, Cyrillic and
-    Han count, as do accents written as a separate combining mark. Apostrophes
-    (`'` or `’`) and hyphens keep *don't* and *co-op* whole, but need a letter
-    beside them: a token that is only punctuation is still punctuation. Use it
-    to keep a frequency list to words:
-
-    >>> df.filter(plc.is_letters("token"))
+    "Letter" is the Unicode category, so Greek, Cyrillic and Han count, as do
+    accents written as a separate combining mark. Apostrophes (`'` or `’`) and
+    hyphens (as in *don't* or *co-op*) count as long as there is at least one
+    letter in the string.
     """
     expr = as_expr(in_expr)
-    # \p{L} is a letter and \p{M}* the combining marks that may follow it, so a
-    # decomposed accent is one letter. The apostrophes and hyphens are spelled
-    # around that unit rather than added to it, because the string has to hold
-    # a letter somewhere: the engine is Rust's regex crate, which has no
-    # lookahead to say so directly. \A and \z anchor the pattern to the ends of
-    # the string, making contains() a match on the whole of it.
     return expr.str.contains(r"\A[-'’]*(?:\p{L}\p{M}*)(?:[-'’]|\p{L}\p{M}*)*\z")
