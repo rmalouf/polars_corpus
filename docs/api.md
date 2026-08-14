@@ -2,6 +2,7 @@
 
 ::: polars_corpus.matcher.search
 ::: polars_corpus.matcher.search_cqp
+::: polars_corpus.search.SearchResults
 ::: polars_corpus.dispersion.dispersion
 ::: polars_corpus.keywords.keywords
 
@@ -21,6 +22,9 @@
 # Utilities
 
 ::: polars_corpus.utils.ngrams
+::: polars_corpus.utils.proportion
+::: polars_corpus.utils.is_letters
+
 
 
 

@@ -40,6 +40,7 @@ nav:
 #      - Working with corpora: guide/corpora.ipynb
   - Examples:
       - Word frequencies: notebooks/frequencies.ipynb
+      - Concordances: notebooks/concordance.ipynb
       - Keyword Analysis: notebooks/keywords.ipynb
       - Dispersion: notebooks/dispersion.ipynb
   - Reference:
