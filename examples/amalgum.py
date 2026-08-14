@@ -4,18 +4,18 @@ from lxml import etree
 from tqdm.auto import tqdm
 
 file_ids = []
-file_types = []
+text_types = []
 tokens = []
 tags = []
 lemmas = []
 sentence_tags = []
 
-files = sorted(list(Path("/Users/malouf/amalgum/").glob("amalgum*/*/xml/*.xml")))
+files = sorted(list(Path("/Volumes/Corpora/amalgum/").glob("amalgum*/*/xml/*.xml")))
 for f in tqdm(files):
     tree = etree.parse(f)
     text = tree.getroot()
     file_id = text.get("id")
-    file_type = text.get("type")
+    text_type = text.get("type")
     for s in text.findall(".//s"):
         first = True
         chunks = s.xpath(".//text()")
@@ -26,7 +26,7 @@ for f in tqdm(files):
                 if word:
                     token, tag, lemma = word.split("\t")
                     file_ids.append(file_id)
-                    file_types.append(file_type)
+                    text_types.append(text_type)
                     tokens.append(token)
                     tags.append(tag)
                     lemmas.append(lemma)
@@ -43,7 +43,7 @@ df = pl.DataFrame(
         "lemma": lemmas,
         "sentence_tag": sentence_tags,
         "file_id": file_ids,
-        "file_type": file_types,
+        "text_type": text_types,
     }
 )
 df.write_parquet("amalgum.parquet")
