@@ -1,7 +1,7 @@
-import polars as pl
+import xml.etree.ElementTree as ET
 from pathlib import Path
-from lxml import etree
-from tqdm.auto import tqdm
+
+import polars as pl
 
 file_ids = []
 text_types = []
@@ -11,18 +11,16 @@ lemmas = []
 sentence_tags = []
 
 files = sorted(list(Path("/Volumes/Corpora/amalgum/").glob("amalgum*/*/xml/*.xml")))
-for f in tqdm(files):
-    tree = etree.parse(f)
-    text = tree.getroot()
+for f in files:
+    # The files declare encoding="utf8", a name expat rejects.  Decoding here and
+    # handing ElementTree a str makes it ignore the declaration.
+    text = ET.fromstring(f.read_text(encoding="utf-8"))
     file_id = text.get("id")
     text_type = text.get("type")
     for s in text.findall(".//s"):
         first = True
-        chunks = s.xpath(".//text()")
-        for chunk in chunks:
+        for chunk in s.itertext():
             for word in chunk.strip().split("\n"):
-                if not word:
-                    pass
                 if word:
                     token, tag, lemma = word.split("\t")
                     file_ids.append(file_id)
@@ -30,11 +28,8 @@ for f in tqdm(files):
                     tokens.append(token)
                     tags.append(tag)
                     lemmas.append(lemma)
-                    if first:
-                        sentence_tags.append("B")
-                        first = False
-                    else:
-                        sentence_tags.append("I")
+                    sentence_tags.append("B" if first else "I")
+                    first = False
 
 df = pl.DataFrame(
     {
