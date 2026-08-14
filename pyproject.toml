@@ -49,10 +49,12 @@ Repository = "https://github.com/rmalouf/polars_corpus"
 Issues = "https://github.com/rmalouf/polars_corpus/issues"
 
 [tool.ruff]
-# The example and user-guide notebooks are working scratchpads and are routinely
-# left mid-edit, with undefined names and unused imports. Lint and format the
-# .py sources only.
-extend-exclude = ["*.ipynb"]
+# The notebooks in examples/ are working scratchpads and are routinely left
+# mid-edit, with undefined names and unused imports. The pattern names the
+# notebooks rather than the directory, so the .py sources beside them are still
+# linted, and it leaves docs/notebooks/ alone: those are pages people read, and
+# they are held to the same formatting as the rest of the code.
+extend-exclude = ["examples/*.ipynb"]
 # Apply the exclusion even when a notebook is named directly on the command
 # line, which is what editors and pre-commit hooks do.
 force-exclude = true
