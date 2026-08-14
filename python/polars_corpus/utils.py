@@ -281,13 +281,15 @@ def proportion(in_expr: IntoExpr, in_group_by: Optional[IntoExpr] = None) -> pl.
         return expr / expr.sum().over(group_by)
 
 
-def is_letters(in_expr: IntoExpr) -> pl.Expr:
+def is_letters(in_expr: IntoExpr, allow_spaces: bool = False) -> pl.Expr:
     """Test whether each string is alphabetic.
 
     Parameters
     ----------
     in_expr : IntoExpr
         Column name or expression holding the strings to test.
+    allow_spaces : bool, default False
+        Count a space as a letter, so multi-word strings such as n-grams pass.
 
     Returns
     -------
@@ -304,4 +306,7 @@ def is_letters(in_expr: IntoExpr) -> pl.Expr:
     letter in the string.
     """
     expr = as_expr(in_expr)
-    return expr.str.contains(r"\A[-'’]*(?:\p{L}\p{M}*)(?:[-'’]|\p{L}\p{M}*)*\z")
+    others = "[-'’ ]" if allow_spaces else "[-'’]"
+    return expr.str.contains(
+        rf"\A{others}*(?:\p{{L}}\p{{M}}*)(?:{others}|\p{{L}}\p{{M}}*)*\z"
+    )

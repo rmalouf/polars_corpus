@@ -254,6 +254,27 @@ def test_is_letters(token: str | None, expected: bool | None) -> None:
     assert frame.select(is_letters("token")).item() is expected
 
 
+@pytest.mark.parametrize(
+    "token,expected",
+    [
+        ("two words", True),  # a space is a letter now
+        ("New York City", True),
+        ("cat", True),  # and a single word still is one
+        ("don't stop", True),  # apostrophes and hyphens keep working
+        ("well-known fact", True),
+        (" cat ", True),  # at either end, as a hyphen would be
+        (" ", False),  # but a space alone is still not a letter
+        ("two words!", False),
+        ("3 words", False),
+        ("", False),
+        (None, None),
+    ],
+)
+def test_is_letters_allows_spaces(token: str | None, expected: bool | None) -> None:
+    frame = pl.DataFrame({"token": [token]}, schema={"token": pl.Utf8})
+    assert frame.select(is_letters("token", allow_spaces=True)).item() is expected
+
+
 def test_is_letters_reads_a_derived_column() -> None:
     frame = pl.DataFrame({"token": ["Cat", "3rd"]})
     result = frame.select(is_letters(pl.col("token").str.to_lowercase()))
