@@ -8,11 +8,22 @@ from polars_corpus.utils import (
     check_columns,
     check_expr,
     collect_like,
+    is_letters,
+    proportion,
 )
 
 CORPUS = pl.DataFrame({"token": ["a", "b"], "file_id": ["f1", "f1"]})
 
 METHODS = ("ttest", "pmi", "ll", "chisq")
+
+# Counts of one word in four files of two genres, one file not counted yet.
+COUNTS = pl.DataFrame(
+    {
+        "file_id": ["f1", "f2", "f3", "f4"],
+        "file_type": ["news", "news", "fiction", "fiction"],
+        "count": [1, None, 3, 4],
+    }
+)
 
 
 @pytest.mark.parametrize("frame", [CORPUS, CORPUS.lazy()])
@@ -178,3 +189,72 @@ def test_check_choices_normalizes(value: object, expected: list[str]) -> None:
 def test_check_choices_rejects(value: object, match: str) -> None:
     with pytest.raises(ValueError, match=match):
         check_choices(value, METHODS)
+
+
+@pytest.mark.parametrize("expr", ["count", pl.col("count")])
+def test_proportion_takes_a_name_or_an_expression(expr: object) -> None:
+    result = COUNTS.select(proportion(expr))
+    # The counts total 8, the null neither counted nor filled in.
+    assert result["count"].to_list() == [0.125, None, 0.375, 0.5]
+
+
+def test_proportion_keeps_the_name_of_the_column_it_reads() -> None:
+    assert COUNTS.select(proportion("count")).columns == ["count"]
+
+
+def test_proportion_shares_sum_to_one() -> None:
+    assert COUNTS.select(proportion("count").sum()).item() == pytest.approx(1.0)
+
+
+def test_proportion_scales_to_a_basis() -> None:
+    result = COUNTS.select(proportion("count") * 10_000)
+    assert result["count"].to_list() == [1_250.0, None, 3_750.0, 5_000.0]
+
+
+@pytest.mark.parametrize("group_by", ["file_type", pl.col("file_type")])
+def test_proportion_takes_the_total_within_a_group(group_by: object) -> None:
+    result = COUNTS.select(proportion("count", group_by))
+    # Each count over its own genre's total: 1 of 1, then 3 and 4 of 7.
+    assert result["count"].to_list() == [1.0, None, pytest.approx(3 / 7), 4 / 7]
+
+
+def test_proportion_reads_a_derived_column() -> None:
+    result = COUNTS.select(proportion(pl.col("count").fill_null(0)))
+    assert result["count"].to_list() == [0.125, 0.0, 0.375, 0.5]
+
+
+@pytest.mark.parametrize(
+    "token,expected",
+    [
+        ("cat", True),
+        ("The", True),  # case is nothing to do with it
+        ("naïve", True),  # a precomposed accent is one letter
+        ("étude", True),  # and so is a letter with a combining mark
+        ("́", False),  # but a mark with no letter to follow is not one
+        ("Ελλάδα", True),  # any script, not [A-Za-z]
+        ("日本語", True),
+        ("don't", True),  # an apostrophe among letters is a letter
+        ("don’t", True),  # typographic or not
+        ("co-op", True),  # as is a hyphen
+        ("'tis", True),  # at either end
+        ("pre-", True),
+        ("-", False),  # but punctuation alone is punctuation
+        ("'", False),
+        ("--", False),
+        ("3rd", False),  # a digit is not a letter
+        ("42", False),
+        ("!", False),
+        ("two words", False),  # a space is not a letter either
+        ("", False),  # one letter at least
+        (None, None),
+    ],
+)
+def test_is_letters(token: str | None, expected: bool | None) -> None:
+    frame = pl.DataFrame({"token": [token]}, schema={"token": pl.Utf8})
+    assert frame.select(is_letters("token")).item() is expected
+
+
+def test_is_letters_reads_a_derived_column() -> None:
+    frame = pl.DataFrame({"token": ["Cat", "3rd"]})
+    result = frame.select(is_letters(pl.col("token").str.to_lowercase()))
+    assert result["token"].to_list() == [True, False]

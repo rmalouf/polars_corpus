@@ -3,19 +3,15 @@ from __future__ import annotations
 import warnings
 from collections.abc import Iterable, Sequence
 from difflib import get_close_matches
-from typing import cast
+from typing import cast, Optional
 
 import polars as pl
 from polars._typing import IntoExprColumn
 
 from ._typing import IntoExpr, T_Frame
 
-# The argument checks below are deliberately left out of `__all__`: they are for
-# use inside the package, not part of its public API. Their job is to turn the
-# mistakes users make -- a misspelled column, a string where a corpus belongs,
-# an unknown method name -- into a message that says what to fix, before the
-# error can resurface from inside a query plan where it is unreadable.
-__all__ = ["ngrams", "output_name"]
+
+__all__ = ["ngrams", "proportion", "is_letters"]
 
 
 def output_name(expr: IntoExprColumn) -> str:
@@ -107,7 +103,7 @@ def check_columns(
     frame: pl.DataFrame | pl.LazyFrame,
     columns: Iterable[str],
     name: str = "corpus",
-    param: str | None = None,
+    param: Optional[str] = None,
 ) -> None:
     """Check that `frame` has every column in `columns`.
 
@@ -260,3 +256,77 @@ def ngrams(n: int, in_expr: IntoExpr, as_str: bool = True) -> pl.Expr:
         .then(None)
         .otherwise(pl.concat_list(exprs))
     )
+
+
+def proportion(in_expr: IntoExpr, in_group_by: Optional[IntoExpr] = None) -> pl.Expr:
+    """Rescale counts as a share of their total.
+
+    Parameters
+    ----------
+    in_expr : IntoExpr
+        Column name or expression holding the counts.
+    in_group_by : IntoExpr, optional
+        Column name or expression to take the total within. By default the
+        total is over the whole column.
+
+    Returns
+    -------
+    pl.Expr
+        Expression giving each count over the total, so the values sum to 1.
+        Multiply by a basis for a rate that reads more easily than a small
+        decimal: per 10,000 words for common words, per million for rarer
+        ones. Nulls are left out of the total and stay null in the result.
+
+    Notes
+    -----
+    Report the basis alongside the figures, since it is a presentational
+    choice rather than a property of the corpus:
+
+    >>> df.select(pl.col("token"), plc.proportion("count") * 10_000)
+
+    With `in_group_by`, each count is a share of its own group's total, which
+    is what per-file or per-genre rates need:
+
+    >>> df.select(plc.proportion("count", "file_id") * 10_000)
+    """
+    expr = as_expr(in_expr)
+    if in_group_by is None:
+        return expr / expr.sum()
+    else:
+        group_by = as_expr(in_group_by)
+        return expr / expr.sum().over(group_by)
+
+
+def is_letters(in_expr: IntoExpr) -> pl.Expr:
+    """Test whether each string is a word rather than punctuation or a number.
+
+    Parameters
+    ----------
+    in_expr : IntoExpr
+        Column name or expression holding the strings to test.
+
+    Returns
+    -------
+    pl.Expr
+        Boolean expression, true for a string holding at least one letter and
+        nothing beyond letters, apostrophes and hyphens. False for anything
+        else, the empty string included. A null stays null.
+
+    Notes
+    -----
+    "Letter" is the Unicode category, not `[A-Za-z]`, so Greek, Cyrillic and
+    Han count, as do accents written as a separate combining mark. Apostrophes
+    (`'` or `’`) and hyphens keep *don't* and *co-op* whole, but need a letter
+    beside them: a token that is only punctuation is still punctuation. Use it
+    to keep a frequency list to words:
+
+    >>> df.filter(plc.is_letters("token"))
+    """
+    expr = as_expr(in_expr)
+    # \p{L} is a letter and \p{M}* the combining marks that may follow it, so a
+    # decomposed accent is one letter. The apostrophes and hyphens are spelled
+    # around that unit rather than added to it, because the string has to hold
+    # a letter somewhere: the engine is Rust's regex crate, which has no
+    # lookahead to say so directly. \A and \z anchor the pattern to the ends of
+    # the string, making contains() a match on the whole of it.
+    return expr.str.contains(r"\A[-'’]*(?:\p{L}\p{M}*)(?:[-'’]|\p{L}\p{M}*)*\z")

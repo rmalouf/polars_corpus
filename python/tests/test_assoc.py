@@ -4,7 +4,8 @@ import polars as pl
 import pytest
 from polars.exceptions import ColumnNotFoundError
 from polars.testing import assert_frame_equal
-from polars_corpus import chisq, crosstab, loglik, output_name, smp, welchs_t
+from polars_corpus import chisq, crosstab, loglik, smp, welchs_t
+from polars_corpus.utils import output_name
 
 
 def _chisq_ref(f12: int, f1: int, f2: int, n: int, yates: bool = False) -> float:
