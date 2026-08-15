@@ -11,16 +11,13 @@ from .matcher import search
 from .utils import as_eager, as_expr, check_columns
 
 if TYPE_CHECKING:
-    # sentence-transformers is in the `embeddings` extra, and importing it here
-    # would put torch behind every `import polars_corpus`. Only the annotations
-    # need it, and those aren't evaluated.
     from sentence_transformers import SentenceTransformer
 
 __all__ = ["encode", "centroid", "encode_terms"]
 
 
 def encode(model: SentenceTransformer, in_expr: IntoExpr) -> pl.Expr:
-    """Encode a text column into fixed-width sentence embeddings.
+    """Encode a text column into fixed-width sentence embeddings using SentenceTransformers.
 
     Parameters
     ----------
@@ -36,12 +33,11 @@ def encode(model: SentenceTransformer, in_expr: IntoExpr) -> pl.Expr:
         string, as an `Array(Float32, dim)` with `dim` the model's embedding
         dimension.
 
-    Examples
-    --------
-    >>> import polars_corpus as plc
-    >>> from sentence_transformers import SentenceTransformer
-    >>> model = SentenceTransformer("all-MiniLM-L6-v2")
-    >>> corpus.with_columns(emb=plc.encode(model, "lemma"))
+    References
+    ----------
+    Reimers, N. and I. Gurevych. 2019. Sentence-BERT: Sentence Embeddings using Siamese
+    BERT-Networks. Proceedings of the 2019 Conference on Empirical Methods in Natural
+    Language Processing. https://arxiv.org/abs/1908.10084
     """
     expr = as_expr(in_expr)
     dim = model.get_embedding_dimension()
@@ -61,20 +57,13 @@ def centroid(in_expr: IntoExpr, normalize: bool = True) -> pl.Expr:
         Column name or expression holding the vectors, as an
         `Array(Float32, dim)` -- what `encode` produces.
     normalize : bool, default True
-        Scale the result to unit length, so that centroids of differently
-        sized groups stay comparable under cosine similarity. An all-zero
-        centroid is left as it is.
+        Scale the result to unit length. An all-zero centroid is
+        left as it is.
 
     Returns
     -------
     pl.Expr
         Aggregating expression producing one vector named "centroid".
-
-    Examples
-    --------
-    >>> import polars_corpus as plc
-    >>> corpus.group_by("category").agg(plc.centroid("emb"))
-    >>> corpus.select(plc.centroid("emb", normalize=False))
     """
     expr = as_expr(in_expr)
     # Arrays don't mean() elementwise, but a struct's fields each mean() on
@@ -96,7 +85,7 @@ def encode_terms(
     window: int = 5,
     chunk_column: Optional[str] = None,
     max_matches: int = 10_000,
-    seed: Optional[int] = 619,
+    seed: Optional[int] = None,
     term_column: str = "token",
     **kwargs,
 ) -> pl.DataFrame:
@@ -109,10 +98,9 @@ def encode_terms(
     Parameters
     ----------
     terms : pl.DataFrame, pl.Series or sequence of str
-        Terms to encode, as simple queries. A DataFrame keeps its other
-        columns, e.g. the frequencies the terms came with.
+        Terms to encode, as simple queries.
     corpus : pl.DataFrame
-        Corpus to search for each term. It must be eager, as `search` is.
+        Corpus to search for each term.
     model : SentenceTransformer
         Model used to encode the matches.
     expr : IntoExprColumn, default "token"
@@ -125,11 +113,9 @@ def encode_terms(
         the chunk holding the match and `window` is ignored.
     max_matches : int, default 10000
         Number of matches to encode per term. Terms with more than this are
-        sampled down to it, so that a common term costs no more than a rare
-        one.
+        sampled down to it.
     seed : int, optional
-        Random seed for that sampling. The default makes results repeatable;
-        pass None to sample differently each run.
+        Random seed for that sampling. Set to make results repeatable.
     term_column : str, default "token"
         Column of `terms` holding the queries.
     **kwargs

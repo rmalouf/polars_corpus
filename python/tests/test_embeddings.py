@@ -263,10 +263,10 @@ class TestEncodeTerms:
         assert len(model.seen) == 2
 
     def test_sampling_is_repeatable(self, df):
-        """The default seed makes a student's second run match their first."""
+        """A seed makes a student's second run match their first."""
         first, second = StubModel(), StubModel()
-        encode_terms(["the"], df, first, max_matches=2)
-        encode_terms(["the"], df, second, max_matches=2)
+        encode_terms(["the"], df, first, max_matches=2, seed=619)
+        encode_terms(["the"], df, second, max_matches=2, seed=619)
 
         assert first.seen == second.seen
 
