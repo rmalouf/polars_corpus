@@ -59,6 +59,16 @@ The package supports Simple (BNCweb-style) and CQP query syntaxes. See [QUERY_LA
     - Internal functions: Trust invariants - skip redundant checks
     - Use assertions for debugging, not runtime validation of established invariants
 
+### Design principles
+1. When possible, functions should take exprs and return exprs.
+2. When a function must take a frame, prefer accepting both DataFrame and
+   LazyFrame, and return whichever type it was given.
+3. When possible, do internal processing in lazy mode -- even if given a
+   DataFrame, convert and work lazily internally -- with the return value's
+   type determined by principle 2.
+4. When a function can only work on a DataFrame, check up front and raise
+   an error if given a LazyFrame.
+
 ### Public functions
 Student-facing functions share a shape, with the pieces in `utils.py`
 (internal, so not in its `__all__`):
@@ -74,6 +84,11 @@ def analyze(corpus, expr, method="ll", file_id_column="file_id"):
 Read only the columns the arguments name, so corpora annotated differently
 still work together and column errors surface here rather than out of a
 query plan.
+
+A function that can only work eagerly (principle 4) opens with
+`as_eager(corpus)` in place of `as_corpus`, and has no `collect_like` to
+return through: `search`, `search_cqp`, `SearchResults` and `encode_terms`
+all take a corpus that way.
 
 ### Rust-Specific
 - **Minimize allocations**: Use `&str` over `String`, `&[T]` over `Vec<T>`; avoid `.clone()` in hot paths
