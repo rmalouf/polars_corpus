@@ -8,7 +8,7 @@ from ._internal import Match, Opcode, OpcodeMatcher, Span
 from .cqp_parser import cqp
 from .search import SearchResults
 from .simple_parser import simple_to_cqp
-from .utils import check_columns
+from .utils import as_eager, check_columns
 
 __all__ = ["search", "search_cqp", "Match", "Span"]
 
@@ -112,7 +112,8 @@ def search_cqp(
     Parameters
     ----------
     df : pl.DataFrame
-         Corpus to be searched.
+         Corpus to be searched. It must be eager: matching walks the corpus by
+         position, which a LazyFrame has no rows to do.
     query: str
         CQP query string
     file_id_column : str, optional
@@ -126,6 +127,8 @@ def search_cqp(
 
     Raises
     ------
+    ValueError
+        If `df` is not an eager DataFrame, or does not have `file_id_column`
     ParseException
         If there's an error in the query
     RuntimeError
@@ -141,6 +144,7 @@ def search_cqp(
     >>> search_cqp(corpus, '[pos="NN.*"]+ [pos="VB.*"]')
 
     """
+    df = as_eager(df)
     matched_spans, variables = run_query(df, query, file_id_column)
     if matched_spans:
         return SearchResults(df, query, matched_spans, variables)
@@ -166,7 +170,8 @@ def search(
     Parameters
     ----------
     df : pl.DataFrame
-         Corpus to be searched.
+         Corpus to be searched. It must be eager: matching walks the corpus by
+         position, which a LazyFrame has no rows to do.
     query : str
         Simple query string (BNCweb-style syntax)
     token_column : str, optional
@@ -186,6 +191,8 @@ def search(
 
     Raises
     ------
+    ValueError
+        If `df` is not an eager DataFrame, or does not have `file_id_column`
     ParseException
         If there's an error in the query syntax
     RuntimeError
@@ -256,6 +263,7 @@ def search(
     >>> search(corpus, "quick brown", file_id_column="file_id")
 
     """
+    df = as_eager(df)
     # Translate simple query to CQP
     cqp_query = simple_to_cqp(query, token_column, pos_column, lemma_column)
 

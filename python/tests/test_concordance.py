@@ -18,6 +18,13 @@ def results():
     return SearchResults(df, "sat", [Match(Span(2, 3), {}), Match(Span(9, 10), {})])
 
 
+def test_lazy_corpus_rejected():
+    """Every method here reads the corpus, so it is checked at construction."""
+    df = corpus(token=TOKENS)
+    with pytest.raises(ValueError, match="must be an eager polars DataFrame"):
+        SearchResults(df.lazy(), "sat", [Match(Span(2, 3), {})])
+
+
 class TestWindow:
     """The context a window asks for, and what the corpus can give it"""
 

@@ -51,6 +51,25 @@ def as_corpus(frame: object, name: str = "corpus") -> pl.LazyFrame:
     return frame.lazy()
 
 
+def as_eager(frame: object, name: str = "corpus") -> pl.DataFrame:
+    """Check that `frame` is a corpus a lazy one cannot stand in for.
+
+    For work that has to see the rows themselves: searching walks the corpus by
+    position and hands its columns to Rust, neither of which a query plan can
+    offer. An empty corpus passes -- it has no rows to match, not no rows to
+    read. `name` is used in error messages.
+    """
+    if not isinstance(frame, pl.DataFrame):
+        hint = (
+            " Call .collect() on it first." if isinstance(frame, pl.LazyFrame) else ""
+        )
+        raise ValueError(
+            f"the {name} must be an eager polars DataFrame, "
+            f"got {type(frame).__name__}.{hint}"
+        )
+    return frame
+
+
 def collect_like(result: pl.LazyFrame, source: T_Frame) -> T_Frame:
     """Give `result` back in the form `source` came in as.
 

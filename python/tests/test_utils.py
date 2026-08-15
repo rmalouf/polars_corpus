@@ -2,6 +2,7 @@ import polars as pl
 import pytest
 from polars_corpus.utils import (
     as_corpus,
+    as_eager,
     as_expr,
     check_choice,
     check_choices,
@@ -45,6 +46,28 @@ def test_as_corpus_rejects_empty() -> None:
 def test_as_corpus_allows_empty_lazyframe() -> None:
     # Height is unknown without running the query, so an empty LazyFrame passes.
     assert isinstance(as_corpus(CORPUS.clear().lazy()), pl.LazyFrame)
+
+
+@pytest.mark.parametrize("frame", [CORPUS, CORPUS.clear()])
+def test_as_eager_accepts_dataframes(frame: pl.DataFrame) -> None:
+    # An empty corpus has no rows to match, not no rows to read.
+    assert as_eager(frame) is frame
+
+
+@pytest.mark.parametrize(
+    "bad,hint",
+    [
+        pytest.param(CORPUS.lazy(), True, id="lazyframe"),
+        pytest.param("corpus.csv", False, id="path"),
+        pytest.param(CORPUS["token"], False, id="series"),
+        pytest.param(None, False, id="none"),
+    ],
+)
+def test_as_eager_rejects_the_rest(bad: object, hint: bool) -> None:
+    with pytest.raises(ValueError, match="the corpus must be an eager polars") as err:
+        as_eager(bad)
+    # Only a LazyFrame is one .collect() away from being usable.
+    assert (".collect()" in str(err.value)) is hint
 
 
 @pytest.mark.parametrize(

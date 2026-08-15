@@ -8,7 +8,7 @@ from polars._typing import IntoExprColumn
 
 from ._typing import IntoExpr
 from .matcher import search
-from .utils import as_expr, check_columns
+from .utils import as_eager, as_expr, check_columns
 
 if TYPE_CHECKING:
     # sentence-transformers is in the `embeddings` extra, and importing it here
@@ -112,7 +112,7 @@ def encode_terms(
         Terms to encode, as simple queries. A DataFrame keeps its other
         columns, e.g. the frequencies the terms came with.
     corpus : pl.DataFrame
-        Corpus to search for each term.
+        Corpus to search for each term. It must be eager, as `search` is.
     model : SentenceTransformer
         Model used to encode the matches.
     expr : IntoExprColumn, default "token"
@@ -161,10 +161,7 @@ def encode_terms(
             f"or list of them, got {type(terms).__name__}"
         )
     check_columns(frame, [term_column], name="term list", param="term_column")
-    if not isinstance(corpus, pl.DataFrame):
-        raise ValueError(
-            f"the corpus must be an eager polars DataFrame, got {type(corpus).__name__}"
-        )
+    corpus = as_eager(corpus)
     if max_matches < 1:
         raise ValueError(f"max_matches must be a positive integer, got {max_matches}")
 

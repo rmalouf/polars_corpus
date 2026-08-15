@@ -8,7 +8,7 @@ import polars as pl
 from polars._typing import IntoExprColumn
 
 from ._internal import Match, py_concordance, py_kwic, spans_to_chunks
-from .utils import check_columns, output_name
+from .utils import as_eager, check_columns, output_name
 
 if TYPE_CHECKING:
     from sentence_transformers import SentenceTransformer
@@ -85,7 +85,9 @@ class SearchResults:
     Parameters
     ----------
     df : pl.DataFrame
-        The source corpus DataFrame containing the original data.
+        The source corpus DataFrame containing the original data. It must be
+        eager: the matches index into it by position, and every method here
+        reads its rows.
     query : str
         The CQP query string that generated these results.
     matches : list[Match]
@@ -120,7 +122,7 @@ class SearchResults:
         matches: list[Match],
         variables: Optional[list[str]] = None,
     ) -> None:
-        self._df = df
+        self._df = as_eager(df)
         self._query = query
         self._matches = matches
         self._variables = variables
@@ -571,7 +573,7 @@ class SearchResults:
         finally:
             random.setstate(state)
 
-    def with_spans_as_chunks(self, name: str = "spans") -> pl.DataFrame | pl.LazyFrame:
+    def with_spans_as_chunks(self, name: str = "spans") -> pl.DataFrame:
         """Add a column containing span information to the corpus DataFrame.
 
         Creates a new column in the corpus DataFrame that marks which tokens
@@ -586,7 +588,7 @@ class SearchResults:
 
         Returns
         -------
-        DataFrame | LazyFrame
+        pl.DataFrame
             The corpus DataFrame with the added spans column.
 
         Notes

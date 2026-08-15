@@ -1,7 +1,7 @@
 import polars as pl
 import pytest
 from lark.exceptions import LarkError
-from polars_corpus.matcher import Span, run_query, search
+from polars_corpus.matcher import Span, run_query, search, search_cqp
 
 from .helpers import corpus, spans
 
@@ -139,6 +139,13 @@ def test_invalid_regex(sample_corpus):
     """A well-formed query whose constraint value is not a valid regex"""
     with pytest.raises(pl.exceptions.ComputeError):
         run_query(sample_corpus, '[word="[unclosed"]')
+
+
+@pytest.mark.parametrize("fn,query", [(search, "fox"), (search_cqp, '[word="fox"]')])
+def test_lazy_corpus_rejected(sample_corpus, fn, query):
+    """Matching walks the corpus by position, so a LazyFrame cannot stand in."""
+    with pytest.raises(ValueError, match="must be an eager polars DataFrame"):
+        fn(sample_corpus.lazy(), query)
 
 
 class TestSpan:
