@@ -2,7 +2,6 @@ import math
 
 import polars as pl
 import pytest
-from polars.exceptions import ColumnNotFoundError
 from polars.testing import assert_frame_equal
 from polars_corpus import chisq, crosstab, loglik, smp, welchs_t
 from polars_corpus.utils import output_name
@@ -63,12 +62,13 @@ def test_crosstab_accepts_series() -> None:
     assert_frame_equal(by_name, by_series)
 
 
-def test_crosstab_missing_columns() -> None:
+@pytest.mark.parametrize("lazy", [False, True])
+def test_crosstab_missing_columns(lazy: bool) -> None:
+    # The missing column is reported up front, not out of a query plan, so a
+    # LazyFrame raises at the call rather than at collect().
     df = pl.DataFrame({"a": ["A", "B"], "b": [1, 2]})
-    with pytest.raises(ColumnNotFoundError):
-        crosstab(df, "x", "y")
-    with pytest.raises(ColumnNotFoundError):
-        crosstab(df.lazy(), "x", "y").collect()
+    with pytest.raises(ValueError, match="no column 'x'"):
+        crosstab(df.lazy() if lazy else df, "x", "y")
 
 
 def test_crosstab_drops_null_values() -> None:

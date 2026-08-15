@@ -7,7 +7,14 @@ from polars._typing import IntoExprColumn
 from polars.plugins import register_plugin_function
 
 from ._typing import IntoExpr, T_Frame
-from .utils import output_name
+from .utils import (
+    as_corpus,
+    as_expr,
+    check_choice,
+    check_expr,
+    collect_like,
+    drop_null_rows,
+)
 
 __all__ = [
     "crosstab",
@@ -21,9 +28,33 @@ __all__ = [
 ]
 LIB = Path(__file__).parent
 
+ALTERNATIVES = ("twosided", "greater", "less")
+
+
+def _variable_name(lf: pl.LazyFrame, var: IntoExprColumn, param: str) -> str:
+    """Name the column `var` gives, checking the corpus can evaluate it.
+
+    Unlike most of the package `crosstab` takes a Series: both variables are
+    evaluated against the one corpus, so a Series of matching height lines up
+    with it, and carries the name of the column it stands in for.
+    """
+    if isinstance(var, pl.Series):
+        return var.name
+    return check_expr(lf, as_expr(var, param), param=param)
+
+
+def _as_freqs(
+    f12: IntoExpr, f1: IntoExpr, f2: IntoExpr, n: IntoExpr
+) -> tuple[pl.Expr, pl.Expr, pl.Expr, pl.Expr]:
+    """Turn the four contingency table arguments into expressions."""
+    return as_expr(f12, "f12"), as_expr(f1, "f1"), as_expr(f2, "f2"), as_expr(n, "n")
+
 
 def crosstab(
-    df: T_Frame, x: IntoExprColumn, y: IntoExprColumn, freqs_name: str = "freqs"
+    corpus: T_Frame,
+    x: IntoExprColumn,
+    y: IntoExprColumn,
+    freqs_name: str = "freqs",
 ) -> T_Frame:
     """
     Create a crosstabulation (contingency table) from two categorical variables.
@@ -34,19 +65,22 @@ def crosstab(
 
     Parameters
     ----------
-    df : T_Frame
+    corpus : T_Frame
         Input data as a Polars DataFrame or LazyFrame containing the variables.
     x : IntoExprColumn
-        Column name of the first categorical variable (row variable).
+        Column name, expression or Series giving the first categorical
+        variable (row variable).
     y : IntoExprColumn
-        Column name of the second categorical variable (column variable).
+        Column name, expression or Series giving the second categorical
+        variable (column variable).
     freqs_name : str, default "freqs"
         Name for the output frequencies struct column.
 
     Returns
     -------
     T_Frame
-        A DataFrame containing the contingency table with the following columns:
+        The contingency table, eager if `corpus` is a DataFrame and lazy if it
+        is a LazyFrame, with the following columns:
 
         - x : Levels/categories of the first variable
         - y : Levels/categories of the second variable
@@ -58,17 +92,27 @@ def crosstab(
 
     Raises
     ------
-    ColumnNotFoundError
-        If either column `x` or `y` does not exist in the DataFrame.
+    ValueError
+        If `corpus` is not a Polars DataFrame or LazyFrame, or is empty; or if
+        `x` or `y` does not name a single column of it.
+
+    Warns
+    -----
+    UserWarning
+        If rows are dropped for holding a null in `x` or `y`. Raised only for
+        an eager corpus: counting the dropped rows of a LazyFrame would mean
+        reading it before the caller has asked for anything.
     """
-    f12 = pl.len().cast(pl.UInt64)
-    x_name = output_name(x)
-    y_name = output_name(y)
-    return (
-        df.select(x, y)
-        .drop_nulls([x_name, y_name])
-        .group_by(x_name, y_name)
-        .agg(f12.alias("f12"))
+    lf = as_corpus(corpus)
+    x_name = _variable_name(lf, x, "x")
+    y_name = _variable_name(lf, y, "y")
+
+    # Read only the two variables, so a null elsewhere in the corpus is none of
+    # this table's business, and a column of its own named `f12` cannot collide.
+    counts = drop_null_rows(lf.select(x, y), corpus)
+    result = (
+        counts.group_by(x_name, y_name)
+        .agg(pl.len().cast(pl.UInt64).alias("f12"))
         .with_columns(
             pl.struct(
                 pl.col("f12"),
@@ -79,15 +123,7 @@ def crosstab(
         )
         .drop("f12")
     )
-
-
-def _validated_crosstab(df: T_Frame) -> T_Frame:
-    # required_cols = ["f12", "n", "f1", "f2"]
-    # if not all(col in df.columns for col in required_cols):
-    #    raise ValueError(f"Missing required columns. Expected: {required_cols}")
-    return df.filter(
-        pl.col("f1") > 0, pl.col("f2") > 0, pl.col("f12") >= 0, pl.col("n") > 0
-    )
+    return collect_like(result, corpus)
 
 
 def pmi(f12: IntoExpr, f1: IntoExpr, f2: IntoExpr, n: IntoExpr) -> pl.Expr:
@@ -126,12 +162,7 @@ def pmi(f12: IntoExpr, f1: IntoExpr, f2: IntoExpr, n: IntoExpr) -> pl.Expr:
     .. math::
         PMI(x,y) = \\log\\frac{P(x,y)}{P(x)P(y)} = \\log\\frac{f_{12} \\cdot n}{f_1 \\cdot f_2}
     """
-
-    f12 = pl.col(f12) if isinstance(f12, str) else f12
-    f1 = pl.col(f1) if isinstance(f1, str) else f1
-    f2 = pl.col(f2) if isinstance(f2, str) else f2
-    n = pl.col(n) if isinstance(n, str) else n
-
+    f12, f1, f2, n = _as_freqs(f12, f1, f2, n)
     return ((f12 * n) / (f1 * f2)).log()
 
 
@@ -191,10 +222,7 @@ def chisq(
 
     # Cast to Float64 first: the cross-product difference below can go negative,
     # which would underflow for the unsigned integer counts crosstab produces.
-    f12 = (pl.col(f12) if isinstance(f12, str) else f12).cast(pl.Float64)
-    f1 = (pl.col(f1) if isinstance(f1, str) else f1).cast(pl.Float64)
-    f2 = (pl.col(f2) if isinstance(f2, str) else f2).cast(pl.Float64)
-    n = (pl.col(n) if isinstance(n, str) else n).cast(pl.Float64)
+    f12, f1, f2, n = (expr.cast(pl.Float64) for expr in _as_freqs(f12, f1, f2, n))
 
     o11 = f12
     o12 = f1 - f12
@@ -249,7 +277,7 @@ def loglik(f12: IntoExpr, f1: IntoExpr, f2: IntoExpr, n: IntoExpr) -> pl.Expr:
     """
     return register_plugin_function(
         plugin_path=LIB,
-        args=[f12, f1, f2, n],
+        args=list(_as_freqs(f12, f1, f2, n)),
         function_name="py_loglik",
         is_elementwise=True,
     )
@@ -302,12 +330,7 @@ def minsens(f12: IntoExpr, f1: IntoExpr, f2: IntoExpr, n: IntoExpr) -> pl.Expr:
     - f₁₂/f₁ represents the precision: P(y|x)
     - f₁₂/f₂ represents the recall: P(x|y)
     """
-
-    f12 = pl.col(f12) if isinstance(f12, str) else f12
-    f1 = pl.col(f1) if isinstance(f1, str) else f1
-    f2 = pl.col(f2) if isinstance(f2, str) else f2
-    n = pl.col(n) if isinstance(n, str) else n
-
+    f12, f1, f2, _ = _as_freqs(f12, f1, f2, n)
     return pl.min_horizontal(f12 / f1, f12 / f2)
 
 
@@ -366,12 +389,7 @@ def smp(
     Kilgarriff, A. (2009, July). Simple maths for keywords. In Proceedings of
     the Corpus Linguistics Conference. Liverpool, UK.
     """
-
-    f12 = pl.col(f12) if isinstance(f12, str) else f12
-    f1 = pl.col(f1) if isinstance(f1, str) else f1
-    f2 = pl.col(f2) if isinstance(f2, str) else f2
-    n = pl.col(n) if isinstance(n, str) else n
-
+    f12, f1, _, _ = _as_freqs(f12, f1, f2, n)
     return (f12 + k) / (f1 - f12 + k)
 
 
@@ -431,15 +449,10 @@ def welchs_t(x1: IntoExprColumn, x2: IntoExprColumn, alt: str = "twosided") -> p
     .. math::
         df = \\frac{(\\frac{s_1^2}{n_1} + \\frac{s_2^2}{n_2})^2}{\\frac{(s_1^2/n_1)^2}{n_1-1} + \\frac{(s_2^2/n_2)^2}{n_2-1}}
     """
-    s1 = pl.col(x1) if isinstance(x1, str) else x1
-    s2 = pl.col(x2) if isinstance(x2, str) else x2
-
-    if alt not in ["twosided", "greater", "less"]:
-        raise ValueError(f"Unknown alternative value: {alt}")
-
+    alt = check_choice(alt, ALTERNATIVES, param="alt")
     return register_plugin_function(
         plugin_path=LIB,
-        args=[s1, s2],
+        args=[x1, x2],
         function_name="py_welchs_t",
         is_elementwise=False,
         returns_scalar=True,
@@ -460,8 +473,7 @@ def welchs_t_from_stats(
     Perform Welch's t-test using pre-computed summary statistics.
 
     This function performs Welch's t-test for equality of two independent samples
-    using pre-computed summary statistics (means, sum of squares, and sample sizes)
-    rather than raw data.
+    using pre-computed means, sums of squares, and sample sizes rather than raw data.
 
     Parameters
     ----------
@@ -523,19 +535,10 @@ def welchs_t_from_stats(
     The test statistic and degrees of freedom are then calculated using the
     same formulas as in `welchs_t`.
     """
-    s1_s = pl.col(s1) if isinstance(s1, str) else s1
-    ss1_s = pl.col(ss1) if isinstance(ss1, str) else ss1
-    n1_s = pl.col(n1) if isinstance(n1, str) else n1
-    s2_s = pl.col(s2) if isinstance(s2, str) else s2
-    ss2_s = pl.col(ss2) if isinstance(ss2, str) else ss2
-    n2_s = pl.col(n2) if isinstance(n2, str) else n2
-
-    if alt not in ["twosided", "greater", "less"]:
-        raise ValueError(f"Unknown alternative value: {alt}")
-
+    alt = check_choice(alt, ALTERNATIVES, param="alt")
     return register_plugin_function(
         plugin_path=LIB,
-        args=[s1_s, ss1_s, n1_s, s2_s, ss2_s, n2_s],
+        args=[s1, ss1, n1, s2, ss2, n2],
         function_name="py_welchs_t_from_stats",
         is_elementwise=True,
         returns_scalar=False,

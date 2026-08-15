@@ -1,18 +1,19 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import cast
 
 import polars as pl
-from polars._typing import IntoExprColumn
 from polars.plugins import register_plugin_function
+
+from ._typing import IntoExpr
+from .utils import as_expr
 
 LIB = Path(__file__).parent
 
 __all__ = ["ttr", "msttr", "yules_k", "mtld"]
 
 
-def ttr(expr: IntoExprColumn) -> pl.Expr:
+def ttr(expr: IntoExpr) -> pl.Expr:
     """
     Calculate type-token ratio (TTR).
 
@@ -21,44 +22,30 @@ def ttr(expr: IntoExprColumn) -> pl.Expr:
 
     Parameters
     ----------
-    expr : IntoExprColumn
-        Column expression containing tokens to analyze.
+    expr : IntoExpr
+        Column name or expression holding the tokens to analyze.
 
     Returns
     -------
     pl.Expr
-        Expression returning the type-token ratio as a float.
-
-    Examples
-    --------
-    >>> df = pl.DataFrame({"words": ["the", "cat", "sat", "on", "the", "mat"]})
-    >>> df.select(plc.ttr("words"))
-    shape: (1, 1)
-    ┌───────┐
-    │ words │
-    │ ---   │
-    │ f64   │
-    ╞═══════╡
-    │ 0.833 │
-    └───────┘
-
+        Expression returning the type-token ratio as a float scalar.
     """
-    expr_s: pl.Expr = cast(pl.Expr, pl.col(expr) if isinstance(expr, str) else expr)
-    return expr_s.n_unique() / expr_s.len()
+    tokens = as_expr(expr)
+    return tokens.n_unique() / tokens.len()
 
 
-def msttr(expr: IntoExprColumn, n: int = 1000) -> pl.Expr:
+def msttr(expr: IntoExpr, n: int = 1000) -> pl.Expr:
     """
     Calculate mean segmental type-token ratio (MSTTR).
 
     MSTTR divides a text into consecutive non-overlapping segments of length n,
     calculates the TTR for each complete segment, and returns the mean of these
-    values. Segments shorter than n are dropped.
+    values. Segments shorter than n tokens are dropped.
 
     Parameters
     ----------
-    expr : IntoExprColumn
-        Column expression containing tokens to analyze.
+    expr : IntoExpr
+        Column name or expression holding the tokens to analyze.
     n : int, default=1000
         Segment size in tokens. Only complete segments of exactly this length
         are included in the calculation. Must be greater than 0.
@@ -67,7 +54,7 @@ def msttr(expr: IntoExprColumn, n: int = 1000) -> pl.Expr:
     -------
     pl.Expr
         Expression returning the mean segmental TTR as a float scalar.
-        Returns null if there are no complete segments.
+        Returns null if the text contains fewer than n tokens.
 
     Raises
     ------
@@ -75,31 +62,15 @@ def msttr(expr: IntoExprColumn, n: int = 1000) -> pl.Expr:
         If n is not a positive integer.
     TypeError
         If n is not an integer.
-
-    Notes
-    -----
-    - If the text contains fewer than n tokens, the result is null
-
-    Examples
-    --------
-    >>> # Create a corpus with 2500 tokens
-    >>> tokens = ["word"] * 1000 + ["unique"] * 500 + ["word"] * 1000
-    >>> df = pl.DataFrame({"tokens": tokens})
-    >>> # Calculate MSTTR with default segment size (1000)
-    >>> df.select(plc.msttr("tokens"))
-    >>> # Calculate MSTTR with custom segment size
-    >>> df.select(plc.msttr("tokens", n=500))
-
     """
     if not isinstance(n, int):
         raise TypeError(f"Segment size n must be an integer, got {type(n).__name__}")
     if n <= 0:
         raise ValueError(f"Segment size n must be greater than 0, got {n}")
 
-    expr_s = pl.col(expr) if isinstance(expr, str) else expr
     return register_plugin_function(
         plugin_path=LIB,
-        args=[expr_s],
+        args=[as_expr(expr)],
         function_name="py_msttr",
         is_elementwise=False,
         returns_scalar=True,
@@ -107,20 +78,20 @@ def msttr(expr: IntoExprColumn, n: int = 1000) -> pl.Expr:
     )
 
 
-def mtld(expr: IntoExprColumn, threshold: float = 0.720) -> pl.Expr:
+def mtld(expr: IntoExpr, threshold: float = 0.720) -> pl.Expr:
     """
     Calculate Measure of Textual Lexical Diversity (MTLD).
 
     MTLD (McCarthy & Jarvis, 2010) is a measure of lexical diversity that is
-    relatively independent of text length. It works by counting "factors" -
+    relatively independent of text length. It works by counting "factors", i.e.,
     sequential stretches of text where the type-token ratio (TTR) remains above
     a threshold. The measure is calculated in both forward and backward
-    directions and averaged.
+    directions and the two values are averaged.
 
     Parameters
     ----------
-    expr : IntoExprColumn
-        Column expression containing tokens to analyze.
+    expr : IntoExpr
+        Column name or expression holding the tokens to analyze.
     threshold : float, default=0.720
         TTR threshold for determining factor boundaries. The standard value
         is 0.720 (McCarthy & Jarvis, 2010). Must be strictly between 0 and 1.
@@ -142,30 +113,15 @@ def mtld(expr: IntoExprColumn, threshold: float = 0.720) -> pl.Expr:
     McCarthy, P. M., & Jarvis, S. (2010). MTLD, vocd-D, and HD-D: A validation
     study of sophisticated approaches to lexical diversity assessment.
     Behavior Research Methods, 42(2), 381-392.
-
-    Examples
-    --------
-    >>> import polars as pl
-    >>> import polars_corpus as plc
-    >>> # Text with low diversity (repeated words)
-    >>> df = pl.DataFrame({"tokens": ["the"] * 10 + ["cat"] * 10})
-    >>> df.select(plc.mtld("tokens"))
-    >>> # Text with high diversity (unique words)
-    >>> df = pl.DataFrame({"tokens": [f"word{i}" for i in range(100)]})
-    >>> df.select(plc.mtld("tokens"))
-    >>> # Use custom threshold
-    >>> df.select(plc.mtld("tokens", threshold=0.800))
-
     """
     if not 0 < threshold < 1:
         raise ValueError(
             f"Threshold must be strictly between 0 and 1 (exclusive), got {threshold}"
         )
 
-    expr_s = pl.col(expr) if isinstance(expr, str) else expr
     return register_plugin_function(
         plugin_path=LIB,
-        args=[expr_s],
+        args=[as_expr(expr)],
         function_name="py_mtld",
         is_elementwise=False,
         returns_scalar=True,
@@ -173,7 +129,7 @@ def mtld(expr: IntoExprColumn, threshold: float = 0.720) -> pl.Expr:
     )
 
 
-def yules_k(expr: IntoExprColumn) -> pl.Expr:
+def yules_k(expr: IntoExpr) -> pl.Expr:
     """
     Calculate Yule's K characteristic.
 
@@ -185,8 +141,8 @@ def yules_k(expr: IntoExprColumn) -> pl.Expr:
 
     Parameters
     ----------
-    expr : IntoExprColumn
-        Column expression containing tokens to analyze.
+    expr : IntoExpr
+        Column name or expression holding the tokens to analyze.
 
     Returns
     -------
@@ -198,22 +154,10 @@ def yules_k(expr: IntoExprColumn) -> pl.Expr:
     ----------
     Yule, G. U. (1944). The Statistical Study of Literary Vocabulary.
     Cambridge University Press.
-
-    Examples
-    --------
-    >>> import polars as pl
-    >>> import polars_corpus as plc
-    >>> # Text with high diversity (low K)
-    >>> df = pl.DataFrame({"tokens": [f"word{i}" for i in range(100)]})
-    >>> df.select(plc.yules_k("tokens"))
-    >>> # Text with low diversity (high K)
-    >>> df = pl.DataFrame({"tokens": ["the"] * 50 + ["cat"] * 30 + ["sat"] * 20})
-    >>> df.select(plc.yules_k("tokens"))
-
     """
-    expr_s: pl.Expr = cast(pl.Expr, pl.col(expr) if isinstance(expr, str) else expr)
-    n = expr_s.len()
-    spectrum = expr_s.unique_counts().alias("f").value_counts()
+    tokens = as_expr(expr)
+    n = tokens.len()
+    spectrum = tokens.unique_counts().alias("f").value_counts()
     inner = (spectrum.struct[0] ** 2 * spectrum.struct[1]) / (n * n)
     return 10000 * (inner.sum() - (1 / n))
 
