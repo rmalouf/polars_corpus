@@ -72,8 +72,6 @@ def barcode_plot(
     if isinstance(targets, str):
         targets = [targets]
 
-    # Filter on the term's own column rather than on `expr`: a computed term is
-    # gone from the frame by the time the select is through with it.
     data = (
         lf.with_row_index()
         .select("index", term)
@@ -131,8 +129,7 @@ def dispersion_plot(
     file_id_column : str, default "file_id"
         Column holding file ids, defining the rows of the plot.
     relative : bool, default True
-        Plot each occurrence's position as a fraction of its file's length
-        rather than a raw index, so files of different lengths line up.
+        Plot each occurrence's relative position in the file.
     linewidth : float, default 0.75
         Width of each tick mark, in pixels.
     size : float, default 20
@@ -150,12 +147,6 @@ def dispersion_plot(
         missing a column `dispersion_plot` needs; if `expr` is not a column name
         or expression; or if `target` does not occur in the corpus.
 
-    Notes
-    -----
-    Only the files `target` occurs in get a row, so the plot says how evenly the
-    word is spread over those files, not over the corpus. Read it alongside
-    `dispersion(corpus, expr, "range")`, which counts them.
-
     Examples
     --------
     >>> import polars_corpus as plc
@@ -170,8 +161,7 @@ def dispersion_plot(
     position = pl.int_range(1, pl.len() + 1)
     if relative:
         position = position / pl.len()
-    # Filter on the term's own column rather than on `expr`: a computed term is
-    # gone from the frame by the time the select is through with it.
+
     data = (
         lf.select(position.over(file_id_column).alias("index"), file_id_column, term)
         .filter(pl.col(term_name) == target)
@@ -213,7 +203,7 @@ def keyword_plot(
     Plot ranked keywords as a horizontal lollipop/stem chart.
 
     Each row of `keyword_df` becomes a stem, positioned by `keyness_expr` and
-    labeled with `term_expr`, giving a quick visual read of the strongest
+    labeled with `term_expr`, giving a quick visual read of the top
     keywords and how strong they are relative to each other. `keyword_df` is
     plotted in the order it is given (e.g. the output of `keywords`), so it
     should already be sorted by association strength.
@@ -265,9 +255,6 @@ def keyword_plot(
     if top_k is not None and top_k > 0:
         lf = lf.head(top_k)
 
-    # Select the two expressions rather than collecting the frame whole: a
-    # computed term or score exists only once evaluated, and a keyword table
-    # carries columns (frequency structs, document counts) the plot never reads.
     keywords = lf.select(term, keyness).collect()
 
     if keywords.height == 0:
