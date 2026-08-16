@@ -1,6 +1,8 @@
 import polars as pl
 import pytest
-from polars_corpus import Match, SearchResults, Span, with_chunk_index
+from polars_corpus import Match, Span, with_chunk_index
+
+from .helpers import search_results
 from polars_corpus.utils import ngrams
 
 
@@ -185,20 +187,20 @@ class TestWithSpansAsChunks:
     def test_bio_tagging(self, n_tokens, match_spans, expected):
         df = pl.DataFrame({"token": [f"t{i}" for i in range(n_tokens)]})
         matches = [Match(Span(s, e), {}) for s, e in match_spans]
-        result = SearchResults(df, "", matches).with_spans_as_chunks()
+        result = search_results(df, "", matches).with_spans_as_chunks()
 
         assert result["spans"].to_list() == expected
 
     def test_custom_column_name(self):
         df = pl.DataFrame({"token": ["The", "quick"]})
-        results = SearchResults(df, "", [Match(Span(0, 2), {})])
+        results = search_results(df, "", [Match(Span(0, 2), {})])
         result = results.with_spans_as_chunks(name="my_spans")
 
         assert result["my_spans"].to_list() == ["B", "I"]
 
     def test_out_of_bounds_span(self):
         df = pl.DataFrame({"token": ["The", "quick"]})
-        results = SearchResults(df, "", [Match(Span(0, 5), {})])
+        results = search_results(df, "", [Match(Span(0, 5), {})])
 
         with pytest.raises(ValueError):
             results.with_spans_as_chunks()
@@ -206,7 +208,7 @@ class TestWithSpansAsChunks:
     def test_negative_span_position(self):
         df = pl.DataFrame({"token": ["The", "quick"]})
         with pytest.raises(OverflowError):
-            SearchResults(df, "", [Match(Span(-1, 1), {})])
+            search_results(df, "", [Match(Span(-1, 1), {})])
 
 
 @pytest.fixture
@@ -224,7 +226,7 @@ class TestConcordanceMetadata:
     """Tests for the metadata parameter of SearchResults.concordance."""
 
     def test_list_of_columns(self, metadata_corpus):
-        results = SearchResults(
+        results = search_results(
             metadata_corpus, "", [Match(Span(1, 2), {}), Match(Span(4, 5), {})]
         )  # "quick" and "jumps"
         conc = results.concordance("token", window=1, metadata=["file_id", "category"])
@@ -233,14 +235,14 @@ class TestConcordanceMetadata:
         assert conc["category"].to_list() == ["news", "fiction"]
 
     def test_single_column_as_string(self, metadata_corpus):
-        results = SearchResults(metadata_corpus, "", [Match(Span(1, 2), {})])
+        results = search_results(metadata_corpus, "", [Match(Span(1, 2), {})])
         conc = results.concordance("token", window=1, metadata="file_id")
 
         assert conc["file_id"].to_list() == ["doc1"]
         assert "category" not in conc.columns
 
     def test_no_metadata_by_default(self, metadata_corpus):
-        results = SearchResults(metadata_corpus, "", [Match(Span(1, 2), {})])
+        results = search_results(metadata_corpus, "", [Match(Span(1, 2), {})])
         conc = results.concordance("token", window=1)
 
         assert "file_id" not in conc.columns
@@ -249,7 +251,7 @@ class TestConcordanceMetadata:
         df = metadata_corpus.with_columns(
             pl.Series("chunks", ["O", "B", "I", "B", "I"])
         )
-        results = SearchResults(df, "", [Match(Span(3, 5), {})])  # "fox jumps"
+        results = search_results(df, "", [Match(Span(3, 5), {})])  # "fox jumps"
         conc = results.concordance("token", chunk_column="chunks", metadata="file_id")
 
         assert conc["file_id"].to_list() == ["doc2"]
@@ -273,7 +275,7 @@ def test_concordance_over_dictionary_column(dtype):
         }
     ).with_columns(pl.col("pos").cast(dtype), pl.col("file_id").cast(dtype))
 
-    results = SearchResults(df, "", [Match(Span(1, 3), {})])
+    results = search_results(df, "", [Match(Span(1, 3), {})])
     conc = results.concordance("pos", window=1, metadata="file_id")
 
     assert conc["pos"].to_list() == [["JJ", "JJ"]]

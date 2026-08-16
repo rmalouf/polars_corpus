@@ -655,9 +655,8 @@ class SearchResults(_SearchResultsBase):
         The CQP query string that generated these results.
     matches : list[Match]
         List of Match objects representing the matched text positions and bindings.
-    variables : list[str], optional
-        Names the query bound, in the order to show them. Read off the matches
-        when not given.
+    variables : list[str]
+        Names the query bound, in the order to show them.
     file_id_column : str, optional
         Column name holding file ids. When given, concordance context stops at
         a change in its value, as the matches themselves did during the search.
@@ -686,7 +685,7 @@ class SearchResults(_SearchResultsBase):
         df: pl.DataFrame,
         query: str,
         matches: list[Match],
-        variables: Optional[list[str]] = None,
+        variables: list[str],
         file_id_column: Optional[str] = None,
     ) -> None:
         self._df = as_eager(df)
@@ -694,10 +693,6 @@ class SearchResults(_SearchResultsBase):
             check_columns(self._df, [file_id_column], param="file_id_column")
         self._query = query
         self._matches = matches
-        if variables is None:
-            # Matches built by hand carry no query to read the order off, and
-            # each one holds its bindings unordered, so name them alphabetically.
-            variables = sorted({name for m in matches for name in m.bindings})
         self._variables = variables
         self._file_id_column = file_id_column
 

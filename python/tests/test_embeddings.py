@@ -4,9 +4,9 @@ import math
 
 import polars as pl
 import pytest
-from polars_corpus import Match, SearchResults, Span, centroid, encode, encode_terms
+from polars_corpus import Match, Span, centroid, encode, encode_terms
 
-from .helpers import corpus
+from .helpers import corpus, search_results
 
 DIM = 3
 
@@ -75,7 +75,9 @@ class TestEncodeMatches:
     def results(self):
         """The two "sat" matches, at positions 2 and 9."""
         df = corpus(token="the cat sat on the mat . the dog sat on the log .")
-        return SearchResults(df, "sat", [Match(Span(2, 3), {}), Match(Span(9, 10), {})])
+        return search_results(
+            df, "sat", [Match(Span(2, 3), {}), Match(Span(9, 10), {})]
+        )
 
     def test_context_is_encoded_with_the_match(self, results, model):
         out = results.encode(model, window=2)
@@ -103,14 +105,14 @@ class TestEncodeMatches:
     def test_empty_context_is_not_padded(self, model):
         """A match at the edge of the corpus has no space to spare on that side."""
         df = corpus(token="the cat sat")
-        results = SearchResults(df, "", [Match(Span(0, 1), {}), Match(Span(2, 3), {})])
+        results = search_results(df, "", [Match(Span(0, 1), {}), Match(Span(2, 3), {})])
         out = results.encode(model, window=5)
 
         assert out["token"].to_list() == ["the cat sat", "the cat sat"]
 
     def test_chunk_column(self, model):
         df = corpus(token="the cat sat . the dog sat .", chunks="B I I I B I I I")
-        results = SearchResults(df, "", [Match(Span(6, 7), {})])
+        results = search_results(df, "", [Match(Span(6, 7), {})])
         out = results.encode(model, chunk_column="chunks")
 
         assert out["token"].to_list() == ["the dog sat ."]
@@ -128,7 +130,7 @@ class TestEncodeMatches:
         df = pl.DataFrame(
             {"token": ["a", "b", "c", "d"], "file_id": ["1", "1", "2", "2"]}
         )
-        results = SearchResults(df, "", [Match(Span(1, 2), {}), Match(Span(3, 4), {})])
+        results = search_results(df, "", [Match(Span(1, 2), {}), Match(Span(3, 4), {})])
         out = results.encode(StubModel(), window=1, metadata=metadata)
 
         assert out.columns == ["token", "file_id", "vector"]
@@ -192,7 +194,7 @@ class TestCentroid:
     def test_round_trips_with_encode(self):
         """The centroid of encoded matches, which is what the pair is for."""
         df = corpus(token="the cat sat on the mat")
-        results = SearchResults(df, "", [Match(Span(1, 2), {}), Match(Span(4, 5), {})])
+        results = search_results(df, "", [Match(Span(1, 2), {}), Match(Span(4, 5), {})])
         encoded = results.encode(StubModel(), window=1)
         out = encoded.select(centroid("vector", normalize=False))
 

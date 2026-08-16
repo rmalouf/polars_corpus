@@ -7,7 +7,9 @@ frame behind it.
 
 import polars as pl
 import pytest
-from polars_corpus import Match, SearchResults, Span
+from polars_corpus import Match, Span
+
+from .helpers import search_results
 from polars_corpus.view import ConcordanceWidget
 
 
@@ -20,7 +22,7 @@ def results():
             "file_id": ["a"] * 6 + ["b"] * 7,
         }
     )
-    return SearchResults(df, "", [Match(Span(1, 2), {}), Match(Span(11, 12), {})])
+    return search_results(df, "", [Match(Span(1, 2), {}), Match(Span(11, 12), {})])
 
 
 @pytest.fixture

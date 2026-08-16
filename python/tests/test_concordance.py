@@ -3,9 +3,9 @@
 import polars as pl
 import polars_corpus as plc
 import pytest
-from polars_corpus import Match, SearchResults, Span
+from polars_corpus import Match, Span
 
-from .helpers import corpus
+from .helpers import corpus, search_results
 
 # "the cat sat on the mat . the dog sat on the log ."
 TOKENS = "the cat sat on the mat . the dog sat on the log ."
@@ -15,14 +15,14 @@ TOKENS = "the cat sat on the mat . the dog sat on the log ."
 def results():
     """The two "sat" matches, at positions 2 and 9."""
     df = corpus(token=TOKENS)
-    return SearchResults(df, "sat", [Match(Span(2, 3), {}), Match(Span(9, 10), {})])
+    return search_results(df, "sat", [Match(Span(2, 3), {}), Match(Span(9, 10), {})])
 
 
 def test_lazy_corpus_rejected():
     """Every method here reads the corpus, so it is checked at construction."""
     df = corpus(token=TOKENS)
     with pytest.raises(ValueError, match="must be an eager polars DataFrame"):
-        SearchResults(df.lazy(), "sat", [Match(Span(2, 3), {})])
+        search_results(df.lazy(), "sat", [Match(Span(2, 3), {})])
 
 
 class TestWindow:
@@ -54,7 +54,7 @@ class TestWindow:
 
     def test_window_truncated_at_the_corpus_edges(self):
         df = corpus(token="the cat sat")
-        results = SearchResults(df, "", [Match(Span(0, 1), {}), Match(Span(2, 3), {})])
+        results = search_results(df, "", [Match(Span(0, 1), {}), Match(Span(2, 3), {})])
         conc = results.concordance("token", window=5)
 
         # Neither context is padded out to the five tokens asked for.
@@ -66,7 +66,7 @@ class TestWindow:
         df = pl.DataFrame(
             {"token": ["a", "b", "c", "d"], "file_id": ["1", "1", "2", "2"]}
         )
-        results = SearchResults(df, "", [Match(Span(2, 3), {})])
+        results = search_results(df, "", [Match(Span(2, 3), {})])
         conc = results.concordance("token", window=2)
 
         assert conc["token_left_context"].to_list() == [["a", "b"]]
@@ -76,7 +76,7 @@ class TestWindow:
         df = pl.DataFrame(
             {"token": ["a", "b", "c", "d", "e"], "file_id": ["1", "1", "2", "2", "1"]}
         )
-        results = SearchResults(
+        results = search_results(
             df, "", [Match(Span(2, 3), {})], file_id_column="file_id"
         )
         conc = results.concordance("token", window=2)
@@ -94,7 +94,7 @@ class TestWindow:
                 "chunks": ["B", "I", "I", "I"],
             }
         )
-        results = SearchResults(
+        results = search_results(
             df, "", [Match(Span(2, 3), {})], file_id_column="file_id"
         )
         conc = results.concordance("token", chunk_column="chunks")
@@ -109,7 +109,7 @@ class TestWindow:
 
     def test_several_columns(self):
         df = corpus(token="the cat sat", pos="DT NN VB")
-        results = SearchResults(df, "", [Match(Span(1, 2), {})])
+        results = search_results(df, "", [Match(Span(1, 2), {})])
         conc = results.concordance(["token", "pos"], window=1)
 
         assert conc.columns == [
@@ -133,14 +133,14 @@ class TestChunkColumn:
         return df
 
     def test_context_reaches_the_chunk_edges(self, chunked):
-        results = SearchResults(chunked, "", [Match(Span(2, 3), {})])
+        results = search_results(chunked, "", [Match(Span(2, 3), {})])
         conc = results.concordance("token", chunk_column="chunks")
 
         assert conc["token_left_context"].to_list() == [["the", "cat"]]
         assert conc["token_right_context"].to_list() == [["."]]
 
     def test_context_stops_at_the_next_chunk(self, chunked):
-        results = SearchResults(chunked, "", [Match(Span(6, 7), {})])
+        results = search_results(chunked, "", [Match(Span(6, 7), {})])
         conc = results.concordance("token", chunk_column="chunks")
 
         # The second sentence only, not back over the first.
@@ -148,14 +148,14 @@ class TestChunkColumn:
 
     def test_match_at_the_start_of_the_corpus(self, chunked):
         """A corpus-initial match has nothing to its left."""
-        results = SearchResults(chunked, "", [Match(Span(0, 1), {})])
+        results = search_results(chunked, "", [Match(Span(0, 1), {})])
         conc = results.concordance("token", chunk_column="chunks")
 
         assert conc["token_left_context"].to_list() == [[]]
         assert conc["token_right_context"].to_list() == [["cat", "sat", "."]]
 
     def test_match_at_the_end_of_the_corpus(self, chunked):
-        results = SearchResults(chunked, "", [Match(Span(7, 8), {})])
+        results = search_results(chunked, "", [Match(Span(7, 8), {})])
         conc = results.concordance("token", chunk_column="chunks")
 
         assert conc["token_right_context"].to_list() == [[]]
@@ -168,7 +168,7 @@ class TestChunkColumn:
                 "chunks": ["B", None, "I", "I", "I"],
             }
         )
-        results = SearchResults(df, "", [Match(Span(3, 4), {})])
+        results = search_results(df, "", [Match(Span(3, 4), {})])
         conc = results.concordance("token", chunk_column="chunks")
 
         assert conc["token_left_context"].to_list() == [["b", "c"]]
@@ -179,20 +179,20 @@ class TestChunkColumn:
     def test_tag_dtypes(self, chunked, dtype):
         """A dictionary-encoded tag column holds the same tags."""
         df = chunked.with_columns(pl.col("chunks").cast(dtype))
-        results = SearchResults(df, "", [Match(Span(2, 3), {})])
+        results = search_results(df, "", [Match(Span(2, 3), {})])
         conc = results.concordance("token", chunk_column="chunks")
 
         assert conc["token_left_context"].to_list() == [["the", "cat"]]
 
     def test_non_tag_column_rejected(self, chunked):
         df = chunked.with_columns(pl.Series("chunks", range(8)))
-        results = SearchResults(df, "", [Match(Span(2, 3), {})])
+        results = search_results(df, "", [Match(Span(2, 3), {})])
 
         with pytest.raises(ValueError, match="chunk_column must hold the chunk tags"):
             results.concordance("token", chunk_column="chunks")
 
     def test_window_is_ignored(self, chunked):
-        results = SearchResults(chunked, "", [Match(Span(2, 3), {})])
+        results = search_results(chunked, "", [Match(Span(2, 3), {})])
         conc = results.concordance("token", chunk_column="chunks", window=1)
 
         assert conc["token_left_context"].to_list() == [["the", "cat"]]
@@ -245,7 +245,7 @@ class TestBindings:
 
     def test_bindings_reach_the_chunk_concordance(self, bound):
         df = bound._df.with_columns(chunks=pl.lit("I"))
-        chunked = SearchResults(df, "", bound._matches, bound.variables)
+        chunked = search_results(df, "", bound._matches, bound.variables)
         conc = chunked.concordance("token", chunk_column="chunks")
 
         assert conc["token_adj"].to_list() == [["big"], ["old"]]
@@ -283,7 +283,7 @@ class TestBindings:
     def test_binding_that_matched_no_token_is_empty(self):
         """A zero-width binding is an empty list, as against an unbound null."""
         df = corpus(token="a b c")
-        results = SearchResults(
+        results = search_results(
             df, "", [Match(Span(0, 2), {"x": Span(0, 0)}), Match(Span(2, 3), {})]
         )
 
@@ -292,7 +292,7 @@ class TestBindings:
     def test_variables_of_hand_built_matches(self):
         """With no query to read the order off, the names are alphabetical."""
         df = corpus(token="a b c")
-        results = SearchResults(
+        results = search_results(
             df,
             "",
             [
@@ -393,7 +393,7 @@ class TestCollocates:
     def test_null_is_not_a_collocate(self):
         """Neither a null token nor the null an empty context explodes to."""
         df = pl.DataFrame({"token": ["cat", "the", None]})
-        results = SearchResults(df, "", [Match(Span(0, 1), {})])
+        results = search_results(df, "", [Match(Span(0, 1), {})])
         colloc = results.collocates("token", window=2, min_freq=0)
 
         assert colloc["collocate"].to_list() == ["the"]
@@ -424,7 +424,7 @@ class TestSlicing:
     @pytest.fixture
     def ten(self):
         df = corpus(token=" ".join(f"t{i}" for i in range(10)))
-        return SearchResults(df, "", [Match(Span(i, i + 1), {}) for i in range(10)])
+        return search_results(df, "", [Match(Span(i, i + 1), {}) for i in range(10)])
 
     @pytest.mark.parametrize(
         "method,n,expected",
