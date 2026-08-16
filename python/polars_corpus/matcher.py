@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from bisect import bisect_right
 from collections.abc import Sequence
-from typing import Optional, overload
+from typing import Optional
 
 import polars as pl
 
@@ -231,20 +231,6 @@ def _search_lazy(
     )
 
 
-@overload
-def search_cqp(
-    df: pl.DataFrame,
-    query: str,
-    file_id_column: Optional[str] = ...,
-    chunk_tokens: int = ...,
-) -> Optional[SearchResults]: ...
-@overload
-def search_cqp(
-    df: pl.LazyFrame,
-    query: str,
-    file_id_column: Optional[str] = ...,
-    chunk_tokens: int = ...,
-) -> Optional[LazySearchResults]: ...
 def search_cqp(
     df: pl.DataFrame | pl.LazyFrame,
     query: str,
@@ -311,26 +297,6 @@ def search_cqp(
         return None
 
 
-@overload
-def search(
-    df: pl.DataFrame,
-    query: str,
-    token_column: str = ...,
-    pos_column: str = ...,
-    lemma_column: str = ...,
-    file_id_column: Optional[str] = ...,
-    chunk_tokens: int = ...,
-) -> Optional[SearchResults]: ...
-@overload
-def search(
-    df: pl.LazyFrame,
-    query: str,
-    token_column: str = ...,
-    pos_column: str = ...,
-    lemma_column: str = ...,
-    file_id_column: Optional[str] = ...,
-    chunk_tokens: int = ...,
-) -> Optional[LazySearchResults]: ...
 def search(
     df: pl.DataFrame | pl.LazyFrame,
     query: str,

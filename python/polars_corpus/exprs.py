@@ -11,6 +11,10 @@ from .matcher import search, search_cqp
 from .search import LazySearchResults, SearchResults
 from .utils import ngrams
 
+# Which one comes back follows the frame searched; the namespace methods take
+# either, so they say so.
+_Results = SearchResults | LazySearchResults
+
 
 @pl.api.register_expr_namespace("corpus")
 class CorpusExpr:
@@ -124,10 +128,10 @@ class CorpusDataFrame:
     def with_chunk_index(self, chunk_column: str, **kwargs: Any) -> pl.DataFrame:
         return with_chunk_index(self._df, chunk_column, **kwargs)
 
-    def search(self, query: str, **kwargs: Any) -> Optional[SearchResults]:
+    def search(self, query: str, **kwargs: Any) -> Optional[_Results]:
         return search(self._df, query, **kwargs)
 
-    def search_cqp(self, query: str, **kwargs: Any) -> Optional[SearchResults]:
+    def search_cqp(self, query: str, **kwargs: Any) -> Optional[_Results]:
         return search_cqp(self._df, query, **kwargs)
 
 
@@ -142,8 +146,8 @@ class CorpusLazyFrame:
     def with_chunk_index(self, chunk_column: str, **kwargs: Any) -> pl.LazyFrame:
         return with_chunk_index(self._lf, chunk_column, **kwargs)
 
-    def search(self, query: str, **kwargs: Any) -> Optional[LazySearchResults]:
+    def search(self, query: str, **kwargs: Any) -> Optional[_Results]:
         return search(self._lf, query, **kwargs)
 
-    def search_cqp(self, query: str, **kwargs: Any) -> Optional[LazySearchResults]:
+    def search_cqp(self, query: str, **kwargs: Any) -> Optional[_Results]:
         return search_cqp(self._lf, query, **kwargs)
