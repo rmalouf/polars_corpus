@@ -1,6 +1,6 @@
 # Development Status - polars-corpus
 
-**Last updated:** 2026-08-06
+**Last updated:** 2026-08-16
 **Version:** 0.2.0-pre
 **Status:** Pre-release; core is stable, not yet published to PyPI
 
@@ -21,9 +21,9 @@ tests.
 
 | | |
 |---|---|
-| Python source | ~4,600 lines, 18 modules |
-| Rust source | ~950 lines, 6 files |
-| Tests | ~2,700 lines, 568 tests in 11 files |
+| Python source | ~5,700 lines, 19 modules |
+| Rust source | ~1,100 lines, 6 files |
+| Tests | ~4,300 lines, 883 tests in 15 files |
 | User guide | 6 pages plus 4 on the query languages (Quarto / great-docs) |
 | Examples | 9 notebooks, 2 scripts |
 
@@ -34,10 +34,14 @@ tests.
 ### Working
 
 1. **Search engine** — NFA matcher in Rust; CQP and Simple query languages;
-   variable bindings (`$x: ...`) in both.
+   variable bindings (`$x: ...`) in both. A LazyFrame corpus is searched out
+   of core, one chunk of whole files at a time (`chunk_tokens` sets the
+   budget), returning `LazySearchResults` with file-relative match spans; the
+   corpus never has to fit in memory.
 2. **Concordancing** — KWIC generation in Rust, `SearchResults.concordance()`,
    a column per bound variable, interactive `ConcordanceWidget` (anywidget)
-   with pagination and sorting.
+   with pagination and sorting. Context clips at file boundaries when the
+   search named a `file_id_column`.
 3. **Collocation and keywords** — `collocates()`, `keywords()`, `crosstab()`
    bundling frequencies into a `freqs` struct consumed by the association
    measures.
@@ -63,8 +67,10 @@ tests.
 
 - **Proximity operators** (`<<s>>`, `<<3>>`, `<<5<<`, `>>5>>`) in the Simple
   query language. See SIMPLE_QUERY_STATUS.md.
-- **`file_id` from the text corpus readers**, so a match can straddle the
-  boundary between two documents (`corpus_io.py` carries a TODO).
+- **Parallel chunk processing.** The lazy search loop is sequential; Polars
+  already parallelizes the mask expressions within each chunk, and on the BNC
+  the chunked search runs as fast as the eager one, so threading the loop has
+  not been worth it yet.
 
 ---
 
@@ -111,18 +117,17 @@ them produced only noise.
 
 **Before a release**
 1. Finish `productivity.py` or drop it, and drop its `ignore-errors` marker.
-2. Emit `file_id` from the text corpus readers.
 
 **Before 1.0**
-3. Proximity operators.
-4. Publish to PyPI.
-5. Add CI, deferred until closer to release.
+2. Proximity operators.
+3. Publish to PyPI.
+4. Add CI, deferred until closer to release.
 
 **Quality**
-6. Make the binding stack part of the backtracking state, so a zero-width
+5. Make the binding stack part of the backtracking state, so a zero-width
    binding always reports its empty span (Known Issues 6).
-7. Rust unit tests for the matcher.
-8. Benchmarks (`examples/bench.py` is a starting point).
+6. Rust unit tests for the matcher.
+7. Benchmarks (`examples/bench.py` is a starting point).
 
 ---
 

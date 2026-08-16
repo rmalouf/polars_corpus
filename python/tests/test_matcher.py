@@ -142,9 +142,9 @@ def test_invalid_regex(sample_corpus):
 
 
 @pytest.mark.parametrize("fn,query", [(search, "fox"), (search_cqp, '[word="fox"]')])
-def test_lazy_corpus_rejected(sample_corpus, fn, query):
-    """Matching walks the corpus by position, so a LazyFrame cannot stand in."""
-    with pytest.raises(ValueError, match="must be an eager polars DataFrame"):
+def test_lazy_corpus_needs_file_id_column(sample_corpus, fn, query):
+    """A LazyFrame is searched in chunks of files, so it needs the file ids."""
+    with pytest.raises(ValueError, match="file_id_column"):
         fn(sample_corpus.lazy(), query)
 
 
@@ -441,6 +441,36 @@ class TestFileBoundaries:
         df = pl.DataFrame({"word": ["fox"], "file_id": ["d1"]})
         matches, _ = run_query(df, '[word="fox"]', "file_id")
         assert spans(matches) == [(0, 1)]
+
+
+class TestFileIdDefault:
+    """search() binds file_id_column to "file_id" only when the corpus has it"""
+
+    def test_default_confines_matches(self, two_file_corpus):
+        df = two_file_corpus.rename({"word": "token"})
+        results = search_cqp(df, '[token="brown"] [token="fox"]')
+
+        # Only the within-file match; the straddling one is suppressed.
+        assert spans(results._matches) == [(4, 6)]
+
+    def test_default_is_soft_without_the_column(self, sample_corpus):
+        results = search_cqp(sample_corpus, '[word="fox"]')
+
+        assert spans(results._matches) == [(3, 4)]
+
+    def test_explicit_none_searches_the_whole_corpus(self, two_file_corpus):
+        df = two_file_corpus.rename({"word": "token"})
+        results = search_cqp(df, '[token="brown"] [token="fox"]', file_id_column=None)
+
+        assert spans(results._matches) == [(2, 4), (4, 6)]
+
+    def test_default_name_is_soft_even_spelled_out(self, sample_corpus):
+        """Only the default name is soft; any other missing name raises."""
+        results = search_cqp(sample_corpus, '[word="fox"]', file_id_column="file_id")
+        assert spans(results._matches) == [(3, 4)]
+
+        with pytest.raises(ValueError, match="no column 'doc'"):
+            search_cqp(sample_corpus, '[word="fox"]', file_id_column="doc")
 
 
 @pytest.mark.parametrize(

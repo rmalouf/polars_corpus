@@ -40,9 +40,11 @@ def test_read_text_corpus(load, sample_file):
     """The eager and lazy entry points produce the same frame."""
     df = load([sample_file])
 
-    assert df.columns == ["token", "pos", "sentence_tag"]
+    assert df.columns == ["token", "pos", "sentence_tag", "file_id"]
     # Three blank-line-delimited sentences.
     assert df.filter(pl.col("sentence_tag") == "B").height == 3
+    # Every token carries the path it was read from.
+    assert set(df["file_id"]) == {str(sample_file)}
 
 
 def test_token_tag_parsing(sample_file):
@@ -80,6 +82,8 @@ def test_multiple_files_combined(write_corpus):
 
     assert df.filter(pl.col("token") == "First").height == 1
     assert df.filter(pl.col("token") == "Third").height == 1
+    # Each file's tokens carry its own id, contiguously.
+    assert df["file_id"].to_list() == [str(paths[0])] * 2 + [str(paths[1])] * 5
 
 
 def test_empty_file(write_corpus):

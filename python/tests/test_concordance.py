@@ -61,8 +61,8 @@ class TestWindow:
         assert conc["token_left_context"].to_list() == [[], ["the", "cat"]]
         assert conc["token_right_context"].to_list() == [["cat", "sat"], []]
 
-    def test_context_runs_across_files(self):
-        """A window is not stopped by a change of file id -- see concordance()."""
+    def test_context_runs_across_files_without_file_ids(self):
+        """Results that know no file_id_column have no boundaries to stop at."""
         df = pl.DataFrame(
             {"token": ["a", "b", "c", "d"], "file_id": ["1", "1", "2", "2"]}
         )
@@ -70,6 +70,37 @@ class TestWindow:
         conc = results.concordance("token", window=2)
 
         assert conc["token_left_context"].to_list() == [["a", "b"]]
+
+    def test_context_stops_at_file_boundaries(self):
+        """With a file_id_column, context is clipped to the match's file."""
+        df = pl.DataFrame(
+            {"token": ["a", "b", "c", "d", "e"], "file_id": ["1", "1", "2", "2", "1"]}
+        )
+        results = SearchResults(
+            df, "", [Match(Span(2, 3), {})], file_id_column="file_id"
+        )
+        conc = results.concordance("token", window=2)
+
+        # Neither into the file before nor into the (resumed id) file after.
+        assert conc["token_left_context"].to_list() == [[]]
+        assert conc["token_right_context"].to_list() == [["d"]]
+
+    def test_chunk_context_stops_at_file_boundaries(self):
+        """A chunk running on across a file boundary is clipped there too."""
+        df = pl.DataFrame(
+            {
+                "token": ["a", "b", "c", "d"],
+                "file_id": ["1", "1", "2", "2"],
+                "chunks": ["B", "I", "I", "I"],
+            }
+        )
+        results = SearchResults(
+            df, "", [Match(Span(2, 3), {})], file_id_column="file_id"
+        )
+        conc = results.concordance("token", chunk_column="chunks")
+
+        assert conc["token_left_context"].to_list() == [[]]
+        assert conc["token_right_context"].to_list() == [["d"]]
 
     @pytest.mark.parametrize("window", [-1, 1.5, None, "2", True])
     def test_bad_window(self, results, window):

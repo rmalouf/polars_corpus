@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from os import PathLike
 from typing import Generator, Iterator, Optional, Union
 
@@ -20,13 +21,13 @@ class CorpusReader:
         raise NotImplementedError()
 
     def read_files(self) -> Generator[dict[str, str]]:
-        # TODO: emit a file_id column here (and add it to the scan_corpus schema).
-        # Without it a multi-file corpus is indistinguishable from one long file,
-        # so search() cannot confine matches to a single file and a pattern will
-        # happily match across the boundary between two documents. from_nltk()
-        # already provides file_id; these readers should agree with it.
         for file in self._corpus_files:
-            yield from self.read_file(file)
+            # The full path rather than the basename, so two corpus files of
+            # the same name in different directories stay distinct.
+            file_id = os.fsdecode(file)
+            for row in self.read_file(file):
+                row["file_id"] = file_id
+                yield row
 
     def read_corpus(self) -> pl.DataFrame:
         return pl.DataFrame(self.read_files())
@@ -34,7 +35,12 @@ class CorpusReader:
     def scan_corpus(self) -> pl.LazyFrame:
         """Based on https://docs.pola.rs/user-guide/plugins/io_plugins/#writing-the-source"""
         schema = pl.Schema(
-            {"token": pl.String, "pos": pl.String, "sentence_tag": pl.String}
+            {
+                "token": pl.String,
+                "pos": pl.String,
+                "sentence_tag": pl.String,
+                "file_id": pl.String,
+            }
         )
 
         def source_generator(

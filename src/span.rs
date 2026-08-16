@@ -10,7 +10,26 @@ use pyo3::prelude::*;
 use pyo3_polars::error::PyPolarsErr;
 use pyo3_polars::{PyDataFrame, PySeries};
 
-use crate::matcher::Match;
+use crate::matcher::{Match, run_ends};
+
+/// The file `(start, end)` bounds holding each span, or None with no file ids.
+/// Context windows are clipped to these so they never cross a file boundary.
+fn span_file_bounds(
+    spans: &[Span],
+    file_ids: Option<&Series>,
+) -> PolarsResult<Option<Vec<(usize, usize)>>> {
+    let Some(ids) = file_ids else { return Ok(None) };
+    let ends = run_ends(ids)?;
+    let bounds = spans
+        .iter()
+        .map(|sp| {
+            let i = ends.partition_point(|&e| e <= sp.start).min(ends.len() - 1);
+            let start = if i == 0 { 0 } else { ends[i - 1] };
+            (start, ends[i])
+        })
+        .collect();
+    Ok(Some(bounds))
+}
 
 #[pyfunction]
 pub fn spans_to_chunks(spans: Vec<Span>, n: usize) -> PyResult<PySeries> {
@@ -32,6 +51,7 @@ pub fn spans_to_chunks(spans: Vec<Span>, n: usize) -> PyResult<PySeries> {
 }
 
 #[pyfunction]
+#[pyo3(signature = (py_df, matches, py_chunk_tag, metadata, bindings, file_ids=None))]
 pub fn py_concordance(
     // polars <-> pyo3 shim
     py_df: PyDataFrame,
@@ -39,18 +59,22 @@ pub fn py_concordance(
     py_chunk_tag: PySeries,
     metadata: Option<PyDataFrame>,
     bindings: Vec<String>,
+    file_ids: Option<PySeries>,
 ) -> PyResult<PyDataFrame> {
     let df: DataFrame = py_df.0;
     let chunk_tag = py_chunk_tag.0;
     let metadata_df = metadata.map(|m| m.0);
     let bound_spans = bound_spans(&matches, &bindings);
     let matched_spans: Vec<Span> = matches.into_iter().map(|m| m.span).collect();
+    let bounds = span_file_bounds(&matched_spans, file_ids.as_ref().map(|s| s.as_ref()))
+        .map_err(PyPolarsErr::from)?;
     let out_df = concordance_df(
         &df,
         &matched_spans,
         &chunk_tag,
         metadata_df.as_ref(),
         &bound_spans,
+        bounds.as_deref(),
     )
     .map_err(PyPolarsErr::from)?;
     Ok(PyDataFrame(out_df))
@@ -62,11 +86,12 @@ fn concordance_df(
     chunk_tag: &Series,
     metadata: Option<&DataFrame>,
     bound_spans: &[(&str, Vec<Option<Span>>)],
+    bounds: Option<&[(usize, usize)]>,
 ) -> PolarsResult<DataFrame> {
     // Every column takes its context from the same positions, so the spans
     // are built once and read by all of them.
-    let left_spans = left_chunk_context_from_spans(matched_spans, chunk_tag)?;
-    let right_spans = right_chunk_context_from_spans(matched_spans, chunk_tag)?;
+    let left_spans = left_chunk_context_from_spans(matched_spans, chunk_tag, bounds)?;
+    let right_spans = right_chunk_context_from_spans(matched_spans, chunk_tag, bounds)?;
     let mut result_columns: Vec<Column> = Vec::new();
     for column in df.columns() {
         add_columns(
@@ -165,33 +190,44 @@ fn add_columns(
 }
 
 // Both directions walk the tag column as a string array, and treat anything
-// that isn't "I" -- including a null -- as the edge of the chunk.
-fn left_chunk_context_from_spans(spans: &[Span], chunk_tag: &Series) -> PolarsResult<Vec<Span>> {
+// that isn't "I" -- including a null -- as the edge of the chunk. The file
+// bounds, when given, are a harder edge still.
+fn left_chunk_context_from_spans(
+    spans: &[Span],
+    chunk_tag: &Series,
+    bounds: Option<&[(usize, usize)]>,
+) -> PolarsResult<Vec<Span>> {
     let tags = chunk_tag.str()?;
     let mut context_spans = Vec::with_capacity(spans.len());
-    for &Span { start, end: _ } in spans {
+    for (i, &Span { start, end: _ }) in spans.iter().enumerate() {
+        let floor = bounds.map_or(0, |b| b[i].0);
         // Walk back over the chunk's interior, then take in the tag that opens
         // it. A match at the start of the corpus has neither to its left, and
         // gets an empty context.
         let mut left_edge = start;
-        while left_edge > 0 && tags.get(left_edge - 1) == Some("I") {
+        while left_edge > floor && tags.get(left_edge - 1) == Some("I") {
             left_edge -= 1;
         }
-        left_edge = left_edge.saturating_sub(1);
+        left_edge = left_edge.saturating_sub(1).max(floor);
         context_spans.push(Span::new(left_edge, start));
     }
     Ok(context_spans)
 }
 
-fn right_chunk_context_from_spans(spans: &[Span], chunk_tag: &Series) -> PolarsResult<Vec<Span>> {
+fn right_chunk_context_from_spans(
+    spans: &[Span],
+    chunk_tag: &Series,
+    bounds: Option<&[(usize, usize)]>,
+) -> PolarsResult<Vec<Span>> {
     let tags = chunk_tag.str()?;
     let mut context_spans = Vec::with_capacity(spans.len());
     let df_height = chunk_tag.len();
-    for &Span { start: _, end } in spans {
+    for (i, &Span { start: _, end }) in spans.iter().enumerate() {
+        let ceiling = bounds.map_or(df_height, |b| b[i].1);
         // The tag opening the next chunk is not part of this one, so the right
         // context ends before it.
         let mut right_edge = end;
-        while right_edge < df_height && tags.get(right_edge) == Some("I") {
+        while right_edge < ceiling && tags.get(right_edge) == Some("I") {
             right_edge += 1;
         }
         context_spans.push(Span::new(end, right_edge));
@@ -200,6 +236,7 @@ fn right_chunk_context_from_spans(spans: &[Span], chunk_tag: &Series) -> PolarsR
 }
 
 #[pyfunction]
+#[pyo3(signature = (py_df, matches, left_window, right_window, metadata, bindings, file_ids=None))]
 pub fn py_kwic(
     // polars <-> pyo3 shim
     py_df: PyDataFrame,
@@ -208,11 +245,14 @@ pub fn py_kwic(
     right_window: i32,
     metadata: Option<PyDataFrame>,
     bindings: Vec<String>,
+    file_ids: Option<PySeries>,
 ) -> PyResult<PyDataFrame> {
     let bound_spans = bound_spans(&matches, &bindings);
     let matched_spans: Vec<Span> = matches.into_iter().map(|m| m.span).collect();
     let df: DataFrame = py_df.0;
     let metadata_df = metadata.map(|m| m.0);
+    let bounds = span_file_bounds(&matched_spans, file_ids.as_ref().map(|s| s.as_ref()))
+        .map_err(PyPolarsErr::from)?;
     let out_df = kwic_df(
         &df,
         &matched_spans,
@@ -220,6 +260,7 @@ pub fn py_kwic(
         right_window,
         metadata_df.as_ref(),
         &bound_spans,
+        bounds.as_deref(),
     )
     .map_err(PyPolarsErr::from)?;
     Ok(PyDataFrame(out_df))
@@ -232,16 +273,25 @@ fn kwic_df(
     right_window: i32,
     metadata: Option<&DataFrame>,
     bound_spans: &[(&str, Vec<Option<Span>>)],
+    bounds: Option<&[(usize, usize)]>,
 ) -> PolarsResult<DataFrame> {
     // Every column takes its context from the same positions, so the spans
     // are built once and read by all of them.
     let left_spans = if left_window > 0 {
-        Some(left_fixed_context_from_spans(matched_spans, left_window)?)
+        Some(left_fixed_context_from_spans(
+            matched_spans,
+            left_window,
+            bounds,
+        )?)
     } else {
         None
     };
     let right_spans = if right_window > 0 {
-        Some(right_fixed_context_from_spans(matched_spans, right_window)?)
+        Some(right_fixed_context_from_spans(
+            matched_spans,
+            right_window,
+            bounds,
+        )?)
     } else {
         None
     };
@@ -260,23 +310,30 @@ fn kwic_df(
     DataFrame::new_infer_height(result_columns)
 }
 
-fn left_fixed_context_from_spans(spans: &[Span], window_size: i32) -> PolarsResult<Vec<Span>> {
+fn left_fixed_context_from_spans(
+    spans: &[Span],
+    window_size: i32,
+    bounds: Option<&[(usize, usize)]>,
+) -> PolarsResult<Vec<Span>> {
     let mut context_spans = Vec::with_capacity(spans.len());
-    for &Span { start, end: _ } in spans {
-        let left_edge = (start as i32) - window_size;
-        if left_edge < 0 {
-            context_spans.push(Span::new(0, start));
-        } else {
-            context_spans.push(Span::new(left_edge as usize, start));
-        }
+    for (i, &Span { start, end: _ }) in spans.iter().enumerate() {
+        let floor = bounds.map_or(0, |b| b[i].0);
+        let left_edge = start.saturating_sub(window_size as usize).max(floor);
+        context_spans.push(Span::new(left_edge, start));
     }
     Ok(context_spans)
 }
 
-fn right_fixed_context_from_spans(spans: &[Span], window_size: i32) -> PolarsResult<Vec<Span>> {
+fn right_fixed_context_from_spans(
+    spans: &[Span],
+    window_size: i32,
+    bounds: Option<&[(usize, usize)]>,
+) -> PolarsResult<Vec<Span>> {
     let mut context_spans = Vec::with_capacity(spans.len());
-    for &Span { start: _, end } in spans {
-        let right_edge = end + window_size as usize;
+    for (i, &Span { start: _, end }) in spans.iter().enumerate() {
+        // Without bounds the edge is clipped to the corpus later, at slicing.
+        let ceiling = bounds.map_or(usize::MAX, |b| b[i].1);
+        let right_edge = (end + window_size as usize).min(ceiling);
         context_spans.push(Span::new(end, right_edge));
     }
     Ok(context_spans)

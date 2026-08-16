@@ -87,8 +87,10 @@ query plan.
 
 A function that can only work eagerly (principle 4) opens with
 `as_eager(corpus)` in place of `as_corpus`, and has no `collect_like` to
-return through: `search`, `search_cqp`, `SearchResults` and `encode_terms`
-all take a corpus that way.
+return through: `SearchResults` and `encode_terms` take a corpus that way.
+`search` and `search_cqp` accept a LazyFrame too, but down a separate
+out-of-core path (chunked by `file_id_column`, which it requires) rather
+than through `as_corpus`.
 
 ### Rust-Specific
 - **Minimize allocations**: Use `&str` over `String`, `&[T]` over `Vec<T>`; avoid `.clone()` in hot paths

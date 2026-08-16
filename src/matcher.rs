@@ -73,7 +73,7 @@ impl MatchBuffers {
 
 /// One-past-the-end offset of each run of equal values, ascending. The last
 /// entry is the length of `values`.
-fn run_ends(values: &Series) -> PolarsResult<Vec<usize>> {
+pub(crate) fn run_ends(values: &Series) -> PolarsResult<Vec<usize>> {
     // rle_lengths walks the column once, without materializing a comparison
     // mask, and handles the physical-representation conversion itself.
     let mut lengths = Vec::new();

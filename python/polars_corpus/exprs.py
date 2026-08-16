@@ -8,7 +8,7 @@ from .assoc import chisq, crosstab, loglik, minsens, pmi, smp
 from .chunk import chunk_id, with_chunk_index
 from .lexical import msttr, mtld, ttr, yules_k
 from .matcher import search, search_cqp
-from .search import SearchResults
+from .search import LazySearchResults, SearchResults
 from .utils import ngrams
 
 
@@ -141,3 +141,9 @@ class CorpusLazyFrame:
 
     def with_chunk_index(self, chunk_column: str, **kwargs: Any) -> pl.LazyFrame:
         return with_chunk_index(self._lf, chunk_column, **kwargs)
+
+    def search(self, query: str, **kwargs: Any) -> Optional[LazySearchResults]:
+        return search(self._lf, query, **kwargs)
+
+    def search_cqp(self, query: str, **kwargs: Any) -> Optional[LazySearchResults]:
+        return search_cqp(self._lf, query, **kwargs)
