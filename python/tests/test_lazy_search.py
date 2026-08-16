@@ -137,6 +137,33 @@ class TestSlicing:
 
         assert conc["file_id"].to_list() == shuffled._matches["file_id"].to_list()
 
+    @pytest.mark.parametrize(
+        "method,args", [("sample", (3,)), ("shuffle", ())], ids=["sample", "shuffle"]
+    )
+    def test_seed_agrees_with_eager(self, method, args):
+        """Both paths draw from Python's random, so a seed picks the same matches."""
+        eager, lazy = eager_and_lazy('[token="fox"]', 6)
+
+        assert (
+            getattr(lazy, method)(*args, seed=7)
+            .concordance("token", metadata="file_id")
+            .equals(
+                getattr(eager, method)(*args, seed=7).concordance(
+                    "token", metadata="file_id"
+                )
+            )
+        )
+
+    def test_seed_leaves_the_global_state_alone(self, lazy):
+        import random
+
+        random.seed(0)
+        before = random.random()
+        random.seed(0)
+        lazy.sample(3, seed=42)
+
+        assert random.random() == before
+
 
 def test_simple_query_language():
     df = corpus(

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from bisect import bisect_right
-from collections.abc import Iterator, Sequence
+from collections.abc import Sequence
 from typing import Optional, overload
 
 import polars as pl
@@ -25,11 +25,7 @@ def col_name(i: int) -> str:
 def compute_masks(
     lf: pl.LazyFrame, opcodes: list[Opcode], keep: Sequence[str] = ()
 ) -> pl.LazyFrame:
-    """Find token positions where a (sub-)query might potentially match.
-
-    One boolean column per opcode, with the `keep` columns carried through
-    unchanged. Lazy, so only the columns the query reads are materialized.
-    """
+    """Find token positions where a (sub-)query might potentially match."""
     for pc in range(len(opcodes)):
         lf = propagate_masks(lf, opcodes, pc)
     return lf.select([col_name(i) for i in range(len(opcodes))] + list(keep))
@@ -47,12 +43,7 @@ def check_bindings(opcodes: list[Opcode]) -> list[str]:
 
 
 def propagate_masks(lf: pl.LazyFrame, opcodes: list[Opcode], pc: int) -> pl.LazyFrame:
-    """Propagate token masks backwards through the NFA.
-
-    Each mask is a named column later masks reference, so every opcode's
-    expression is evaluated once no matter how many paths reach it; the
-    schema records which masks are already built.
-    """
+    """Propagate token masks backwards through the NFA."""
     if col_name(pc) not in lf.collect_schema().names():
         match opcodes[pc]:
             case Opcode.Token(expr):
@@ -91,12 +82,7 @@ def run_query(
 
     If `file_id_column` is given, matches are confined to runs of equal values
     in it; otherwise they may span the whole corpus.
-
-    The names come from the query rather than the matches, so one an optional
-    subpattern never got to bind is still named, and gets an empty column.
     """
-    # Checked ahead of the empty-corpus shortcut so a bad column name is
-    # reported the same way whether or not the corpus happens to be empty.
     if file_id_column is not None:
         check_columns(df, [file_id_column], param="file_id_column")
 
@@ -121,13 +107,7 @@ def run_query(
 def _plan_files(
     lf: pl.LazyFrame, file_id_column: str, chunk_tokens: int
 ) -> pl.LazyFrame:
-    """One row per file in corpus order: id, `_file`, `_len`, `_offset`, `_chunk`.
-
-    One lazy pass over the file id column alone. Files are packed into chunks
-    by the budget window their global offset falls in, so a chunk holds about
-    `chunk_tokens` tokens and can run over by at most the length of its last
-    file. Chunk ids can skip numbers where one file spans several windows.
-    """
+    """One row per file in corpus order: id, `_file`, `_len`, `_offset`, `_chunk`."""
     return (
         lf.group_by(file_id_column, maintain_order=True)
         .agg(pl.len().alias("_len"))
@@ -137,25 +117,10 @@ def _plan_files(
     )
 
 
-def _chunks(files: pl.DataFrame) -> Iterator[tuple[int, int, pl.DataFrame]]:
-    """Each chunk's global offset, token length, and rows of the file table."""
-    for _, chunk_files in files.group_by("_chunk", maintain_order=True):
-        yield (
-            int(chunk_files["_offset"][0]),
-            int(chunk_files["_len"].sum()),
-            chunk_files,
-        )
-
-
 def _check_contiguous(
     file_ids: pl.Series, chunk_files: pl.DataFrame, file_id_column: str
 ) -> None:
-    """Check a materialized chunk holds exactly the file runs the plan gave it.
-
-    The chunk offsets assume tokens sharing a file id are contiguous; a corpus
-    that interleaves files would be searched at the wrong boundaries, so it is
-    turned away here, at the first chunk that shows it.
-    """
+    """Check a materialized chunk holds exactly the file runs the plan gave it."""
     runs = file_ids.rle().struct.unnest()
     if (
         runs["value"].to_list() != chunk_files[file_id_column].to_list()
@@ -220,11 +185,7 @@ def _search_lazy(
     file_id_column: Optional[str],
     chunk_tokens: int,
 ) -> Optional[LazySearchResults]:
-    """Search a lazy corpus one chunk of whole files at a time.
-
-    Only each chunk's boolean masks and file ids are ever materialized, so
-    the corpus itself never has to fit in memory.
-    """
+    """Search a lazy corpus one chunk of whole files at a time."""
     if file_id_column is None:
         raise ValueError(
             "searching a LazyFrame processes the corpus in chunks of whole "
@@ -247,7 +208,9 @@ def _search_lazy(
 
     files = _plan_files(lf, file_id_column, chunk_tokens).collect(engine="streaming")
     parts = []
-    for offset, length, chunk_files in _chunks(files):
+    for _, chunk_files in files.group_by("_chunk", maintain_order=True):
+        offset = int(chunk_files["_offset"][0])
+        length = int(chunk_files["_len"].sum())
         mask_df = (
             compute_masks(lf.slice(offset, length), opcodes, [file_id_column])
             .collect(engine="streaming")

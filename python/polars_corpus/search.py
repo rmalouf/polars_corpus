@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import random
+from collections.abc import Sequence
 from difflib import get_close_matches
 from typing import TYPE_CHECKING, Optional, Self
 
@@ -114,9 +115,9 @@ def _needed_columns(
             names.append(item)
         elif isinstance(item, pl.Expr):
             roots = item.meta.root_names()
-            # A regex or wildcard reference names its columns only against the
-            # schema; materialize everything rather than guess.
-            if not roots or any(root.startswith(("^", "*")) for root in roots):
+            # A regex reference or selector names no root, resolving against
+            # the schema instead; materialize everything rather than guess.
+            if not roots:
                 return None
             names.extend(roots)
         else:
@@ -132,13 +133,11 @@ class _SearchResultsBase:
     """Behavior shared by SearchResults and LazySearchResults.
 
     A subclass stores the corpus and the matches its own way and provides the
-    hooks at the top; everything else here reads them.
+    hooks; everything else here reads them.
     """
 
     _query: str
-    _variables: Optional[list[str]]
-
-    # -- hooks ---------------------------------------------------------------
+    _variables: list[str]
 
     def _frame(self) -> pl.DataFrame | pl.LazyFrame:
         """The corpus, in whatever form it is held."""
@@ -146,10 +145,6 @@ class _SearchResultsBase:
 
     def _corpus_size(self) -> int:
         """Number of tokens in the corpus."""
-        raise NotImplementedError
-
-    def _binding_names(self) -> list[str]:
-        """Binding names read off the matches, for results built without a query."""
         raise NotImplementedError
 
     def _concordance(
@@ -163,23 +158,13 @@ class _SearchResultsBase:
         """Build the concordance frame; arguments arrive validated."""
         raise NotImplementedError
 
-    def _head(self, n: int) -> Self:
-        raise NotImplementedError
-
-    def _tail(self, n: int) -> Self:
-        raise NotImplementedError
-
-    def _sample(self, k: int, seed: Optional[int]) -> Self:
-        raise NotImplementedError
-
-    def _shuffle(self, seed: Optional[int]) -> Self:
+    def _take(self, indices: Sequence[int]) -> Self:
+        """These results cut down to the matches at `indices`, in that order."""
         raise NotImplementedError
 
     def __len__(self) -> int:
         """Number of matches found."""
         raise NotImplementedError
-
-    # -- shared behavior -----------------------------------------------------
 
     @property
     def variables(self) -> list[str]:
@@ -195,8 +180,6 @@ class _SearchResultsBase:
         >>> results.variables
         ['det', 'noun']
         """
-        if self._variables is None:
-            self._variables = self._binding_names()
         return self._variables
 
     def __repr__(self) -> str:
@@ -474,7 +457,7 @@ class _SearchResultsBase:
         _check_count(n, "n")
         if n >= len(self):
             return self
-        return self._head(n)
+        return self._take(range(n))
 
     def tail(self, n: int) -> Self:
         """Return the last n search results.
@@ -502,7 +485,7 @@ class _SearchResultsBase:
         _check_count(n, "n")
         if n >= len(self):
             return self
-        return self._tail(n)
+        return self._take(range(len(self) - n, len(self)))
 
     def sample(self, k: int, seed: Optional[int] = None) -> Self:
         """Return a random sample of search results.
@@ -541,7 +524,12 @@ class _SearchResultsBase:
                 f"cannot sample {k:,} of {len(self):,} matches; "
                 f"k must be no larger than the number of matches"
             )
-        return self._sample(k, seed)
+        state = random.getstate()
+        random.seed(seed)
+        try:
+            return self._take(random.sample(range(len(self)), k))
+        finally:
+            random.setstate(state)
 
     def shuffle(self, seed: Optional[int] = None) -> Self:
         """Return search results in randomized order.
@@ -566,7 +554,7 @@ class _SearchResultsBase:
         --------
         >>> shuffled = results.shuffle(seed=123)
         """
-        return self._shuffle(seed)
+        return self.sample(len(self), seed)
 
     def encode(
         self,
@@ -706,6 +694,10 @@ class SearchResults(_SearchResultsBase):
             check_columns(self._df, [file_id_column], param="file_id_column")
         self._query = query
         self._matches = matches
+        if variables is None:
+            # Matches built by hand carry no query to read the order off, and
+            # each one holds its bindings unordered, so name them alphabetically.
+            variables = sorted({name for m in matches for name in m.bindings})
         self._variables = variables
         self._file_id_column = file_id_column
 
@@ -718,11 +710,6 @@ class SearchResults(_SearchResultsBase):
 
     def _corpus_size(self) -> int:
         return self._df.height
-
-    def _binding_names(self) -> list[str]:
-        # Matches built by hand carry no query to read the order off, and
-        # each one holds its bindings unordered, so name them alphabetically.
-        return sorted({name for m in self._matches for name in m.bindings})
 
     def _concordance(
         self,
@@ -748,28 +735,14 @@ class SearchResults(_SearchResultsBase):
             file_ids,
         )
 
-    def _like(self, matches: list[Match]) -> SearchResults:
+    def _take(self, indices: Sequence[int]) -> SearchResults:
         return SearchResults(
-            self._df, self._query, matches, self._variables, self._file_id_column
+            self._df,
+            self._query,
+            [self._matches[i] for i in indices],
+            self._variables,
+            self._file_id_column,
         )
-
-    def _head(self, n: int) -> SearchResults:
-        return self._like(self._matches[:n])
-
-    def _tail(self, n: int) -> SearchResults:
-        # matches[-0:] is the whole list, not an empty one.
-        return self._like(self._matches[len(self._matches) - n :])
-
-    def _sample(self, k: int, seed: Optional[int]) -> SearchResults:
-        state = random.getstate()
-        random.seed(seed)
-        try:
-            return self._like(random.sample(self._matches, k))
-        finally:
-            random.setstate(state)
-
-    def _shuffle(self, seed: Optional[int]) -> SearchResults:
-        return self._sample(len(self._matches), seed)
 
     def with_spans_as_chunks(self, name: str = "spans") -> pl.DataFrame:
         """Add a column containing span information to the corpus DataFrame.
@@ -864,13 +837,6 @@ class LazySearchResults(_SearchResultsBase):
     def _corpus_size(self) -> int:
         return int(self._files["_len"].sum())
 
-    def _binding_names(self) -> list[str]:
-        if "bindings" in self._matches.columns:
-            dtype = self._matches.schema["bindings"]
-            assert isinstance(dtype, pl.Struct)
-            return [field.name for field in dtype.fields]
-        return []
-
     def _concordance(
         self,
         expr: IntoExprColumn | list[IntoExprColumn],
@@ -879,20 +845,23 @@ class LazySearchResults(_SearchResultsBase):
         metadata: Optional[list[str]],
         names: list[str],
     ) -> pl.DataFrame:
-        chunk_bounds = {}
-        for (chunk,), part in self._files.group_by("_chunk", maintain_order=True):
-            chunk_bounds[chunk] = (int(part["_offset"][0]), int(part["_len"].sum()))
-
         mf = self._matches.with_row_index("_order").join(
-            self._files.select("_file", "_offset", "_chunk"), on="_file", how="left"
+            self._files.select("_file", "_offset", "_len", "_chunk"),
+            on="_file",
+            how="left",
         )
         columns = _needed_columns(expr, metadata, chunk_column, self._file_id_column)
 
         parts: list[pl.DataFrame] = []
         orders: list[int] = []
-        for (chunk,), group in mf.group_by("_chunk", maintain_order=True):
-            offset, length = chunk_bounds[chunk]
-            chunk_lf = self._lf.slice(offset, length)
+        for _, group in mf.group_by("_chunk", maintain_order=True):
+            # Only out to the files the chunk has matches in, which is no more
+            # than the chunk and often much less.
+            offset, end = group.select(
+                pl.col("_offset").min().alias("start"),
+                (pl.col("_offset") + pl.col("_len")).max().alias("end"),
+            ).row(0)
+            chunk_lf = self._lf.slice(offset, end - offset)
             if columns is not None:
                 chunk_lf = chunk_lf.select(columns)
             chunk_df = chunk_lf.collect(engine="streaming")
@@ -912,36 +881,24 @@ class LazySearchResults(_SearchResultsBase):
             )
             orders.extend(group["_order"].to_list())
 
-        conc = pl.concat(parts) if len(parts) > 1 else parts[0]
         # The chunk loop grouped the matches by file; put them back in the
         # order the matches frame holds them.
         return (
-            conc.with_columns(pl.Series("_order", orders, dtype=pl.UInt32))
+            pl.concat(parts)
+            .with_columns(pl.Series("_order", orders, dtype=pl.UInt32))
             .sort("_order")
             .drop("_order")
         )
 
-    def _like(self, matches: pl.DataFrame) -> LazySearchResults:
+    def _take(self, indices: Sequence[int]) -> LazySearchResults:
         return LazySearchResults(
             self._lf,
             self._query,
-            matches,
-            self._variables or [],
+            self._matches[list(indices)],
+            self._variables,
             self._file_id_column,
             self._files,
         )
-
-    def _head(self, n: int) -> LazySearchResults:
-        return self._like(self._matches.head(n))
-
-    def _tail(self, n: int) -> LazySearchResults:
-        return self._like(self._matches.tail(n))
-
-    def _sample(self, k: int, seed: Optional[int]) -> LazySearchResults:
-        return self._like(self._matches.sample(k, seed=seed))
-
-    def _shuffle(self, seed: Optional[int]) -> LazySearchResults:
-        return self._like(self._matches.sample(fraction=1.0, shuffle=True, seed=seed))
 
     def with_spans_as_chunks(self, name: str = "spans") -> pl.LazyFrame:
         """Tag each corpus token with the match holding it, lazily.
