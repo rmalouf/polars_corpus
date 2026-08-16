@@ -1,8 +1,6 @@
 import warnings
 
-import matplotlib.pyplot as plt
 import polars as pl
-from matplotlib.axes import Axes
 import plotly.express as px
 import plotly.graph_objects as go
 
@@ -334,36 +332,29 @@ def keyword_plot(
     return fig
 
 
-def text_plot(
-    xy, labels, ax: Axes | None = None, adjust: bool = True, show_labels: bool = True
-) -> Axes:
+def text_plot(points, labels, show_labels: bool = True) -> go.Figure:
     """
     Plot labeled points on a two-dimensional map.
 
-    Draws each row of `xy` with its label, for reading a projection of
+    Draws each row of `points` with its label, for reading a projection of
     embedding vectors (e.g. from UMAP) down to two dimensions. The axes carry
     no scale, since the coordinates only mean something relative to each other.
 
     Parameters
     ----------
-    xy : array-like of shape (n, 2)
+    points : array-like of shape (n, 2)
         Coordinates to plot, one row per label.
     labels : sequence of str
-        Label for each row of `xy`, e.g. the token or the concordance line the
+        Label for each row of `points`, e.g. the token or the concordance line the
         vector was built from.
-    ax : Axes, optional
-        Axes to draw on. A new figure and axes are created if not given.
-    adjust : bool, default True
-        Nudge overlapping labels apart with `adjustText`. Ignored when
-        `show_labels` is False.
     show_labels : bool, default True
         Draw the labels. When False, the points are drawn as a plain scatter
         instead.
 
     Returns
     -------
-    Axes
-        The axes drawn on.
+    Figure
+        A plotly figure.
 
     Examples
     --------
@@ -372,37 +363,36 @@ def text_plot(
     >>> plc.text_plot(xy, df["token"])
     >>> plc.text_plot(xy, df["token"], show_labels=False)
     """
-    if ax is None:
-        _, ax = plt.subplots()
+    fig = go.Figure()
 
-    # Labeled points are placed by their text, so the marker only shows where
-    # there is nothing else to see.
-    size = 0 if show_labels else 5
-    ax.scatter(xy[:, 0], xy[:, 1], s=size)
+    fig.add_trace(
+        go.Scatter(
+            x=points[:, 0],
+            y=points[:, 1],
+            text=labels,
+            mode="markers+text" if show_labels else "markers",
+            textposition="top right",
+            showlegend=False,
+            cliponaxis=False,
+            hovertemplate="%{text}<extra></extra>",
+        )
+    )
 
-    if show_labels:
-        texts = []
-        for point, label in zip(xy, labels):
-            texts.append(ax.text(point[0], point[1], label, ha="center", va="center"))
+    fig.update_xaxes(
+        showticklabels=False,
+        showgrid=False,
+        zeroline=False,
+    )
 
-        if adjust:
-            try:
-                from adjustText import adjust_text
-            except ImportError:
-                raise ImportError(
-                    "text_plot(adjust=True) needs adjustText: "
-                    "pip install 'polars-corpus[embeddings]', or pass adjust=False"
-                ) from None
-            adjust_text(texts, ax=ax, time_lim=2)
+    fig.update_yaxes(
+        showticklabels=False,
+        showgrid=False,
+        zeroline=False,
+        scaleanchor="x",
+        scaleratio=1,
+    )
 
-    for spine in ax.spines.values():
-        spine.set_visible(False)
-
-    ax.set_xticks([])
-    ax.set_yticks([])
-    ax.set_aspect(1)
-
-    return ax
+    return fig
 
 
 ## TODO:
