@@ -170,7 +170,7 @@ def _pos_class(name: str) -> str:
     return _POS_MAPPING[check_choice(name, _POS_CLASSES, param="POS class").upper()]
 
 
-class SimpleCompiler(Transformer):
+class _SimpleCompiler(Transformer):
     def __init__(self, token_column: str, pos_column: str, lemma_column: str) -> None:
         super().__init__()
         self.token_column = token_column
@@ -342,7 +342,7 @@ def simple_to_cqp(
     '$phrase: (([token="quick"%c] [token="brown"%c]))'
     """
     tree = _parser.parse(query)
-    compiler = SimpleCompiler(token_column, pos_column, lemma_column)
+    compiler = _SimpleCompiler(token_column, pos_column, lemma_column)
     try:
         return compiler.transform(tree)
     except VisitError as exc:  # lark wraps the cause; the caller wants it plain

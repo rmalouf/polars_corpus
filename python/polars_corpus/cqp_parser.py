@@ -83,7 +83,7 @@ def _mn_expand(body: list[Opcode], m: int, n: Optional[int]) -> list[Opcode]:
     return opcodes
 
 
-class CQPCompiler(Transformer):
+class _CQPCompiler(Transformer):
     def atomic(self, items: list[Any]) -> pl.Expr:
         feature = str(items[0])
         op = str(items[1])
@@ -185,7 +185,7 @@ class CQPCompiler(Transformer):
         return items[0]
 
 
-_parser = Lark(GRAMMAR, start="cqp", parser="lalr", transformer=CQPCompiler())
+_parser = Lark(GRAMMAR, start="cqp", parser="lalr", transformer=_CQPCompiler())
 
 
 def cqp(query: str) -> list[Opcode]:

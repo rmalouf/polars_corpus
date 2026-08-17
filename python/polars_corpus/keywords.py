@@ -174,7 +174,7 @@ def keywords(
     combined = pl.concat(selected)
 
     if method == "ttest":
-        result = keywords_ttest(combined, expr_name, file_id_column)
+        result = _keywords_ttest(combined, expr_name, file_id_column)
     else:
         freq_table = crosstab(combined, expr_name, PART_FIELD)
         target_df = (
@@ -183,12 +183,12 @@ def keywords(
             .agg(pl.col(file_id_column).n_unique().alias("target_df"))
         )
         freq_table = freq_table.join(target_df, on=expr_name, how="left")
-        result = keywords_assoc(freq_table, method, min_target_tf, min_target_df, k)
+        result = _keywords_assoc(freq_table, method, min_target_tf, min_target_df, k)
 
     return collect_like(result, target)
 
 
-def keywords_assoc(
+def _keywords_assoc(
     freq_table: pl.LazyFrame,
     method: str,
     min_target_tf: int,
@@ -238,7 +238,7 @@ def keywords_assoc(
     return result
 
 
-def keywords_ttest(
+def _keywords_ttest(
     combined: pl.LazyFrame,
     expr_name: str,
     file_id_column: str = "file_id",

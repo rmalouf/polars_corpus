@@ -165,7 +165,7 @@ def dispersion(
     frames = []
 
     if range_methods:
-        frames.append(dispersion_range(lf, term_name, file_id_column, range_methods))
+        frames.append(_dispersion_range(lf, term_name, file_id_column, range_methods))
 
     if sd_methods or "da" in methods:
         per_file = (
@@ -183,15 +183,15 @@ def dispersion(
             (pl.col("_n") / pl.col("_size")).alias("_n"),
         )
         if sd_methods:
-            frames.append(dispersion_sd(per_file, term_name, sd_methods))
+            frames.append(_dispersion_sd(per_file, term_name, sd_methods))
         if "da" in methods:
-            frames.append(dispersion_da(per_file, term_name))
+            frames.append(_dispersion_da(per_file, term_name))
 
     # DP weighs each file's share of the word against a share of its own, so it
     # works from the counts and the file sizes side by side rather than from the
     # per-file frequencies the measures above share.
     if "dp" in methods:
-        frames.append(dispersion_dp(lf, term_name, file_id_column))
+        frames.append(_dispersion_dp(lf, term_name, file_id_column))
 
     result = frames[0]
     for frame in frames[1:]:
@@ -208,7 +208,7 @@ def dispersion(
     return collect_like(result, corpus)
 
 
-def dispersion_range(
+def _dispersion_range(
     lf: pl.LazyFrame,
     term_name: str,
     file_id_column: str,
@@ -232,7 +232,7 @@ def dispersion_range(
     return counts.select(term_name, "freq", *(measures[m] for m in methods))
 
 
-def dispersion_sd(
+def _dispersion_sd(
     per_file: pl.LazyFrame,
     term_name: str,
     methods: list[str],
@@ -268,10 +268,10 @@ def dispersion_sd(
     return stats.select(term_name, "freq", *(measures[m] for m in methods))
 
 
-def dispersion_da(per_file: pl.LazyFrame, term_name: str) -> pl.LazyFrame:
+def _dispersion_da(per_file: pl.LazyFrame, term_name: str) -> pl.LazyFrame:
     """Measure dispersion by how much the per-file frequencies differ pairwise.
 
-    `per_file` is as in `dispersion_sd`.
+    `per_file` is as in `_dispersion_sd`.
     """
     # Notes on the O(n log n) method used here:
     #   https://www.itl.nist.gov/div898/software/dataplot/refman2/auxillar/gmd.htm
@@ -288,7 +288,7 @@ def dispersion_da(per_file: pl.LazyFrame, term_name: str) -> pl.LazyFrame:
     return stats.select(term_name, "freq", da.alias("DA"))
 
 
-def dispersion_dp(
+def _dispersion_dp(
     lf: pl.LazyFrame,
     term_name: str,
     file_id_column: str,

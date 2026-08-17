@@ -18,20 +18,20 @@ DEFAULT_CHUNK_TOKENS = 10_000_000
 DEFAULT_FILE_ID = "file_id"
 
 
-def col_name(i: int) -> str:
+def _col_name(i: int) -> str:
     return f"_{i}"
 
 
-def compute_masks(
+def _compute_masks(
     lf: pl.LazyFrame, opcodes: list[Opcode], keep: Sequence[str] = ()
 ) -> pl.LazyFrame:
     """Find token positions where a (sub-)query might potentially match."""
     for pc in range(len(opcodes)):
-        lf = propagate_masks(lf, opcodes, pc)
-    return lf.select([col_name(i) for i in range(len(opcodes))] + list(keep))
+        lf = _propagate_masks(lf, opcodes, pc)
+    return lf.select([_col_name(i) for i in range(len(opcodes))] + list(keep))
 
 
-def check_bindings(opcodes: list[Opcode]) -> list[str]:
+def _check_bindings(opcodes: list[Opcode]) -> list[str]:
     """The names the program binds, in the order it binds them."""
     seen: list[str] = []
     for op in opcodes:
@@ -42,33 +42,36 @@ def check_bindings(opcodes: list[Opcode]) -> list[str]:
     return seen
 
 
-def propagate_masks(lf: pl.LazyFrame, opcodes: list[Opcode], pc: int) -> pl.LazyFrame:
+def _propagate_masks(lf: pl.LazyFrame, opcodes: list[Opcode], pc: int) -> pl.LazyFrame:
     """Propagate token masks backwards through the NFA."""
-    if col_name(pc) not in lf.collect_schema().names():
+    if _col_name(pc) not in lf.collect_schema().names():
         match opcodes[pc]:
             case Opcode.Token(expr):
                 expr = pl.Expr.deserialize(expr)
-                lf = lf.with_columns(expr.fill_null(False).alias(col_name(pc)))
+                lf = lf.with_columns(expr.fill_null(False).alias(_col_name(pc)))
             case Opcode.Match() | Opcode.Skip() | Opcode.Fail():
-                lf = lf.with_columns(pl.lit(True).alias(col_name(pc)))
+                lf = lf.with_columns(pl.lit(True).alias(_col_name(pc)))
             case (
                 Opcode.PushVar()
                 | Opcode.PopVar()
                 | Opcode.BindVar(_)
                 | Opcode.UnBindVar()
             ):
-                lf = propagate_masks(lf, opcodes, pc + 1)
-                lf = lf.with_columns(pl.col(col_name(pc + 1)).alias(col_name(pc)))
+                lf = _propagate_masks(lf, opcodes, pc + 1)
+                lf = lf.with_columns(pl.col(_col_name(pc + 1)).alias(_col_name(pc)))
             case Opcode.Jump(offset):
-                lf = propagate_masks(lf, opcodes, pc + offset)
-                lf = lf.with_columns(pl.col(col_name(pc + offset)).alias(col_name(pc)))
+                lf = _propagate_masks(lf, opcodes, pc + offset)
+                lf = lf.with_columns(
+                    pl.col(_col_name(pc + offset)).alias(_col_name(pc))
+                )
             case Opcode.Split(offset1, offset2):
-                lf = propagate_masks(lf, opcodes, pc + offset1)
-                lf = propagate_masks(lf, opcodes, pc + offset2)
+                lf = _propagate_masks(lf, opcodes, pc + offset1)
+                lf = _propagate_masks(lf, opcodes, pc + offset2)
                 lf = lf.with_columns(
                     (
-                        pl.col(col_name(pc + offset1)) | pl.col(col_name(pc + offset2))
-                    ).alias(col_name(pc))
+                        pl.col(_col_name(pc + offset1))
+                        | pl.col(_col_name(pc + offset2))
+                    ).alias(_col_name(pc))
                 )
             case _:
                 raise RuntimeError(f"Unknown opcode {opcodes[pc]}")
@@ -79,17 +82,17 @@ def _compile(cqp_query: str) -> tuple[list[Opcode], list[str]]:
     """The program for `cqp_query`, with the variables it binds, in binding order."""
     opcodes = cqp(cqp_query)
     opcodes.append(Opcode.Match())
-    return opcodes, check_bindings(opcodes)
+    return opcodes, _check_bindings(opcodes)
 
 
 def _collect_masks(
     lf: pl.LazyFrame, opcodes: list[Opcode], file_id_column: Optional[str]
 ) -> tuple[list[pl.Series], Optional[pl.Series]]:
-    """Run `compute_masks`, giving one mask per opcode plus the file ids to respect."""
+    """Run `_compute_masks`, giving one mask per opcode plus the file ids to respect."""
     keep = [] if file_id_column is None else [file_id_column]
     # Rechunked so the matcher's positional lookups stay O(1).
-    mask_df = compute_masks(lf, opcodes, keep).collect(engine="streaming").rechunk()
-    masks = [mask_df.get_column(col_name(pc)) for pc in range(len(opcodes))]
+    mask_df = _compute_masks(lf, opcodes, keep).collect(engine="streaming").rechunk()
+    masks = [mask_df.get_column(_col_name(pc)) for pc in range(len(opcodes))]
     file_ids = None if file_id_column is None else mask_df.get_column(file_id_column)
     return masks, file_ids
 

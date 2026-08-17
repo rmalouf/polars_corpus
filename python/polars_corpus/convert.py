@@ -45,7 +45,7 @@ def from_nltk(corpus: CorpusReader) -> pl.DataFrame:
                 category_dict[file_id] = category
     corpus_data = []
     for file_id in corpus.fileids():
-        for token_dict in convert_file(corpus, file_id):
+        for token_dict in _convert_file(corpus, file_id):
             token_dict["file_id"] = file_id
             if file_id in category_dict:
                 token_dict["category"] = category_dict[file_id]
@@ -53,7 +53,7 @@ def from_nltk(corpus: CorpusReader) -> pl.DataFrame:
     return pl.DataFrame(corpus_data)
 
 
-def convert_file(corpus: CorpusReader, file_id: str) -> Generator[dict[str, str]]:
+def _convert_file(corpus: CorpusReader, file_id: str) -> Generator[dict[str, str]]:
     if hasattr(corpus, "sents"):
         if hasattr(corpus, "tagged_sents"):
             sentences = corpus.tagged_sents(file_id)
@@ -61,7 +61,7 @@ def convert_file(corpus: CorpusReader, file_id: str) -> Generator[dict[str, str]
             sentences = corpus.sents(file_id)
         for sentence in sentences:
             first_word = True
-            for token_dict in convert_token(sentence):
+            for token_dict in _convert_token(sentence):
                 if first_word:
                     token_dict["sentence_tag"] = "B"
                     first_word = False
@@ -78,11 +78,11 @@ def convert_file(corpus: CorpusReader, file_id: str) -> Generator[dict[str, str]
                 f"{type(corpus).__name__} exposes none of sents(), tagged_words(), "
                 "or words(), so its tokens cannot be read"
             )
-        for token_dict in convert_token(tokens):
+        for token_dict in _convert_token(tokens):
             yield token_dict
 
 
-def convert_token(tokens: list[Any]) -> Generator[dict[str, str]]:
+def _convert_token(tokens: list[Any]) -> Generator[dict[str, str]]:
     for token in tokens:
         token_dict = {}
         if type(token) is tuple:
