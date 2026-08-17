@@ -29,6 +29,7 @@ plugins:
             show_signature_type_parameters: true
             separate_signature: true
             docstring_section_style: list
+            inherited_members: true
 
   - mkdocs-jupyter:
       # Render the outputs committed with the notebooks. Executing here would
@@ -48,7 +49,10 @@ nav:
       - Keyword Analysis: notebooks/keywords.ipynb
       - Dispersion: notebooks/dispersion.ipynb
   - Reference:
-#      - Corpus: api/corpus.md
+      - Search: search.md
+      - Lexical dispersion: dispersion.md
+      - Keyword analysis: keywords.md
+      - Embeddings: embed.md
+      - Utilities: utils.md
       - Simple query language: simple_query.md
-      - API: api.md
 

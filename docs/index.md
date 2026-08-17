@@ -13,4 +13,8 @@ modest hardware without requiring external servers or databases.
 ## Reference:
 
   - [Simple query language](simple_query.md)
-  - [API](api.md)
+  - [Search, concordances, and collocations](search.md)
+  - [Lexical dispersion](dispersion.md)
+  - [Keyword analysis](keywords.md)
+  - [Embeddings](embed.md)
+  - [General utilities](utils.md)
