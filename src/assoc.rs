@@ -79,9 +79,10 @@ struct AlternativeKwargs {
 
 pub fn t_test_output_schema(_: &[Field]) -> PolarsResult<Field> {
     let fields = DataType::Struct(vec![
-        Field::new("stat".into(), DataType::Float64),
-        Field::new("pval".into(), DataType::Float64),
+        Field::new("t".into(), DataType::Float64),
+        Field::new("p".into(), DataType::Float64),
         Field::new("df".into(), DataType::Float64),
+        Field::new("g".into(), DataType::Float64),
     ]);
 
     Ok(Field::new("t_test".into(), fields))
@@ -102,7 +103,7 @@ fn py_welchs_t(inputs: &[Series], kwargs: AlternativeKwargs) -> PolarsResult<Ser
 
     // dbg!(sums1, sumsqs1, n1, sums2, sumsqs2, n2);
 
-    let (t, p, df) = welchs_t_from_stats(
+    let (t, p, df, g) = welchs_t_from_stats(
         Some(sums1),
         Some(sumsqs1),
         n1,
@@ -112,11 +113,12 @@ fn py_welchs_t(inputs: &[Series], kwargs: AlternativeKwargs) -> PolarsResult<Ser
         &kwargs,
     );
 
-    let t_s = Series::new("stat".into(), &[t]);
-    let p_s = Series::new("pval".into(), &[p]);
+    let t_s = Series::new("t".into(), &[t]);
+    let p_s = Series::new("p".into(), &[p]);
     let df_s = Series::new("df".into(), &[df]);
+    let g_s = Series::new("g".into(), &[g]);
     let ret_value =
-        StructChunked::from_series("t_test".into(), 1, [&t_s, &p_s, &df_s].into_iter())?;
+        StructChunked::from_series("t_test".into(), 1, [&t_s, &p_s, &df_s, &g_s].into_iter())?;
 
     Ok(ret_value.into_series())
 }
@@ -128,14 +130,14 @@ fn welchs_t_from_stats(
     sumsq2: Option<f64>,
     n2: f64,
     kwargs: &AlternativeKwargs,
-) -> (Option<f64>, Option<f64>, Option<f64>) {
+) -> (Option<f64>, Option<f64>, Option<f64>, Option<f64>) {
     let (s1, ss1, s2, ss2) = match (sum1, sumsq1, sum2, sumsq2) {
         (Some(a), Some(b), Some(c), Some(d)) => (a, b, c, d),
-        _ => return (None, None, None),
+        _ => return (None, None, None, None),
     };
 
     if !(n1.is_finite() && n2.is_finite()) || n1 < 2.0 || n2 < 2.0 {
-        return (None, None, None);
+        return (None, None, None, None);
     }
 
     let m1 = s1 / n1;
@@ -144,7 +146,7 @@ fn welchs_t_from_stats(
     let v2 = (ss2 - s2 * s2 / n2) / (n2 - 1.0);
 
     if !(v1.is_finite() && v2.is_finite()) || v1 <= 0.0 || v2 <= 0.0 {
-        return (None, None, None);
+        return (None, None, None, None);
     }
 
     let a = v1 / n1;
@@ -160,9 +162,12 @@ fn welchs_t_from_stats(
     } else {
         2.0 * dist.sf(t.abs())
     };
-    //             (Some(t), Some(pval), Some(df))
 
-    (Some(t), Some(pval), Some(ddof))
+    // Hedges' g: Cohen's d recovered from t, then bias-corrected for small samples.
+    let d = t * (2.0 * (a + b) / (v1 + v2)).sqrt();
+    let g = d * (1.0 - (3.0 / ((4.0 * ddof) - 1.0)));
+
+    (Some(t), Some(pval), Some(ddof), Some(g))
 }
 
 #[polars_expr(output_type_func=t_test_output_schema)]
@@ -180,6 +185,7 @@ fn py_welchs_t_from_stats(inputs: &[Series], kwargs: AlternativeKwargs) -> Polar
     let mut t_v = Vec::with_capacity(n);
     let mut p_v = Vec::with_capacity(n);
     let mut d_v = Vec::with_capacity(n);
+    let mut g_v = Vec::with_capacity(n);
 
     for (s1, ss1, n1, s2, ss2, n2) in izip!(
         sums1_ca.iter(),
@@ -189,18 +195,20 @@ fn py_welchs_t_from_stats(inputs: &[Series], kwargs: AlternativeKwargs) -> Polar
         sumsqs2_ca.iter(),
         n2_ca.iter()
     ) {
-        let (t, pval, df) =
+        let (t, pval, df, g) =
             welchs_t_from_stats(s1, ss1, n1.unwrap(), s2, ss2, n2.unwrap(), &kwargs);
         t_v.push(t);
         p_v.push(pval);
         d_v.push(df);
+        g_v.push(g);
     }
 
-    let t_s = Series::new("stat".into(), &t_v);
-    let p_s = Series::new("pval".into(), &p_v);
+    let t_s = Series::new("t".into(), &t_v);
+    let p_s = Series::new("p".into(), &p_v);
     let df_s = Series::new("df".into(), &d_v);
+    let g_s = Series::new("g".into(), &g_v);
     let ret_value =
-        StructChunked::from_series("t_test".into(), n, [&t_s, &p_s, &df_s].into_iter())?;
+        StructChunked::from_series("t_test".into(), n, [&t_s, &p_s, &df_s, &g_s].into_iter())?;
 
     Ok(ret_value.into_series())
 }

@@ -419,12 +419,14 @@ def welchs_t(x1: IntoExprColumn, x2: IntoExprColumn, alt: str = "twosided") -> p
     pl.Expr
         A Polars expression that returns a struct with the following fields:
 
-        - 'stat' : float
+        - 't' : float
             The t-statistic of the test
-        - 'pval' : float
+        - 'p' : float
             The p-value of the test
         - 'df' : float
             The degrees of freedom used in the test
+        - 'g' : float
+            Hedges' g, a measure of effect size
 
         Returns null values for all fields if the test cannot be performed
         (e.g., insufficient data or zero variance in both samples).
@@ -448,6 +450,14 @@ def welchs_t(x1: IntoExprColumn, x2: IntoExprColumn, alt: str = "twosided") -> p
 
     .. math::
         df = \\frac{(\\frac{s_1^2}{n_1} + \\frac{s_2^2}{n_2})^2}{\\frac{(s_1^2/n_1)^2}{n_1-1} + \\frac{(s_2^2/n_2)^2}{n_2-1}}
+
+    The effect size is Hedges' g: Cohen's d recovered from the t-statistic, then
+    scaled by the small-sample bias correction :math:`J`:
+
+    .. math::
+        d = t \\sqrt{\\frac{2\\left(\\frac{s_1^2}{n_1}+\\frac{s_2^2}{n_2}\\right)}{s_1^2+s_2^2}}
+        \\qquad
+        g = J d, \\quad J = 1 - \\frac{3}{4\\,df - 1}
     """
     alt = check_choice(alt, ALTERNATIVES, param="alt")
     return register_plugin_function(
@@ -507,12 +517,14 @@ def welchs_t_from_stats(
     pl.Expr
         A Polars expression that returns a struct with the following fields:
 
-        - 'stat' : float
+        - 't' : float
             The t-statistic of the test
-        - 'pval' : float
+        - 'p' : float
             The p-value of the test
         - 'df' : float
             The degrees of freedom used in the test
+        - 'g' : float
+            Hedges' g, the difference in means in standard deviations
 
         Returns null values for all fields if the test cannot be performed
         (e.g., insufficient data or zero variance in both samples).
@@ -532,8 +544,8 @@ def welchs_t_from_stats(
     .. math::
         \\text{var}_i = \\frac{ss_i - \\frac{s_i^2}{n_i}}{n_i - 1}
 
-    The test statistic and degrees of freedom are then calculated using the
-    same formulas as in `welchs_t`.
+    The test statistic, degrees of freedom, and effect size are then calculated
+    using the same formulas as in `welchs_t`.
     """
     alt = check_choice(alt, ALTERNATIVES, param="alt")
     return register_plugin_function(

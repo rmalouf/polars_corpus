@@ -84,6 +84,12 @@ def keywords(
         Keywords ranked by association strength, most target-specific first.
         Eager if `target` is a DataFrame, lazy if it is a LazyFrame.
 
+        Every method but 'ttest' returns the frequency table with one column
+        named for the measure. 'ttest' returns the words more frequent in the
+        target, ranked by p-value ascending, with columns `t`, `p`, `df`, and
+        `g` (Hedges' g, the size of the difference rather than its
+        significance).
+
     Raises
     ------
     ValueError
@@ -247,7 +253,8 @@ def _keywords_ttest(
 
     `combined` is the two corpora concatenated, with a `PART_FIELD` column
     marking which is which. Returns the words overrepresented in the target
-    (`stat` > 0), sorted by p-value ascending.
+    (`t` > 0), sorted by p-value ascending, with the test's `t`, `p`, `df`, and
+    `g` (Hedges' g) columns unnested alongside the word.
     """
     result = (
         combined.group_by(file_id_column, PART_FIELD, expr_name)
@@ -276,7 +283,7 @@ def _keywords_ttest(
         )
         .select(expr_name, "t_test")
         .unnest("t_test")
-        .filter(pl.col("stat") > 0)
-        .sort(by="pval")
+        .filter(pl.col("t") > 0)
+        .sort(by="p")
     )
     return result

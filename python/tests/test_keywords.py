@@ -157,11 +157,13 @@ def test_keywords_ttest_ignores_thresholds(threshold: str) -> None:
 def test_keywords_ttest() -> None:
     result = keywords(TARGET, REFERENCE, pl.col("norm"), "ttest")
 
-    assert result.columns == ["norm", "stat", "pval", "df"]
-    # ttest only reports words overrepresented in the target (stat > 0).
-    assert (result["stat"] > 0).all()
+    assert result.columns == ["norm", "t", "p", "df", "g"]
+    # ttest only reports words overrepresented in the target (t > 0).
+    assert (result["t"] > 0).all()
+    # Hedges' g shares the t-statistic's sign.
+    assert (result["g"] > 0).all()
     # Ranked by p-value, ascending.
-    pvals = result["pval"].to_list()
+    pvals = result["p"].to_list()
     assert pvals == sorted(pvals)
 
 

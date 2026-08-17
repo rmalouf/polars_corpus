@@ -127,9 +127,12 @@ def test_t_test(alt: str, expected_pval: float) -> None:
     df = pl.DataFrame({"x": [1, 2, 3], "y": [4, 5, 6]})
     result = df.select(welchs_t("x", "y", alt=alt)).unnest("t_test")
 
-    assert result["stat"].item() == pytest.approx(-3.6742346)
-    assert result["pval"].item() == pytest.approx(expected_pval)
+    assert result["t"].item() == pytest.approx(-3.6742346)
+    assert result["p"].item() == pytest.approx(expected_pval)
     assert result["df"].item() == pytest.approx(4.0)
+    # Hedges' g: Cohen's d of -3.0 (t * sqrt(1/n1 + 1/n2) with equal variances)
+    # times the bias correction 1 - 3/(4*df - 1), the same for every alternative.
+    assert result["g"].item() == pytest.approx(-2.4)
 
 
 @pytest.mark.parametrize(
@@ -142,7 +145,7 @@ def test_t_test(alt: str, expected_pval: float) -> None:
 def test_t_test_undefined(data: dict) -> None:
     """Degenerate inputs yield nulls rather than raising."""
     result = pl.DataFrame(data).select(welchs_t("x", "y")).unnest("t_test")
-    assert result.row(0) == (None, None, None)
+    assert result.row(0) == (None, None, None, None)
 
 
 def test_t_test_invalid_alternative() -> None:
