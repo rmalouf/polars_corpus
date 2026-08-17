@@ -33,3 +33,4 @@ stuff/
 /site/
 scratch.ipynb
 /scratch.py
+.cache/
