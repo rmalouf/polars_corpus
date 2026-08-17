@@ -75,33 +75,23 @@ def propagate_masks(lf: pl.LazyFrame, opcodes: list[Opcode], pc: int) -> pl.Lazy
     return lf
 
 
-def run_query(
-    df: pl.DataFrame, query: str, file_id_column: Optional[str] = None
-) -> tuple[Optional[list[Match]], list[str]]:
-    """Matches for `query`, with the variables it binds in the order it binds them.
-
-    If `file_id_column` is given, matches are confined to runs of equal values
-    in it; otherwise they may span the whole corpus.
-    """
-    if file_id_column is not None:
-        check_columns(df, [file_id_column], param="file_id_column")
-
-    if df.is_empty():
-        return None, []
-
-    opcodes = cqp(query)
+def _compile(cqp_query: str) -> tuple[list[Opcode], list[str]]:
+    """The program for `cqp_query`, with the variables it binds, in binding order."""
+    opcodes = cqp(cqp_query)
     opcodes.append(Opcode.Match())
+    return opcodes, check_bindings(opcodes)
 
-    variables = check_bindings(opcodes)
+
+def _collect_masks(
+    lf: pl.LazyFrame, opcodes: list[Opcode], file_id_column: Optional[str]
+) -> tuple[list[pl.Series], Optional[pl.Series]]:
+    """Run `compute_masks`, giving one mask per opcode plus the file ids to respect."""
     keep = [] if file_id_column is None else [file_id_column]
     # Rechunked so the matcher's positional lookups stay O(1).
-    mask_df = compute_masks(df.lazy(), opcodes, keep).collect().rechunk()
+    mask_df = compute_masks(lf, opcodes, keep).collect(engine="streaming").rechunk()
     masks = [mask_df.get_column(col_name(pc)) for pc in range(len(opcodes))]
-
     file_ids = None if file_id_column is None else mask_df.get_column(file_id_column)
-    opcode_matcher = OpcodeMatcher(opcodes, masks, file_ids)
-
-    return opcode_matcher.matchall(), variables
+    return masks, file_ids
 
 
 def _plan_files(
@@ -178,6 +168,30 @@ def _relative_matches(
     return pl.DataFrame(data)
 
 
+def _search_eager(
+    df: pl.DataFrame, cqp_query: str, query: str, file_id_column: Optional[str]
+) -> Optional[SearchResults]:
+    """Search an eager corpus, which fits in memory whole."""
+    df = as_eager(df)
+    # The default name binds only when the corpus has it; any other name is
+    # the caller's to get right, and is checked below.
+    if file_id_column == DEFAULT_FILE_ID and file_id_column not in df.columns:
+        file_id_column = None
+    if file_id_column is not None:
+        # Checked ahead of the empty-corpus shortcut so a bad column name is
+        # reported the same way whether or not the corpus happens to be empty.
+        check_columns(df, [file_id_column], param="file_id_column")
+    if df.is_empty():
+        return None
+
+    opcodes, variables = _compile(cqp_query)
+    masks, file_ids = _collect_masks(df.lazy(), opcodes, file_id_column)
+    matches = OpcodeMatcher(opcodes, masks, file_ids).matchall()
+    if not matches:
+        return None
+    return SearchResults(df, query, matches, variables, file_id_column)
+
+
 def _search_lazy(
     lf: pl.LazyFrame,
     cqp_query: str,
@@ -202,23 +216,18 @@ def _search_lazy(
             f"chunk_tokens must be a positive integer, got {chunk_tokens!r}"
         )
 
-    opcodes = cqp(cqp_query)
-    opcodes.append(Opcode.Match())
-    variables = check_bindings(opcodes)
+    opcodes, variables = _compile(cqp_query)
 
     files = _plan_files(lf, file_id_column, chunk_tokens).collect(engine="streaming")
     parts = []
     for _, chunk_files in files.group_by("_chunk", maintain_order=True):
         offset = int(chunk_files["_offset"][0])
         length = int(chunk_files["_len"].sum())
-        mask_df = (
-            compute_masks(lf.slice(offset, length), opcodes, [file_id_column])
-            .collect(engine="streaming")
-            .rechunk()
+        masks, file_ids = _collect_masks(
+            lf.slice(offset, length), opcodes, file_id_column
         )
-        file_ids = mask_df.get_column(file_id_column)
+        assert file_ids is not None
         _check_contiguous(file_ids, chunk_files, file_id_column)
-        masks = [mask_df.get_column(col_name(pc)) for pc in range(len(opcodes))]
         matches = OpcodeMatcher(opcodes, masks, file_ids).matchall()
         if matches:
             parts.append(
@@ -229,6 +238,19 @@ def _search_lazy(
     return LazySearchResults(
         lf, query, pl.concat(parts), variables, file_id_column, files
     )
+
+
+def _search(
+    df: pl.DataFrame | pl.LazyFrame,
+    cqp_query: str,
+    query: str,
+    file_id_column: Optional[str],
+    chunk_tokens: int,
+) -> Optional[SearchResults | LazySearchResults]:
+    """Search `df` for the compiled `cqp_query`, reporting it as `query`."""
+    if isinstance(df, pl.LazyFrame):
+        return _search_lazy(df, cqp_query, query, file_id_column, chunk_tokens)
+    return _search_eager(df, cqp_query, query, file_id_column)
 
 
 def search_cqp(
@@ -283,18 +305,7 @@ def search_cqp(
     ...            file_id_column="file_id")
 
     """
-    if isinstance(df, pl.LazyFrame):
-        return _search_lazy(df, query, query, file_id_column, chunk_tokens)
-    df = as_eager(df)
-    # The default name binds only when the corpus has it; any other name is
-    # the caller's to get right, and run_query raises if it is missing.
-    if file_id_column == DEFAULT_FILE_ID and file_id_column not in df.columns:
-        file_id_column = None
-    matched_spans, variables = run_query(df, query, file_id_column)
-    if matched_spans:
-        return SearchResults(df, query, matched_spans, variables, file_id_column)
-    else:
-        return None
+    return _search(df, query, query, file_id_column, chunk_tokens)
 
 
 def search(
@@ -406,7 +417,7 @@ def search(
 
     >>> # Variable bindings
     >>> results = search(corpus, "$verb: {walk}")
-    >>> match = results._matches[0]
+    >>> match = results.matches[0]
     >>> verb_span = match.bindings["verb"]
     >>> verb_text = corpus["token"][verb_span.start:verb_span.end]
 
@@ -417,18 +428,5 @@ def search(
     >>> search(corpus, "quick brown", file_id_column="file_id")
 
     """
-    # Translate simple query to CQP
     cqp_query = simple_to_cqp(query, token_column, pos_column, lemma_column)
-
-    if isinstance(df, pl.LazyFrame):
-        return _search_lazy(df, cqp_query, query, file_id_column, chunk_tokens)
-    df = as_eager(df)
-    # The default name binds only when the corpus has it; any other name is
-    # the caller's to get right, and run_query raises if it is missing.
-    if file_id_column == DEFAULT_FILE_ID and file_id_column not in df.columns:
-        file_id_column = None
-    matched_spans, variables = run_query(df, cqp_query, file_id_column)
-    if matched_spans:
-        return SearchResults(df, query, matched_spans, variables, file_id_column)
-    else:
-        return None
+    return _search(df, cqp_query, query, file_id_column, chunk_tokens)

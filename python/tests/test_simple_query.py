@@ -44,7 +44,7 @@ def matches(df: pl.DataFrame, query: str) -> list[tuple[int, int, str]]:
     results = plc.search(df, query)
     return [
         (m.span.start, m.span.end, " ".join(df["token"][m.span.start : m.span.end]))
-        for m in (results._matches if results is not None else ())
+        for m in (results.matches if results is not None else ())
     ]
 
 
@@ -465,11 +465,11 @@ class TestBindings:
     def test_binding_captures_expected_text(self, sample_corpus, query, var, expected):
         results = plc.search(sample_corpus, query)
         assert results is not None
-        assert bound(sample_corpus, results._matches[0], var) == expected
+        assert bound(sample_corpus, results.matches[0], var) == expected
 
     def test_multiple_variables(self, sample_corpus):
         results = plc.search(sample_corpus, "$color: brown $noun: fox")
-        match = results._matches[0]
+        match = results.matches[0]
         assert bound(sample_corpus, match, "color") == "brown"
         assert bound(sample_corpus, match, "noun") == "fox"
 

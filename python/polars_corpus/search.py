@@ -700,6 +700,25 @@ class SearchResults(_SearchResultsBase):
         """Number of matches found."""
         return len(self._matches)
 
+    @property
+    def matches(self) -> list[Match]:
+        """The matched spans, in corpus order, each with the variables it bound.
+
+        Positions index into the corpus the search ran over, so a match reads
+        back as `corpus[m.span.start : m.span.end]`. `LazySearchResults` has
+        no counterpart: it holds its matches as a frame of file-relative spans
+        rather than materializing one object apiece.
+
+        Examples
+        --------
+        >>> results = plc.search(corpus, '$noun: [pos="NN"]')
+        >>> results.matches[0].span
+        Span(3, 4)
+        >>> results.matches[0].bindings["noun"]
+        Span(3, 4)
+        """
+        return self._matches
+
     def _frame(self) -> pl.DataFrame:
         return self._df
 

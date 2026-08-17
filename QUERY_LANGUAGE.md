@@ -38,7 +38,7 @@ Capture parts of matches using `$varname: pattern` syntax:
 ```python
 # Basic binding - capture single word
 plc.search(c, '$target: fox')         # Capture "fox"
-results._matches[0].bindings['target']  # → Span(3, 4)
+results.matches[0].bindings['target']  # → Span(3, 4)
 
 # Multiple variables
 plc.search(c, '$det: the $noun: fox')  # Capture both "the" and "fox"
@@ -77,7 +77,7 @@ where it bound no token.
 
 The spans themselves are on the matches:
 ```python
-for match in results._matches:
+for match in results.matches:
     det_span = match.bindings['det']
     det_text = corpus['token'][det_span.start:det_span.end]
 ```

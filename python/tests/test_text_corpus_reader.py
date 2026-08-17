@@ -93,4 +93,4 @@ def test_empty_file(write_corpus):
 def test_output_is_searchable_with_default_columns(sample_file):
     """The tag column must be named `pos`, which is what search() looks for."""
     results = plc.search(read_text_corpus([sample_file]), "the _JJ _NN")
-    assert results is not None and len(results._matches) > 0
+    assert results is not None and len(results.matches) > 0

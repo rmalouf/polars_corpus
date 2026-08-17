@@ -31,6 +31,6 @@ def corpus(**columns: str) -> pl.DataFrame:
     return pl.DataFrame({name: value.split() for name, value in columns.items()})
 
 
-def spans(matches) -> list[tuple[int, int]]:
-    """Flatten matches (or None) to a list of (start, end) tuples."""
-    return [(m.span.start, m.span.end) for m in (matches or [])]
+def spans(results: SearchResults | None) -> list[tuple[int, int]]:
+    """Flatten a search's matches to (start, end) tuples, None meaning none."""
+    return [(m.span.start, m.span.end) for m in (results.matches if results else [])]

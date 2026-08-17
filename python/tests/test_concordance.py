@@ -245,7 +245,7 @@ class TestBindings:
 
     def test_bindings_reach_the_chunk_concordance(self, bound):
         df = bound._df.with_columns(chunks=pl.lit("I"))
-        chunked = search_results(df, "", bound._matches, bound.variables)
+        chunked = search_results(df, "", bound.matches, bound.variables)
         conc = chunked.concordance("token", chunk_column="chunks")
 
         assert conc["token_adj"].to_list() == [["big"], ["old"]]
@@ -440,7 +440,7 @@ class TestSlicing:
     def test_slicing(self, ten, method, n, expected):
         sliced = getattr(ten, method)(n)
 
-        assert [m.span.start for m in sliced._matches] == expected
+        assert [m.span.start for m in sliced.matches] == expected
 
     def test_len_counts_the_matches(self, ten):
         assert len(ten) == 10
@@ -467,11 +467,11 @@ class TestSlicing:
         assert random.random() == before
 
     def test_sample_is_reproducible(self, ten):
-        assert [m.span.start for m in ten.sample(5, seed=42)._matches] == [
-            m.span.start for m in ten.sample(5, seed=42)._matches
+        assert [m.span.start for m in ten.sample(5, seed=42).matches] == [
+            m.span.start for m in ten.sample(5, seed=42).matches
         ]
 
     def test_shuffle_keeps_every_match(self, ten):
         shuffled = ten.shuffle(seed=42)
 
-        assert sorted(m.span.start for m in shuffled._matches) == list(range(10))
+        assert sorted(m.span.start for m in shuffled.matches) == list(range(10))
