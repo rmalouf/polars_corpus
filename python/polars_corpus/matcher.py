@@ -31,17 +31,6 @@ def _compute_masks(
     return lf.select([_col_name(i) for i in range(len(opcodes))] + list(keep))
 
 
-def _check_bindings(opcodes: list[Opcode]) -> list[str]:
-    """The names the program binds, in the order it binds them."""
-    seen: list[str] = []
-    for op in opcodes:
-        if isinstance(op, Opcode.BindVar):
-            if op._0 in seen:
-                raise ValueError(f"Duplicate variable binding: ${op._0}")
-            seen.append(op._0)
-    return seen
-
-
 def _propagate_masks(lf: pl.LazyFrame, opcodes: list[Opcode], pc: int) -> pl.LazyFrame:
     """Propagate token masks backwards through the NFA."""
     if _col_name(pc) not in lf.collect_schema().names():
@@ -78,8 +67,19 @@ def _propagate_masks(lf: pl.LazyFrame, opcodes: list[Opcode], pc: int) -> pl.Laz
     return lf
 
 
+def _check_bindings(opcodes: list[Opcode]) -> list[str]:
+    """Collect the variables the program binds, in the order it binds them."""
+    seen: list[str] = []
+    for op in opcodes:
+        if isinstance(op, Opcode.BindVar):
+            if op._0 in seen:
+                raise ValueError(f"Duplicate variable binding: ${op._0}")
+            seen.append(op._0)
+    return seen
+
+
 def _compile(cqp_query: str) -> tuple[list[Opcode], list[str]]:
-    """The program for `cqp_query`, with the variables it binds, in binding order."""
+    """The compiled program for `cqp_query` and the variables it binds."""
     opcodes = cqp(cqp_query)
     opcodes.append(Opcode.Match())
     return opcodes, _check_bindings(opcodes)
@@ -97,10 +97,10 @@ def _collect_masks(
     return masks, file_ids
 
 
-def _plan_files(
+def _partition_files(
     lf: pl.LazyFrame, file_id_column: str, chunk_tokens: int
 ) -> pl.LazyFrame:
-    """One row per file in corpus order: id, `_file`, `_len`, `_offset`, `_chunk`."""
+    """Group corpus files into chunks."""
     return (
         lf.group_by(file_id_column, maintain_order=True)
         .agg(pl.len().alias("_len"))
@@ -113,7 +113,7 @@ def _plan_files(
 def _check_contiguous(
     file_ids: pl.Series, chunk_files: pl.DataFrame, file_id_column: str
 ) -> None:
-    """Check a materialized chunk holds exactly the file runs the plan gave it."""
+    """Verify that a materialized chunk holds exactly the file runs the plan gave it."""
     runs = file_ids.rle().struct.unnest()
     if (
         runs["value"].to_list() != chunk_files[file_id_column].to_list()
@@ -221,7 +221,9 @@ def _search_lazy(
 
     opcodes, variables = _compile(cqp_query)
 
-    files = _plan_files(lf, file_id_column, chunk_tokens).collect(engine="streaming")
+    files = _partition_files(lf, file_id_column, chunk_tokens).collect(
+        engine="streaming"
+    )
     parts = []
     for _, chunk_files in files.group_by("_chunk", maintain_order=True):
         offset = int(chunk_files["_offset"][0])
@@ -229,6 +231,7 @@ def _search_lazy(
         masks, file_ids = _collect_masks(
             lf.slice(offset, length), opcodes, file_id_column
         )
+        # to keep pyrefly happy
         assert file_ids is not None
         _check_contiguous(file_ids, chunk_files, file_id_column)
         matches = OpcodeMatcher(opcodes, masks, file_ids).matchall()
@@ -267,9 +270,7 @@ def search_cqp(
     Parameters
     ----------
     df : pl.DataFrame or pl.LazyFrame
-        Corpus to be searched. A LazyFrame is searched out of core, one chunk
-        of whole files at a time, and requires `file_id_column`; its tokens
-        must arrive grouped by file id.
+        Corpus to be searched.
     query: str
         CQP query string
     file_id_column : str, optional
@@ -284,7 +285,7 @@ def search_cqp(
     Returns
     -------
     SearchResults or LazySearchResults or None
-        Result of the search -- lazy in, lazy out -- or None with no matches.
+        Result of the search  (lazy in, lazy out) or None with no matches.
 
     Raises
     ------
@@ -322,17 +323,14 @@ def search(
 ) -> Optional[SearchResults | LazySearchResults]:
     """Search corpus using simple query language (BNCweb-style).
 
-    This function uses the simple query syntax similar to BNCweb, which is
-    more intuitive than CQP for basic searches. Queries are case-insensitive
-    throughout and support wildcards, alternatives, word sequences, POS tags,
-    and lemma searches.
+    This function uses a simple query syntax similar to BNCweb's. Queries
+    are case-insensitive throughout and support wildcards, alternatives,
+    word sequences, POS tags, and lemma searches.
 
     Parameters
     ----------
     df : pl.DataFrame or pl.LazyFrame
-        Corpus to be searched. A LazyFrame is searched out of core, one chunk
-        of whole files at a time, and requires `file_id_column`; its tokens
-        must arrive grouped by file id.
+        Corpus to be searched.
     query : str
         Simple query string (BNCweb-style syntax)
     token_column : str, optional
@@ -353,7 +351,7 @@ def search(
     Returns
     -------
     SearchResults or LazySearchResults or None
-        Result of the search -- lazy in, lazy out -- or None if no matches
+        Result of the search (lazy in, lazy out) or None if no matches
         found
 
     Raises
