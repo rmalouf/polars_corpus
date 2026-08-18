@@ -36,15 +36,30 @@ plugins:
       # need the corpora they read, which are too large to keep in the repo.
       execute: false
       include_requirejs: true
-      custom_mathjax_url: "https://cdn.jsdelivr.net/npm/mathjax@4/tex-svg.js"
+      #custom_mathjax_url: "https://cdn.jsdelivr.net/npm/mathjax@4/tex-svg.js"
+      custom_mathjax_url: "https://cdn.jsdelivr.net/npm/mathjax@4/tex-mml-chtml.js"
 
 markdown_extensions:
   - pymdownx.arithmatex:
       generic: true
 
 extra_javascript:
-  - javascripts/mathjax.js
-  - https://unpkg.com/mathjax@3/es5/tex-mml-chtml.js
+  - javascripts/katex.js
+  - https://unpkg.com/katex@0/dist/katex.min.js
+  - https://unpkg.com/katex@0/dist/contrib/auto-render.min.js
+
+extra_css:
+  - https://unpkg.com/katex@0/dist/katex.min.css
+
+
+#markdown_extensions:
+#  - pymdownx.arithmatex:
+#      generic: true
+
+#extra_javascript:
+  #- javascripts/mathjax.js
+  #- https://unpkg.com/mathjax@3/es5/tex-mml-chtml.js
+#  - https://cdn.jsdelivr.net/npm/mathjax@4/tex-mml-chtml.js
 
 nav:
   - Home: index.md
