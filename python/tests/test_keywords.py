@@ -1,5 +1,3 @@
-import warnings
-
 import polars as pl
 import pytest
 from polars.testing import assert_frame_equal
@@ -85,14 +83,6 @@ def test_keywords_indirect_term(method: str) -> None:
     expected = keywords(TARGET, REFERENCE, "norm", method)
     got = keywords(TARGET, REFERENCE, pl.col("^nor.*$"), method)
     assert_frame_equal(expected, got, check_row_order=False)
-
-
-def test_keywords_term_naming_different_columns() -> None:
-    # A pattern that matches a differently named column in each corpus would
-    # otherwise fail as a schema mismatch when the two are concatenated.
-    reference = REFERENCE.rename({"norm": "normalized"})
-    with pytest.raises(ValueError, match="expr names a different column"):
-        keywords(TARGET, reference, pl.col("^nor.*$"), "ll")
 
 
 def test_keywords_multi_column_term() -> None:
@@ -216,8 +206,7 @@ def test_keywords_drops_null_terms(method: str, part: str) -> None:
     frames = {"target": TARGET, "reference": REFERENCE}
     expected = keywords(frames["target"], frames["reference"], "norm", method)
     frames[part] = pl.concat([frames[part], NULL_ROWS])
-    with pytest.warns(UserWarning, match=f"the {part} corpus holding a null 'norm'"):
-        got = keywords(frames["target"], frames["reference"], "norm", method)
+    got = keywords(frames["target"], frames["reference"], "norm", method)
     assert None not in got["norm"].to_list()
     assert_frame_equal(expected, got, check_row_order=False)
 
@@ -243,8 +232,7 @@ def test_keywords_drops_null_file_ids(method: str, part: str) -> None:
         .otherwise(pl.col("file_id"))
         .alias("file_id")
     )
-    with pytest.warns(UserWarning, match=f"the {part} corpus holding a null 'file_id'"):
-        got = keywords(frames["target"], frames["reference"], "norm", method)
+    got = keywords(frames["target"], frames["reference"], "norm", method)
     assert_frame_equal(expected, got, check_row_order=False)
 
 
@@ -257,8 +245,7 @@ def test_keywords_null_file_id_not_a_document() -> None:
         .otherwise(pl.col("file_id"))
         .alias("file_id")
     )
-    with pytest.warns(UserWarning, match="null 'file_id'"):
-        result = keywords(target, REFERENCE, "norm", "ll")
+    result = keywords(target, REFERENCE, "norm", "ll")
     assert dict(zip(result["norm"], result["target_df"])) == {
         "cat": 2,
         "dog": 1,
@@ -266,30 +253,10 @@ def test_keywords_null_file_id_not_a_document() -> None:
     }
 
 
-def test_keywords_null_warning_counts_rows() -> None:
-    target = pl.concat(
-        [TARGET, NULL_ROWS, pl.DataFrame({"norm": ["x"], "file_id": [None]})]
-    )
-    with pytest.warns(
-        UserWarning,
-        match=r"dropped 3 of 12 rows of the target corpus .* 'norm' or 'file_id'",
-    ):
-        keywords(target, REFERENCE, "norm", "ll")
-
-
-def test_keywords_no_warning_without_nulls() -> None:
-    with warnings.catch_warnings():
-        warnings.simplefilter("error")
-        keywords(TARGET, REFERENCE, "norm", "ll")
-
-
-def test_keywords_lazy_does_not_warn() -> None:
-    # Counting the dropped rows of a LazyFrame would mean reading it up front.
+def test_keywords_lazy_drops_nulls() -> None:
+    # The lazy path drops on the same terms as the eager one.
     target = pl.concat([TARGET, NULL_ROWS]).lazy()
-    with warnings.catch_warnings():
-        warnings.simplefilter("error")
-        got = keywords(target, REFERENCE.lazy(), "norm", "ll").collect()
-    # Dropped all the same, just silently.
+    got = keywords(target, REFERENCE.lazy(), "norm", "ll").collect()
     assert None not in got["norm"].to_list()
 
 

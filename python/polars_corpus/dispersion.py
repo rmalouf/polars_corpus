@@ -10,7 +10,6 @@ from .utils import (
     check_columns,
     check_expr,
     collect_like,
-    drop_null_rows,
 )
 
 __all__ = [
@@ -98,13 +97,6 @@ def dispersion(
         expression; or if `method` is not one of the measures listed above, or
         a list of them.
 
-    Warns
-    -----
-    UserWarning
-        If rows are dropped for holding a null. Raised only for an eager
-        `corpus`: counting the dropped rows of a LazyFrame would mean reading it
-        before the caller has asked for anything.
-
     Notes
     -----
     Only the columns `expr` and `file_id_column` name are read.
@@ -151,11 +143,11 @@ def dispersion(
     check_columns(lf, [file_id_column], param="file_id_column")
     term_name = check_expr(lf, term)
 
-    # Cut down to the two columns being read before anything else: it is what
-    # the null drop below should be measured against, and it settles `term` into
-    # a plain column, so the rest of the work can name it rather than re-evaluate
-    # it against a frame it no longer matches.
-    lf = drop_null_rows(lf.select(term, file_id_column), corpus)
+    # Cut down to the two columns being read before anything else, so a null
+    # elsewhere in the corpus is none of this measure's business. It also settles
+    # `term` into a plain column, so the rest of the work can name it rather than
+    # re-evaluate it against a frame it no longer matches.
+    lf = lf.select(term, file_id_column).drop_nulls()
 
     # One frame per group of measures that reads the corpus the same way, so a
     # group asked for at all is computed once however many of its measures are

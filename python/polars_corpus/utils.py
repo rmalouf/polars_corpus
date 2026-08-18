@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import warnings
 from collections.abc import Iterable, Sequence
 from difflib import get_close_matches
 from typing import cast, Optional
@@ -80,42 +79,6 @@ def collect_like(result: pl.LazyFrame, source: T_Frame) -> T_Frame:
     return cast(
         T_Frame, result.collect() if isinstance(source, pl.DataFrame) else result
     )
-
-
-def drop_null_rows(
-    lf: pl.LazyFrame, source: object, name: str = "corpus"
-) -> pl.LazyFrame:
-    """Drop the rows of `lf` holding a null in any column, and say how many went.
-
-    Call this on a frame already cut down to the columns being read, so that
-    nulls elsewhere in the corpus are none of its business. Counting the dropped
-    rows means reading the frame, so the warning is raised only when `source` is
-    eager -- the trade `as_corpus` makes for its empty-corpus check. `name` is
-    used in the warning.
-    """
-    if isinstance(source, pl.DataFrame):
-        columns = lf.collect_schema().names()
-        total, dropped, *has_nulls = (
-            lf.select(
-                pl.len().alias("_total"),
-                pl.any_horizontal(pl.all().is_null()).sum().alias("_dropped"),
-                *(
-                    pl.col(column).is_null().any().alias(f"_null_{i}")
-                    for i, column in enumerate(columns)
-                ),
-            )
-            .collect()
-            .row(0)
-        )
-        if dropped:
-            culprits = [c for c, seen in zip(columns, has_nulls) if seen]
-            warnings.warn(
-                f"dropped {dropped:,} of {total:,} rows of the {name} holding a "
-                f"null {' or '.join(repr(c) for c in culprits)}",
-                # Report against the caller of the function that called us.
-                stacklevel=3,
-            )
-    return lf.drop_nulls()
 
 
 def check_columns(

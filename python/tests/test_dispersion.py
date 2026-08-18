@@ -1,4 +1,3 @@
-import warnings
 from itertools import combinations
 from math import isnan, sqrt
 
@@ -255,8 +254,7 @@ def test_dispersion_freq_counts_surviving_rows() -> None:
     corpus = pl.concat(
         [CORPUS, pl.DataFrame({"token": ["a", "a"], "file_id": [None, None]})]
     )
-    with pytest.warns(UserWarning, match="'file_id'"):
-        result = dispersion(corpus, "token", "d")
+    result = dispersion(corpus, "token", "d")
     assert dict(zip(result["token"], result["freq"])) == FREQS
 
 
@@ -271,8 +269,7 @@ def test_dispersion_drops_null_file_ids(method: str) -> None:
         .otherwise(pl.col("file_id"))
         .alias("file_id")
     )
-    with pytest.warns(UserWarning, match="'file_id'"):
-        got = dispersion(corpus, "token", method)
+    got = dispersion(corpus, "token", method)
     expected_result = dispersion(
         CORPUS.filter(pl.col("file_id") != "f3"), "token", method
     )
@@ -286,44 +283,23 @@ def test_dispersion_drops_null_terms(method: str) -> None:
     corpus = pl.concat(
         [CORPUS, pl.DataFrame({"token": [None] * 3, "file_id": ["f1", "f2", "f3"]})]
     )
-    with pytest.warns(UserWarning, match="'token'"):
-        got = dispersion(corpus, "token", method)
+    got = dispersion(corpus, "token", method)
     assert None not in got["token"].to_list()
     assert_frame_equal(got, dispersion(CORPUS, "token", method), check_row_order=False)
 
 
-def test_dispersion_null_warning_counts_rows() -> None:
-    corpus = pl.concat(
-        [CORPUS, pl.DataFrame({"token": [None, None], "file_id": ["f1", None]})]
-    )
-    with pytest.warns(
-        UserWarning, match=r"dropped 2 of 17 rows .* 'token' or 'file_id'"
-    ):
-        dispersion(corpus, "token", "d")
-
-
-def test_dispersion_no_warning_without_nulls() -> None:
-    with warnings.catch_warnings():
-        warnings.simplefilter("error")
-        dispersion(CORPUS, "token", "d")
-
-
-def test_dispersion_lazy_does_not_warn() -> None:
-    # Counting the dropped rows of a LazyFrame would mean reading it up front.
+def test_dispersion_lazy_drops_nulls() -> None:
+    # The lazy path drops on the same terms as the eager one.
     corpus = pl.concat(
         [CORPUS, pl.DataFrame({"token": [None], "file_id": ["f1"]})]
     ).lazy()
-    with warnings.catch_warnings():
-        warnings.simplefilter("error")
-        got = dispersion(corpus, "token", "d").collect()
-    # Dropped all the same, just silently.
+    got = dispersion(corpus, "token", "d").collect()
     assert None not in got["token"].to_list()
 
 
 def test_dispersion_all_rows_null() -> None:
     corpus = pl.DataFrame({"token": [None, None], "file_id": ["f1", "f2"]})
-    with pytest.warns(UserWarning, match="dropped 2 of 2 rows"):
-        assert dispersion(corpus, "token", "d").height == 0
+    assert dispersion(corpus, "token", "d").height == 0
 
 
 COLUMNS = {

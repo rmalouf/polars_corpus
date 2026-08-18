@@ -13,7 +13,6 @@ from .utils import (
     check_choice,
     check_expr,
     collect_like,
-    drop_null_rows,
 )
 
 __all__ = [
@@ -104,13 +103,6 @@ def crosstab(
     ValueError
         If `corpus` is not a Polars DataFrame or LazyFrame, or is empty; or if
         `x` or `y` does not name a single column of it.
-
-    Warns
-    -----
-    UserWarning
-        If rows are dropped for holding a null in `x` or `y`. Raised only for
-        an eager corpus: counting the dropped rows of a LazyFrame would mean
-        reading it before the caller has asked for anything.
     """
     lf = as_corpus(corpus)
     x_name = _variable_name(lf, x, "x")
@@ -118,7 +110,7 @@ def crosstab(
 
     # Read only the two variables, so a null elsewhere in the corpus is none of
     # this table's business, and a column of its own named `f12` cannot collide.
-    counts = drop_null_rows(lf.select(x, y), corpus)
+    counts = lf.select(x, y).drop_nulls()
     result = (
         counts.group_by(x_name, y_name)
         .agg(pl.len().cast(pl.UInt64).alias("f12"))

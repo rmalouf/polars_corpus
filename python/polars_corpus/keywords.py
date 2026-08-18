@@ -14,7 +14,6 @@ from .utils import (
     check_columns,
     check_expr,
     collect_like,
-    drop_null_rows,
 )
 
 __all__ = [
@@ -94,18 +93,9 @@ def keywords(
         listed above; or if `method` is 'smp' and `k` is missing or not
         positive.
 
-    Warns
-    -----
-    UserWarning
-        If rows are dropped from either corpus for holding a null. Raised only
-        for an eager corpus: counting the dropped rows of a LazyFrame would mean
-        reading it before the caller has asked for anything.
-
     Notes
     -----
-    Only the columns `expr` and `file_id_column` name are read, so the target
-    and reference corpora need not have matching schemas otherwise. Rows holding a null
-    in either are dropped.
+    Rows with null values in either `expr` or `file_id_column` are dropped.
 
     References
     ----------
@@ -147,44 +137,28 @@ def keywords(
     target_lf = as_corpus(target, "target corpus")
     reference_lf = as_corpus(reference, "reference corpus")
 
-    # Check up front, so column errors don't surface from inside a query plan.
-    parts = (("target", target_lf, target), ("reference", reference_lf, reference))
-    names = []
-    for part, corpus, _ in parts:
+    selected = []
+    for part, corpus in (("target", target_lf), ("reference", reference_lf)):
         check_columns(
             corpus, [file_id_column], f"{part} corpus", param="file_id_column"
         )
-        names.append(check_expr(corpus, keyword_expr, f"{part} corpus"))
-    if names[0] != names[1]:
-        raise ValueError(
-            f"expr names a different column in each corpus: {names[0]!r} in the "
-            f"target corpus but {names[1]!r} in the reference corpus"
-        )
-    expr_name = names[0]
-
-    # Select the term itself, so differently annotated corpora still concatenate,
-    # then drop the rows holding a null in either column. A token with no value
-    # for `expr` is not an occurrence of anything, and one with no file id is in
-    # no document; left in, they pad the corpus totals the measures divide by and
-    # add a file of their own to the document counts.
-    selected = []
-    for part, corpus, source in parts:
-        rows = drop_null_rows(
-            corpus.select(keyword_expr, file_id_column), source, f"{part} corpus"
-        )
+        check_expr(corpus, keyword_expr, f"{part} corpus")
+        rows = corpus.select(keyword_expr, file_id_column).drop_nulls()
         selected.append(rows.with_columns(pl.lit(part).alias(PART_FIELD)))
     combined = pl.concat(selected)
 
+    keyword_name = combined.collect_schema().names()[0]
+
     if method == "ttest":
-        result = _keywords_ttest(combined, expr_name, file_id_column)
+        result = _keywords_ttest(combined, keyword_name, file_id_column)
     else:
-        freq_table = crosstab(combined, expr_name, PART_FIELD)
+        freq_table = crosstab(combined, keyword_name, PART_FIELD)
         target_df = (
             combined.filter(pl.col(PART_FIELD) == "target")
-            .group_by(expr_name)
+            .group_by(keyword_name)
             .agg(pl.col(file_id_column).n_unique().alias("target_df"))
         )
-        freq_table = freq_table.join(target_df, on=expr_name, how="left")
+        freq_table = freq_table.join(target_df, on=keyword_name, how="left")
         result = _keywords_assoc(freq_table, method, min_target_tf, min_target_df, k)
 
     return collect_like(result, target)
@@ -203,8 +177,6 @@ def _keywords_assoc(
     `polars_corpus.crosstab`), with a `freqs` struct and a `PART_FIELD` column.
     Returns the target-corpus rows, sorted descending.
     """
-    # Call the measures directly rather than through the `.corpus` namespace,
-    # which is registered at runtime and so is invisible to type checkers.
     freqs = pl.col("freqs")
     f12 = freqs.struct.field("f12")
     f1 = freqs.struct.field("f1")
