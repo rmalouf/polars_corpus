@@ -110,9 +110,9 @@ def mtld(expr: IntoExpr, threshold: float = 0.720) -> pl.Expr:
 
     References
     ----------
-    McCarthy, P. M., & Jarvis, S. (2010). MTLD, vocd-D, and HD-D: A validation
-    study of sophisticated approaches to lexical diversity assessment.
-    Behavior Research Methods, 42(2), 381-392.
+    - McCarthy, P. M. & Jarvis, S. 2010. MTLD, vocd-D, and HD-D: A validation
+      study of sophisticated approaches to lexical diversity assessment.
+      *Behavior Research Methods* 42(2): 381-392.
     """
     if not 0 < threshold < 1:
         raise ValueError(
@@ -152,8 +152,8 @@ def yules_k(expr: IntoExpr) -> pl.Expr:
 
     References
     ----------
-    Yule, G. U. (1944). The Statistical Study of Literary Vocabulary.
-    Cambridge University Press.
+    - Yule, G. U. 1944. *The Statistical Study of Literary Vocabulary.*
+      Cambridge University Press.
     """
     tokens = as_expr(expr)
     n = tokens.len()
