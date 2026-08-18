@@ -159,8 +159,14 @@ def pmi(f12: IntoExpr, f1: IntoExpr, f2: IntoExpr, n: IntoExpr) -> pl.Expr:
     -----
     PMI is calculated as:
 
-    .. math::
-        PMI(x,y) = \\log\\frac{P(x,y)}{P(x)P(y)} = \\log\\frac{f_{12} \\cdot n}{f_1 \\cdot f_2}
+    $$
+    \\text{PMI}(x,y) = \\log\\frac{P(x,y)}{P(x)\\,P(y)} = \\log\\frac{f_{12} \\cdot n}{f_1 \\cdot f_2}
+    $$
+
+    References
+    ----------
+    - Church, K. W. and P. Hanks. 1990. Word association norms, mutual information, and
+      lexicography. *Computational Linguistics* 16(1): 22-29.
     """
     f12, f1, f2, n = _as_freqs(f12, f1, f2, n)
     return ((f12 * n) / (f1 * f2)).log()
@@ -304,8 +310,7 @@ def minsens(f12: IntoExpr, f1: IntoExpr, f2: IntoExpr, n: IntoExpr) -> pl.Expr:
         Polars expression.
     n : IntoExpr
         Grand total (total number of observations). Can be a column name (str) or
-        Polars expression. Note: This parameter is not used in the calculation
-        but is kept for consistency with other association measures.
+        Polars expression.
 
     Returns
     -------
@@ -317,18 +322,18 @@ def minsens(f12: IntoExpr, f1: IntoExpr, f2: IntoExpr, n: IntoExpr) -> pl.Expr:
     -----
     Minimum sensitivity is calculated as:
 
-    .. math::
-        \\text{min_sens}(x,y) = \\min\\left(\\frac{f_{12}}{f_1}, \\frac{f_{12}}{f_2}\\right)
+    $$
+    \\begin{aligned}
+    \\text{min_sens}(x,y) &= \\min(P(y|x), P(x|y))\\\\
+    &= \\min\\left(\\frac{f_{12}}{f_1}, \\frac{f_{12}}{f_2}\\right)
+    \\end{aligned}
+    $$
 
-    This corresponds to:
-
-    .. math::
-        \\text{min_sens}(x,y) = \\min(P(y|x), P(x|y))
-
-    where:
-
-    - f₁₂/f₁ represents the precision: P(y|x)
-    - f₁₂/f₂ represents the recall: P(x|y)
+    References
+    ----------
+    - Wiechmann, D. 2008. On the computation of collostruction strength: Testing measures of
+      association as expressions of lexical bias. *Corpus Linguistics and Linguistic
+      Theory* 4(2): 253–290.
     """
     f12, f1, f2, _ = _as_freqs(f12, f1, f2, n)
     return pl.min_horizontal(f12 / f1, f12 / f2)
@@ -346,25 +351,23 @@ def smp(
 
     Calculates the ratio of a word's frequency in the target corpus to its
     frequency in the reference corpus, with a smoothing constant `k` added to
-    both frequencies to avoid division by zero and to damp the effect of rare
+    both frequencies to avoid division by zero and to reduce the effect of rare
     words.
 
     Parameters
     ----------
     f12 : IntoExpr
-        Joint frequencies of variable pairs (target frequency). Can be a
-        column name (str) or Polars expression.
+        Joint frequencies of variable pairs. Can be a column name (str) or
+        Polars expression.
     f1 : IntoExpr
-        Marginal frequencies of first variable (target + reference frequency).
-        Can be a column name (str) or Polars expression.
+        Marginal frequencies of first variable. Can be a column name (str) or
+        Polars expression.
     f2 : IntoExpr
         Marginal frequencies of second variable. Can be a column name (str) or
-        Polars expression. Note: This parameter is not used in the calculation
-        but is kept for consistency with other association measures.
+        Polars expression.
     n : IntoExpr
         Grand total (total number of observations). Can be a column name (str) or
-        Polars expression. Note: This parameter is not used in the calculation
-        but is kept for consistency with other association measures.
+        Polars expression.
     k : float
         Smoothing constant added to both the target and reference frequencies.
 
@@ -378,16 +381,17 @@ def smp(
     -----
     Simple maths is calculated as:
 
-    .. math::
-        \\text{smp}(x,y) = \\frac{f_{12} + k}{(f_1 - f_{12}) + k}
+    $$
+    \\text{smp}(x,y) = \\frac{f_{12} + k}{(f_1 - f_{12}) + k}
+    $$
 
-    where :math:`f_1 - f_{12}` is the frequency of the word in the reference
+    where $f_1-f_{12}$ is the frequency of the word in the reference
     corpus.
 
     References
     ----------
-    Kilgarriff, A. (2009, July). Simple maths for keywords. In Proceedings of
-    the Corpus Linguistics Conference. Liverpool, UK.
+    - Kilgarriff, A. 2009. Simple maths for keywords. In *Proceedings of
+      the Corpus Linguistics Conference.* Liverpool, UK.
     """
     f12, f1, _, _ = _as_freqs(f12, f1, f2, n)
     return (f12 + k) / (f1 - f12 + k)

@@ -38,6 +38,14 @@ plugins:
       include_requirejs: true
       custom_mathjax_url: "https://cdn.jsdelivr.net/npm/mathjax@4/tex-svg.js"
 
+markdown_extensions:
+  - pymdownx.arithmatex:
+      generic: true
+
+extra_javascript:
+  - javascripts/mathjax.js
+  - https://unpkg.com/mathjax@3/es5/tex-mml-chtml.js
+
 nav:
   - Home: index.md
 #  - User Guide:
@@ -50,6 +58,7 @@ nav:
       - Dispersion: notebooks/dispersion.ipynb
   - Reference:
       - Search: search.md
+      - Association metrics: assoc.md
       - Lexical dispersion: dispersion.md
       - Keyword analysis: keywords.md
       - Embeddings: embed.md

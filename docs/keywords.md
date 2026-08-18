@@ -1,9 +1,8 @@
 # Keyword analysis
 
+Examples: [Keyword analysis](notebooks/keyword.ipynb)
+
 ::: polars_corpus.keywords.keywords
-
-## Visualizations
-
 ::: polars_corpus.visualizations.keyword_plot
 
 

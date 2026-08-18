@@ -1,7 +1,0 @@
-# Installation
-
-```bash
-pip install polars-corpus
-```
-
-Requires Python 3.11+ and Polars 1.35+.

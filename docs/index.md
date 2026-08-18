@@ -6,6 +6,7 @@ modest hardware without requiring external servers or databases.
 
 ## Examples:
 
+  - [Concordances](notebooks/concordance.ipynb)
   - [Word frequencies](notebooks/frequencies.ipynb)
   - [Keyword Analysis](notebooks/keywords.ipynb)
   - [Lexical Dispersion](notebooks/dispersion.ipynb)
@@ -13,7 +14,8 @@ modest hardware without requiring external servers or databases.
 ## Reference:
 
   - [Simple query language](simple_query.md)
-  - [Search, concordances, and collocations](search.md)
+  - [Concordances](search.md)
+  - [Association metrics](assoc.md)
   - [Lexical dispersion](dispersion.md)
   - [Keyword analysis](keywords.md)
   - [Embeddings](embed.md)

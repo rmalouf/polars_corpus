@@ -166,3 +166,46 @@ def encode_terms(
         .map_elements(term_vector, return_dtype=pl.Array(pl.Float32, dim))
         .alias("vector")
     )
+
+
+#
+# def contextual_word_embedding(model: SentenceTransformer, in_expr: IntoExpr) -> pl.Expr:
+#     expr = as_expr(in_expr)
+#     dim = model.get_embedding_dimension()
+#     return expr.map_batches(
+#         lambda col: model.encode(col.to_list(), normalize_embeddings=True),
+#         return_dtype=pl.Array(pl.Float32, dim),
+#         is_elementwise=True,
+#     )
+#
+#
+#
+#
+# def contextual_word_embedding(model, in_expr: IntoExpr):
+#
+#     text = left + target + right
+#
+#     # contextualized token embeddings for the whole sentence
+#     token_embeddings = model.encode(
+#         text,
+#         output_value="token_embeddings",
+#         convert_to_tensor=True,
+#     )
+#
+#     # just tokenize once more to find which tokens correspond to target
+#     offsets = model.tokenizer(
+#         text,
+#         return_offsets_mapping=True,
+#         truncation=True,
+#         max_length=model.max_seq_length,
+#     )["offset_mapping"]
+#
+#     start = len(left)
+#     end = start + len(target)
+#
+#     token_idxs = [
+#         i for i, (a, b) in enumerate(offsets)
+#         if a < end and b > start
+#     ]
+#
+#     return token_embeddings[token_idxs].mean(dim=0)
