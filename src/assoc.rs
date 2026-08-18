@@ -96,20 +96,20 @@ fn py_welchs_t(inputs: &[Series], kwargs: AlternativeKwargs) -> PolarsResult<Ser
 
     let sums1: f64 = s1.sum()?;
     let sumsqs1: f64 = (s1 * s1)?.sum()?;
-    let n1: f64 = s1.len() as f64;
+    let n1: f64 = (s1.len() - s1.null_count()) as f64;
     let sums2: f64 = s2.sum()?;
     let sumsqs2: f64 = (s2 * s2)?.sum()?;
-    let n2: f64 = s2.len() as f64;
+    let n2: f64 = (s2.len() - s2.null_count()) as f64;
 
     // dbg!(sums1, sumsqs1, n1, sums2, sumsqs2, n2);
 
     let (t, p, df, g) = welchs_t_from_stats(
         Some(sums1),
         Some(sumsqs1),
-        n1,
+        Some(n1),
         Some(sums2),
         Some(sumsqs2),
-        n2,
+        Some(n2),
         &kwargs,
     );
 
@@ -125,14 +125,14 @@ fn py_welchs_t(inputs: &[Series], kwargs: AlternativeKwargs) -> PolarsResult<Ser
 fn welchs_t_from_stats(
     sum1: Option<f64>,
     sumsq1: Option<f64>,
-    n1: f64,
+    n1: Option<f64>,
     sum2: Option<f64>,
     sumsq2: Option<f64>,
-    n2: f64,
+    n2: Option<f64>,
     kwargs: &AlternativeKwargs,
 ) -> (Option<f64>, Option<f64>, Option<f64>, Option<f64>) {
-    let (s1, ss1, s2, ss2) = match (sum1, sumsq1, sum2, sumsq2) {
-        (Some(a), Some(b), Some(c), Some(d)) => (a, b, c, d),
+    let (s1, ss1, n1, s2, ss2, n2) = match (sum1, sumsq1, n1, sum2, sumsq2, n2) {
+        (Some(a), Some(b), Some(c), Some(d), Some(e), Some(f)) => (a, b, c, d, e, f),
         _ => return (None, None, None, None),
     };
 
@@ -145,7 +145,7 @@ fn welchs_t_from_stats(
     let m2 = s2 / n2;
     let v2 = (ss2 - s2 * s2 / n2) / (n2 - 1.0);
 
-    if !(v1.is_finite() && v2.is_finite()) || v1 <= 0.0 || v2 <= 0.0 {
+    if !(v1.is_finite() && v2.is_finite()) || v1 < 0.0 || v2 < 0.0 || v1 + v2 <= 0.0 {
         return (None, None, None, None);
     }
 
@@ -195,8 +195,7 @@ fn py_welchs_t_from_stats(inputs: &[Series], kwargs: AlternativeKwargs) -> Polar
         sumsqs2_ca.iter(),
         n2_ca.iter()
     ) {
-        let (t, pval, df, g) =
-            welchs_t_from_stats(s1, ss1, n1.unwrap(), s2, ss2, n2.unwrap(), &kwargs);
+        let (t, pval, df, g) = welchs_t_from_stats(s1, ss1, n1, s2, ss2, n2, &kwargs);
         t_v.push(t);
         p_v.push(pval);
         d_v.push(df);

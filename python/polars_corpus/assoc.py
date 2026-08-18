@@ -46,8 +46,17 @@ def _variable_name(lf: pl.LazyFrame, var: IntoExprColumn, param: str) -> str:
 def _as_freqs(
     f12: IntoExpr, f1: IntoExpr, f2: IntoExpr, n: IntoExpr
 ) -> tuple[pl.Expr, pl.Expr, pl.Expr, pl.Expr]:
-    """Turn the four contingency table arguments into expressions."""
-    return as_expr(f12, "f12"), as_expr(f1, "f1"), as_expr(f2, "f2"), as_expr(n, "n")
+    """Turn the four contingency table arguments into Float64 expressions.
+
+    Float64 because the measures take differences of the margins, which would
+    underflow for the unsigned integer counts `crosstab` produces.
+    """
+    return (
+        as_expr(f12, "f12").cast(pl.Float64),
+        as_expr(f1, "f1").cast(pl.Float64),
+        as_expr(f2, "f2").cast(pl.Float64),
+        as_expr(n, "n").cast(pl.Float64),
+    )
 
 
 def crosstab(
@@ -226,9 +235,7 @@ def chisq(
     True and :math:`c = 0` otherwise.
     """
 
-    # Cast to Float64 first: the cross-product difference below can go negative,
-    # which would underflow for the unsigned integer counts crosstab produces.
-    f12, f1, f2, n = (expr.cast(pl.Float64) for expr in _as_freqs(f12, f1, f2, n))
+    f12, f1, f2, n = _as_freqs(f12, f1, f2, n)
 
     o11 = f12
     o12 = f1 - f12
@@ -323,10 +330,10 @@ def minsens(f12: IntoExpr, f1: IntoExpr, f2: IntoExpr, n: IntoExpr) -> pl.Expr:
     Minimum sensitivity is calculated as:
 
     $$
-    \\begin{aligned}
-    \\text{min_sens}(x,y) &= \\min(P(y|x), P(x|y))\\\\
+    \\begin{align*}
+    \\text{minsens}(x,y) &= \\min(P(y|x), P(x|y))\\\\
     &= \\min\\left(\\frac{f_{12}}{f_1}, \\frac{f_{12}}{f_2}\\right)
-    \\end{aligned}
+    \\end{align*}
     $$
 
     References
@@ -336,7 +343,14 @@ def minsens(f12: IntoExpr, f1: IntoExpr, f2: IntoExpr, n: IntoExpr) -> pl.Expr:
       Theory* 4(2): 253–290.
     """
     f12, f1, f2, _ = _as_freqs(f12, f1, f2, n)
-    return pl.min_horizontal(f12 / f1, f12 / f2)
+    precision, recall = f12 / f1, f12 / f2
+    # min_horizontal skips nulls, which would leave the other ratio standing in
+    # for the minimum; the measure propagates them like every other one here.
+    return (
+        pl.when(precision.is_null() | recall.is_null())
+        .then(None)
+        .otherwise(pl.min_horizontal(precision, recall))
+    )
 
 
 def smp(
@@ -409,8 +423,10 @@ def welchs_t(x1: IntoExprColumn, x2: IntoExprColumn, alt: str = "twosided") -> p
     ----------
     x1 : IntoExprColumn
         First sample data. Can be a column name (str) or Polars expression.
+        Nulls are left out of the sample rather than counted in its size.
     x2 : IntoExprColumn
         Second sample data. Can be a column name (str) or Polars expression.
+        Nulls are left out of the sample rather than counted in its size.
     alt : {'twosided', 'greater', 'less'}, default 'twosided'
         Alternative hypothesis to test:
 

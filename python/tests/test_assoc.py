@@ -3,7 +3,8 @@ import math
 import polars as pl
 import pytest
 from polars.testing import assert_frame_equal
-from polars_corpus import chisq, crosstab, loglik, smp, welchs_t
+from polars_corpus import chisq, crosstab, loglik, minsens, pmi, smp, welchs_t
+from polars_corpus.assoc import welchs_t_from_stats
 from polars_corpus.utils import output_name
 
 
@@ -252,3 +253,72 @@ def test_struct_assoc_measures() -> None:
 
     # chisq matches the generic sum-of-(O-E)^2/E reference
     assert row["chisq"].item() == pytest.approx(_chisq_ref(f12, f1, f2, n))
+
+
+# A well-behaved table, and each measure with the margins it actually reads: a
+# null in one it ignores is no more its business than a column it never saw.
+MARGINS = {"f12": 10, "f1": 100, "f2": 50, "n": 1000}
+MEASURES = {
+    "pmi": (pmi("f12", "f1", "f2", "n"), ("f12", "f1", "f2", "n")),
+    "chisq": (chisq("f12", "f1", "f2", "n"), ("f12", "f1", "f2", "n")),
+    "loglik": (loglik("f12", "f1", "f2", "n"), ("f12", "f1", "f2", "n")),
+    "minsens": (minsens("f12", "f1", "f2", "n"), ("f12", "f1", "f2")),
+    "smp": (smp("f12", "f1", "f2", "n", 1.0), ("f12", "f1")),
+}
+
+
+@pytest.mark.parametrize("measure, margins", MEASURES.values(), ids=MEASURES)
+def test_measures_propagate_nulls(measure: pl.Expr, margins: tuple[str, ...]) -> None:
+    """A null in a margin the measure reads makes it null, not a partial answer."""
+    # One row per margin, holding a null there and sound counts everywhere else.
+    table = pl.DataFrame(
+        [MARGINS | {margin: None} for margin in margins],
+        schema={name: pl.UInt64 for name in MARGINS},
+    )
+    values = table.select(measure).to_series()
+    assert [m for m, value in zip(margins, values) if value is not None] == []
+
+
+def test_measures_survive_unsigned_margins() -> None:
+    """Margins that subtract below zero must not wrap around, as unsigned ints do."""
+    # f12 > f1 is impossible from crosstab but reachable from a hand-built table.
+    table = pl.DataFrame(
+        [MARGINS | {"f12": 5, "f1": 0}], schema={name: pl.UInt64 for name in MARGINS}
+    )
+    measures = [measure.alias(name) for name, (measure, _) in MEASURES.items()]
+    assert_frame_equal(table.select(measures), table.cast(pl.Int64).select(measures))
+
+
+@pytest.mark.parametrize(
+    "x, y, expected",
+    [
+        # Nulls leave the sample rather than counting toward its size:
+        # scipy.stats.ttest_ind([1, 2, 3], [2, 4, 4, 5], equal_var=False)
+        pytest.param(
+            [1.0, 2.0, 3.0, None],
+            [2.0, 4.0, 4.0, 5.0],
+            (-2.04939015319192, 0.09648399932832219, 4.932885906040268),
+            id="nulls-left-out",
+        ),
+        # A constant sample still leaves a usable standard error:
+        # scipy.stats.ttest_ind(x, [0] * 6, equal_var=False)
+        pytest.param(
+            [0.10, 0.15, 0.08, 0.20, 0.12, 0.09],
+            [0.0] * 6,
+            (6.7106553135176075, 0.001112578255151147, 5.0),
+            id="constant-sample",
+        ),
+    ],
+)
+def test_t_test_edge_cases(x: list, y: list, expected: tuple) -> None:
+    result = pl.DataFrame({"x": x, "y": y}).select(welchs_t("x", "y")).unnest("t_test")
+    assert result.row(0)[:3] == pytest.approx(expected)
+
+
+def test_t_test_from_stats_propagates_nulls() -> None:
+    """A null in any statistic, sample size included, gives a null result."""
+    stats = {"s1": 6.0, "ss1": 14.0, "n1": 3.0, "s2": 9.0, "ss2": 29.0, "n2": 3.0}
+    # One row per statistic, holding a null there and sound values elsewhere.
+    table = pl.DataFrame([stats | {name: None} for name in stats])
+    result = table.select(welchs_t_from_stats(*stats)).unnest("t_test")
+    assert result.null_count().row(0) == (len(stats),) * 4

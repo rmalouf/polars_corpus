@@ -25,10 +25,6 @@ PART_FIELD = "_part"
 
 METHODS = ("ttest", "pmi", "ll", "chisq", "smp", "minsens")
 
-# Scott, M. (1997). PC analysis of key words—and key key words. System, 25(2), 233-245.
-# Kilgarriff, A. (2009, July). Simple maths for keywords. In Proceedings of the Corpus Linguistics Conference. Liverpool, UK.
-# Leech, G., & Fallon, R. (1992). Computer corpora: What do they tell us about culture? ICAMEJournal,16,29–50.
-
 # TODO: Add Gries's (2001) KL divergence method?
 
 
@@ -53,17 +49,16 @@ def keywords(
         Reference corpus (DataFrame or LazyFrame) that `target` is compared against.
     expr : IntoExpr
         Column name or expression identifying the word/type to compute keyness
-        for (e.g. token or lemma). A Series is not accepted: `expr` is evaluated
-        against the concatenated target+reference corpora, not either alone.
-    method : {'ttest', 'pmi', 'll', 'chisq', 'smp', 'minsens'}
-        Association measure used to rank keywords:
-
-        - 'ttest' : Welch's t-test on per-file relative frequencies
-        - 'pmi' : Pointwise Mutual Information
-        - 'll' : Log-likelihood ratio (G²)
+        for (e.g., token or lemma). Note that `expr` is evaluated against the
+        concatenated target+reference corpora, not either alone.
+    method : {'chisq', 'll', 'minsens', 'pmi', 'smp', 'ttest'}
+        [Association metric](assoc.md) used to rank keywords:
         - 'chisq' : Pearson's chi-squared (χ²)
-        - 'smp' : Kilgarriff's simple maths parameter (requires `k`)
+        - 'll' : Log-likelihood ratio (G²)
         - 'minsens' : Minimum sensitivity
+        - 'pmi' : Pointwise Mutual Information
+        - 'smp' : Kilgarriff's simple maths parameter (requires `k`)
+        - 'ttest' : Welch's t-test on per-file relative frequencies
     min_target_tf : int, default 0
         Minimum term frequency in the target corpus required for a word to be
         included in the results. Ignored when `method` is 'ttest'.
@@ -87,8 +82,8 @@ def keywords(
         Every method but 'ttest' returns the frequency table with one column
         named for the measure. 'ttest' returns the words more frequent in the
         target, ranked by p-value ascending, with columns `t`, `p`, `df`, and
-        `g` (Hedges' g, the size of the difference rather than its
-        significance).
+        `g`. The test statistic `t` and the p-value `p` indicate the strength of
+        evidence for an association, while Hedges' `g` is the effect size.
 
     Raises
     ------
@@ -109,31 +104,32 @@ def keywords(
     Notes
     -----
     Only the columns `expr` and `file_id_column` name are read, so the target
-    and reference corpora need not have matching schemas otherwise.
+    and reference corpora need not have matching schemas otherwise. Rows holding a null
+    in either are dropped.
 
-    Rows holding a null in either are dropped: a token with no value for `expr`
-    is not an occurrence of anything, and one with no file id is in no document.
-    The corpus sizes the measures divide by count what survives, so over a
-    corpus whose `lemma` is null on punctuation, keyness is measured per
-    lemma-bearing token rather than per token.
+    References
+    ----------
+    - Hofland, K. and Johansson, S. 1982. *Word frequencies in British and
+      American English.* Norwegian Computing Centre for the Humanities. Bergen.
+    - Leech, G. and R. Fallon. 1992. Computer corpora – What do they tell us about
+      culture? *ICAME Journal* 16: 29–50.
+    - Lijffijt, J., T. Nevalainen, T. Säily, P. Papapetrou, K. Puolamäki, and
+      H. Mannila. 2016. Significance testing of word frequencies in corpora. *Digital
+      Scholarship in the Humanities* 31(2): 374-397.
+    - Scott, M. 1997. PC analysis of key words—and key key words. *System* 25(2): 233-245.
 
     Examples
     --------
     >>> import polars_corpus as plc
     >>> plc.keywords(target, reference, "lemma", "ll", min_target_df=5)
-    >>> # A corpus whose file ids live in another column:
-    >>> plc.keywords(target, reference, "lemma", "ttest", file_id_column="text_id")
+    >>> plc.keywords(target, reference, "token", "ttest", file_id_column="text_id")
     """
     method = check_choice(method, METHODS)
-    keyword_expr = as_expr(
-        expr,
-        hint=" It is evaluated over the target and reference corpora together,"
-        " so a Series taken from one of them would not line up.",
-    )
+    keyword_expr = as_expr(expr)
     if method == "smp":
         if k is None:
             raise ValueError(
-                "method 'smp' needs a value for k: pass k=1 for Kilgarriff's "
+                "method 'smp' needs a value for k: pass k=100 for Kilgarriff's "
                 "default, or a larger value to favor more frequent words"
             )
         if k <= 0:
@@ -270,7 +266,10 @@ def _keywords_ttest(
             ss=(pl.col("rel_freq") ** 2).sum(),
         )
         .pivot(on=PART_FIELD, on_columns=["target", "reference"], index=expr_name)
-        .drop_nulls()
+        .with_columns(
+            pl.col("s_target", "ss_target", "s_reference", "ss_reference").fill_null(0),
+            pl.col("n_target", "n_reference").fill_null(strategy="max"),
+        )
         .with_columns(
             welchs_t_from_stats(
                 "s_target",

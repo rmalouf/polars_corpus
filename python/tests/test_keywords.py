@@ -167,6 +167,19 @@ def test_keywords_ttest() -> None:
     assert pvals == sorted(pvals)
 
 
+def test_keywords_ttest_keeps_target_only_words() -> None:
+    """A word absent from the reference is a keyword, not a missing sample.
+
+    It occurs in none of the reference files, so its relative frequency there
+    is zero in every one of them -- a constant sample, which Welch's test still
+    has a standard error for.
+    """
+    result = keywords(TARGET, REFERENCE, pl.col("norm"), "ttest")
+
+    target_only = set(TARGET["norm"]) - set(REFERENCE["norm"])
+    assert target_only <= set(result["norm"])
+
+
 @pytest.mark.parametrize("method", ["ll", "pmi", "chisq", "ttest"])
 def test_keywords_lazy_matches_eager(method: str) -> None:
     eager = keywords(TARGET, REFERENCE, pl.col("norm"), method)
