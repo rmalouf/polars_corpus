@@ -1,8 +1,8 @@
 import warnings
 
+import matplotlib.pyplot as plt
 import polars as pl
-import plotly.express as px
-import plotly.graph_objects as go
+from matplotlib.axes import Axes
 
 from ._typing import IntoExpr, T_Frame
 from .utils import (
@@ -19,9 +19,12 @@ def barcode_plot(
     corpus: T_Frame,
     expr: IntoExpr,
     targets: str | list[str],
+    ax: Axes | None = None,
     linewidth: float = 0.75,
-    size: float = 20,
-) -> go.Figure:
+    size: float = 200,
+    margin: float | None = None,
+    **kwargs,
+) -> Axes:
     """
     Plot the position of one or more words across a corpus as a barcode.
 
@@ -38,15 +41,23 @@ def barcode_plot(
         against `targets` (e.g. token or lemma).
     targets : str | list[str]
         Word or words to plot, one row per word.
+    ax : Axes, optional
+        Axes to draw on. A new figure and axes are created if not given.
     linewidth : float, default 0.75
-        Width of each tick mark, in pixels.
-    size : float, default 20
-        Length of each tick mark, in pixels.
+        Width of each tick mark.
+    size : float, default 200
+        Size of each tick mark, in points squared.
+    margin : float, optional
+        Extra vertical padding above the first row and below the last, in
+        row heights. Rows are half a row apart from the edges without it.
+    **kwargs
+        Passed through to `Axes.scatter`.
 
     Returns
     -------
-    Figure
-        A plotly figure, one row per word in `targets`, in the order given.
+    Axes
+        The matplotlib axes the plot was drawn on, one row per word in
+        `targets`, in the order given.
 
     Raises
     ------
@@ -72,15 +83,22 @@ def barcode_plot(
     if isinstance(targets, str):
         targets = [targets]
 
+    # Filter on the term's own column rather than on `expr`: a computed term is
+    # gone from the frame by the time the select is through with it.
     data = (
         lf.with_row_index()
         .select("index", term)
         .filter(pl.col(term_name).is_in(targets))
+        .with_columns(
+            pl.col(term_name).replace_strict(
+                {target: row for row, target in enumerate(targets)}
+            )
+        )
         .collect()
     )
 
     found = data[term_name].unique()
-    if missing := [target for target in targets if target not in found]:
+    if missing := [target for row, target in enumerate(targets) if row not in found]:
         warnings.warn(
             f"{', '.join(repr(target) for target in missing)} "
             f"{'do' if len(missing) > 1 else 'does'} not occur in the corpus's "
@@ -88,17 +106,29 @@ def barcode_plot(
             stacklevel=2,
         )
 
-    fig = px.strip(data, "index", term_name, category_orders={term_name: targets})
-    fig.update_traces(
-        jitter=0,
-        marker=dict(
-            symbol="line-ns",
-            size=size,
-            line=dict(width=linewidth),
-        ),
+    if ax is None:
+        _, ax = plt.subplots()
+
+    ax.scatter(
+        data["index"],
+        data[term_name],
+        marker="|",
+        linewidth=linewidth,
+        sizes=[size],
+        **kwargs,
     )
 
-    return fig
+    ax.set(xlabel="index")
+
+    # Set the rows rather than autoscaling to them: a target that occurs nowhere
+    # has no points to scale to, but still gets a row of its own.
+    pad = 0.5 + (margin or 0)
+    ax.set_yticks(range(len(targets)), targets)
+    ax.set_ylim(len(targets) - 1 + pad, -pad)
+
+    for spine in ax.spines.values():
+        spine.set_visible(False)
+    return ax
 
 
 def dispersion_plot(
@@ -107,9 +137,12 @@ def dispersion_plot(
     target: str,
     file_id_column: str = "file_id",
     relative: bool = True,
+    ax: Axes | None = None,
     linewidth: float = 0.75,
-    size: float = 20,
-) -> go.Figure:
+    size: float = 200,
+    margin: float | None = None,
+    **kwargs,
+) -> Axes:
     """
     Plot the position of a word across the files of a corpus.
 
@@ -129,16 +162,25 @@ def dispersion_plot(
     file_id_column : str, default "file_id"
         Column holding file ids, defining the rows of the plot.
     relative : bool, default True
-        Plot each occurrence's relative position in the file.
+        Plot each occurrence's position as a fraction of its file's length
+        rather than a raw index, so files of different lengths line up.
+    ax : Axes, optional
+        Axes to draw on. A new figure and axes are created if not given.
     linewidth : float, default 0.75
-        Width of each tick mark, in pixels.
-    size : float, default 20
-        Length of each tick mark, in pixels.
+        Width of each tick mark.
+    size : float, default 200
+        Size of each tick mark, in points squared.
+    margin : float, optional
+        Extra vertical padding above the first row and below the last, in
+        row heights. Rows are half a row apart from the edges without it.
+    **kwargs
+        Passed through to `Axes.scatter`.
 
     Returns
     -------
-    Figure
-        A plotly figure, one row per file `target` occurs in, in corpus order.
+    Axes
+        The matplotlib axes the plot was drawn on, one row per file `target`
+        occurs in, in corpus order.
 
     Raises
     ------
@@ -146,6 +188,12 @@ def dispersion_plot(
         If `corpus` is not a Polars DataFrame or LazyFrame, is empty, or is
         missing a column `dispersion_plot` needs; if `expr` is not a column name
         or expression; or if `target` does not occur in the corpus.
+
+    Notes
+    -----
+    Only the files `target` occurs in get a row, so the plot says how evenly the
+    word is spread over those files, not over the corpus. Read it alongside
+    `dispersion(corpus, expr, "range")`, which counts them.
 
     Examples
     --------
@@ -161,7 +209,8 @@ def dispersion_plot(
     position = pl.int_range(1, pl.len() + 1)
     if relative:
         position = position / pl.len()
-
+    # Filter on the term's own column rather than on `expr`: a computed term is
+    # gone from the frame by the time the select is through with it.
     data = (
         lf.select(position.over(file_id_column).alias("index"), file_id_column, term)
         .filter(pl.col(term_name) == target)
@@ -173,37 +222,46 @@ def dispersion_plot(
             f"{target!r} does not occur in the corpus's {term_name!r} column, "
             f"so there is nothing to plot"
         )
-    fig = px.strip(
-        data,
-        "index",
-        file_id_column,
-        labels={"index": "relative index" if relative else "index"},
-    )
-    fig.update_traces(
-        jitter=0,
-        marker=dict(
-            symbol="line-ns",
-            size=size,
-            line=dict(width=linewidth),
-        ),
+
+    if ax is None:
+        _, ax = plt.subplots()
+
+    ax.scatter(
+        data["index"],
+        data[file_id_column],
+        marker="|",
+        linewidth=linewidth,
+        sizes=[size],
+        **kwargs,
     )
 
-    return fig
+    ax.set(xlabel="relative index" if relative else "index")
+
+    # Rows read top to bottom, in corpus order, as in `barcode_plot`.
+    pad = 0.5 + (margin or 0)
+    ax.set_ylim(data[file_id_column].n_unique() - 1 + pad, -pad)
+
+    for spine in ax.spines.values():
+        spine.set_visible(False)
+    return ax
 
 
 def keyword_plot(
     keyword_df: T_Frame,
     term_expr: IntoExpr,
     keyness_expr: IntoExpr,
+    ax: Axes | None = None,
     top_k: int | None = 10,
     descending: bool = True,
     reverse: bool = False,
-) -> go.Figure:
+    padding: int = 6,
+    **kwargs,
+) -> Axes:
     """
     Plot ranked keywords as a horizontal lollipop/stem chart.
 
     Each row of `keyword_df` becomes a stem, positioned by `keyness_expr` and
-    labeled with `term_expr`, giving a quick visual read of the top
+    labeled with `term_expr`, giving a quick visual read of the strongest
     keywords and how strong they are relative to each other. `keyword_df` is
     plotted in the order it is given (e.g. the output of `keywords`), so it
     should already be sorted by association strength.
@@ -218,6 +276,8 @@ def keyword_plot(
     keyness_expr : IntoExpr
         Column name or expression giving the keyness/association score each
         stem is positioned at.
+    ax : Axes, optional
+        Axes to draw on. A new figure and axes are created if not given.
     top_k : int | None, default 10
         Number of rows to plot, taken from the start of `keyword_df`.
         Plots every row if `top_k` is `None` or non-positive.
@@ -227,11 +287,15 @@ def keyword_plot(
         Mirror the chart, so the stems run leftwards from the axis and the
         labels sit to the left of their markers. Useful for putting two
         keyword plots back to back.
+    padding : int, default 6
+        Offset in points between a stem's tip and its label.
+    **kwargs
+        Passed through to `Axes.stem`.
 
     Returns
     -------
-    Figure
-        A plotly figure.
+    Axes
+        The matplotlib axes the plot was drawn on.
 
     Raises
     ------
@@ -255,93 +319,86 @@ def keyword_plot(
     if top_k is not None and top_k > 0:
         lf = lf.head(top_k)
 
+    # Select the two expressions rather than collecting the frame whole: a
+    # computed term or score exists only once evaluated, and a keyword table
+    # carries columns (frequency structs, document counts) the plot never reads.
     keywords = lf.select(term, keyness).collect()
 
     if keywords.height == 0:
         raise ValueError("the keyword_df is empty, so there is nothing to plot")
 
-    if reverse:
-        text_position = "middle left"
-    else:
-        text_position = "middle right"
-
-    bar_x = []
-    bar_y = []
-    y = list(range(len(keywords)))
-    for xi, yi in zip(keywords[keyness_name], y):
-        bar_x += [0, xi, None]
-        bar_y += [yi, yi, None]
-
-    fig = go.Figure()
-
-    fig.add_trace(
-        go.Scatter(
-            x=bar_x,
-            y=bar_y,
-            mode="lines",
-            showlegend=False,
-        )
-    )
-
-    fig.add_trace(
-        go.Scatter(
-            x=keywords[keyness_name],
-            y=y,
-            mode="markers+text",
-            text=keywords[term_name],
-            textposition=text_position,
-            marker=dict(size=10),
-            showlegend=False,
-        )
-    )
-
-    fig.update_yaxes(
-        showticklabels=False,
-        ticks="",
-        showgrid=False,
-        zeroline=False,
-    )
-
     if descending:
-        fig.update_yaxes(autorange="reversed")
+        indices = range(len(keywords), 0, -1)
+    else:
+        indices = range(len(keywords))
 
-    fig.update_xaxes(
-        rangemode="tozero",
-        # showgrid=False,
-        # zeroline=False,
+    if ax is None:
+        _, ax = plt.subplots()
+
+    ax.stem(
+        indices,
+        keywords[keyness_name],
+        linefmt="-",
+        markerfmt="o",
+        basefmt="lightgray",
+        orientation="horizontal",
+        **kwargs,
     )
 
+    # Label the markers from the values they were drawn from, horizontal stems
+    # putting the score on x and the row on y. A label sits at the stem's tip,
+    # which a reversed axis puts on the other side of the marker.
+    for x, y, label in zip(keywords[keyness_name], indices, keywords[term_name]):
+        leftwards = (x < 0) != reverse
+        ax.annotate(
+            label,
+            xy=(x, y),
+            xytext=(-padding if leftwards else padding, 0),
+            textcoords="offset points",
+            ha="right" if leftwards else "left",
+            va="center_baseline",
+        )
+
     if reverse:
-        fig.update_xaxes(autorange="reversed")
+        ax.invert_xaxis()
 
-    fig.update_traces(cliponaxis=False)
+    ax.set_yticks([])
+    for spine in ax.spines.values():
+        spine.set_visible(False)
 
-    return fig
+    return ax
 
 
-def text_plot(points, labels, show_labels: bool = True) -> go.Figure:
+def text_plot(
+    xy, labels, ax: Axes | None = None, adjust: bool = True, show_labels: bool = True
+) -> Axes:
     """
     Plot labeled points on a two-dimensional map.
 
-    Draws each row of `points` with its label, for reading a projection of
+    Draws each row of `xy` with its label, for reading a projection of
     embedding vectors (e.g. from UMAP) down to two dimensions. The axes carry
     no scale, since the coordinates only mean something relative to each other.
 
     Parameters
     ----------
-    points : array-like of shape (n, 2)
+    xy : array-like of shape (n, 2)
         Coordinates to plot, one row per label.
     labels : sequence of str
-        Label for each row of `points`, e.g. the token or the concordance line the
+        Label for each row of `xy`, e.g. the token or the concordance line the
         vector was built from.
+    ax : Axes, optional
+        Axes to draw on. A new figure and axes are created if not given.
+    adjust : bool, default True
+        Nudge overlapping labels apart with `adjustText`. Ignored when
+        `show_labels` is False.
     show_labels : bool, default True
         Draw the labels. When False, the points are drawn as a plain scatter
         instead.
 
     Returns
     -------
-    Figure
-        A plotly figure.
+    Axes
+        The axes drawn on.
 
     Examples
     --------
@@ -350,36 +407,37 @@ def text_plot(points, labels, show_labels: bool = True) -> go.Figure:
     >>> plc.text_plot(xy, df["token"])
     >>> plc.text_plot(xy, df["token"], show_labels=False)
     """
-    fig = go.Figure()
+    if ax is None:
+        _, ax = plt.subplots()
 
-    fig.add_trace(
-        go.Scatter(
-            x=points[:, 0],
-            y=points[:, 1],
-            text=labels,
-            mode="markers+text" if show_labels else "markers",
-            textposition="top right",
-            showlegend=False,
-            cliponaxis=False,
-            hovertemplate="%{text}<extra></extra>",
-        )
-    )
+    # Labeled points are placed by their text, so the marker only shows where
+    # there is nothing else to see.
+    size = 0 if show_labels else 5
+    ax.scatter(xy[:, 0], xy[:, 1], s=size)
 
-    fig.update_xaxes(
-        showticklabels=False,
-        showgrid=False,
-        zeroline=False,
-    )
+    if show_labels:
+        texts = []
+        for point, label in zip(xy, labels):
+            texts.append(ax.text(point[0], point[1], label, ha="center", va="center"))
 
-    fig.update_yaxes(
-        showticklabels=False,
-        showgrid=False,
-        zeroline=False,
-        scaleanchor="x",
-        scaleratio=1,
-    )
+        if adjust:
+            try:
+                from adjustText import adjust_text
+            except ImportError:
+                raise ImportError(
+                    "text_plot(adjust=True) needs adjustText: "
+                    "pip install 'polars-corpus[embeddings]', or pass adjust=False"
+                ) from None
+            adjust_text(texts, ax=ax, time_lim=2)
 
-    return fig
+    for spine in ax.spines.values():
+        spine.set_visible(False)
+
+    ax.set_xticks([])
+    ax.set_yticks([])
+    ax.set_aspect(1)
+
+    return ax
 
 
 ## TODO:
