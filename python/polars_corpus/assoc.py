@@ -30,18 +30,6 @@ LIB = Path(__file__).parent
 ALTERNATIVES = ("twosided", "greater", "less")
 
 
-def _variable_name(lf: pl.LazyFrame, var: IntoExprColumn, param: str) -> str:
-    """Name the column `var` gives, checking the corpus can evaluate it.
-
-    Unlike most of the package `crosstab` takes a Series: both variables are
-    evaluated against the one corpus, so a Series of matching height lines up
-    with it, and carries the name of the column it stands in for.
-    """
-    if isinstance(var, pl.Series):
-        return var.name
-    return check_expr(lf, as_expr(var, param), param=param)
-
-
 def _as_freqs(
     f12: IntoExpr, f1: IntoExpr, f2: IntoExpr, n: IntoExpr
 ) -> tuple[pl.Expr, pl.Expr, pl.Expr, pl.Expr]:
@@ -58,12 +46,7 @@ def _as_freqs(
     )
 
 
-def crosstab(
-    corpus: T_Frame,
-    x: IntoExprColumn,
-    y: IntoExprColumn,
-    freqs_name: str = "freqs",
-) -> T_Frame:
+def crosstab(corpus: T_Frame, x: IntoExprColumn, y: IntoExprColumn) -> T_Frame:
     """
     Create a crosstabulation (contingency table) from two categorical variables.
 
@@ -81,8 +64,6 @@ def crosstab(
     y : IntoExprColumn
         Column name, expression or Series giving the second categorical
         variable (column variable).
-    freqs_name : str, default "freqs"
-        Name for the output frequencies struct column.
 
     Returns
     -------
@@ -102,14 +83,21 @@ def crosstab(
     ------
     ValueError
         If `corpus` is not a Polars DataFrame or LazyFrame, or is empty; or if
-        `x` or `y` does not name a single column of it.
+        `x` or `y` does not name a column.
     """
     lf = as_corpus(corpus)
-    x_name = _variable_name(lf, x, "x")
-    y_name = _variable_name(lf, y, "y")
 
-    # Read only the two variables, so a null elsewhere in the corpus is none of
-    # this table's business, and a column of its own named `f12` cannot collide.
+    x_name = (
+        x.name
+        if isinstance(x, pl.Series)
+        else check_expr(lf, as_expr(x, "x"), param="x")
+    )
+    y_name = (
+        y.name
+        if isinstance(y, pl.Series)
+        else check_expr(lf, as_expr(y, "y"), param="y")
+    )
+
     counts = lf.select(x, y).drop_nulls()
     result = (
         counts.group_by(x_name, y_name)
@@ -120,7 +108,7 @@ def crosstab(
                 pl.col("f12").sum().over(x_name).alias("f1"),
                 pl.col("f12").sum().over(y_name).alias("f2"),
                 pl.col("f12").sum().alias("n"),
-            ).alias(freqs_name)
+            ).alias("freqs")
         )
         .drop("f12")
     )
@@ -161,7 +149,8 @@ def pmi(f12: IntoExpr, f1: IntoExpr, f2: IntoExpr, n: IntoExpr) -> pl.Expr:
     PMI is calculated as:
 
     $$
-    \\text{PMI}(x,y) = \\log\\frac{P(x,y)}{P(x)\\,P(y)} = \\log\\frac{f_{12} \\cdot n}{f_1 \\cdot f_2}
+    \\text{PMI}(x,y) = \\log\\frac{P(x,y)}{P(x)\\,P(y)}
+                    = \\log\\frac{n\\,f_{12}}{f_1\\,f_2}
     $$
 
     References
@@ -216,15 +205,13 @@ def chisq(
     -----
     For a 2×2 contingency table the statistic reduces to:
 
-    .. math::
-        \\chi^2 = \\frac{n\\,(|O_{11} O_{22} - O_{12} O_{21}| - c)^2}
-                       {f_1\\,f_2\\,(n - f_1)\\,(n - f_2)}
+    $$
+    \\chi^2 = \\frac{n\\,(|n\\,f_{12} - f_1\\,f_2| - c)^2}
+                  {f_1\\,f_2\\,(n - f_1)\\,(n - f_2)}
+    $$
 
-    where the observed cells are derived from the margins as
-    :math:`O_{11} = f_{12}`, :math:`O_{12} = f_1 - f_{12}`,
-    :math:`O_{21} = f_2 - f_{12}`, :math:`O_{22} = n - f_1 - f_2 + f_{12}`,
-    and the continuity-correction term is :math:`c = n / 2` when `yates` is
-    True and :math:`c = 0` otherwise.
+    where the continuity-correction term is $c = n/2$ when `yates` is True
+    and $c = 0$ otherwise.
     """
 
     f12, f1, f2, n = _as_freqs(f12, f1, f2, n)
@@ -274,11 +261,21 @@ def loglik(f12: IntoExpr, f1: IntoExpr, f2: IntoExpr, n: IntoExpr) -> pl.Expr:
     -----
     The log-likelihood ratio statistic (G²) is calculated as:
 
-    .. math::
-        G^2 = 2 \\sum_{i,j} f_{ij} \\log\\frac{f_{ij}}{e_{ij}}
+    $$
+    \\begin{align*}
+    G^2 = 2 \\Bigl(
+      &f_{12} \\log\\frac{f_{12}}{e_{12}}
+      + (f_1 - f_{12}) \\log\\frac{f_1 - f_{12}}{f_1 - e_{12}}\\\\
+      &+ (f_2 - f_{12}) \\log\\frac{f_2 - f_{12}}{f_2 - e_{12}}
+      + (n - f_1 - f_2 + f_{12})
+        \\log\\frac{n - f_1 - f_2 + f_{12}}{n - f_1 - f_2 + e_{12}}
+    \\Bigr)
+    \\end{align*}
+    $$
 
-    where f_{ij} are the observed frequencies and e_{ij} are the expected
-    frequencies under independence: e_{ij} = (f_{i·} × f_{·j}) / n
+    where the four terms are the cells of the 2×2 table and
+    $e_{12} = f_1\\,f_2 / n$ is the joint frequency expected under
+    independence.
     """
     return register_plugin_function(
         plugin_path=LIB,
@@ -452,24 +449,30 @@ def welchs_t(x1: IntoExprColumn, x2: IntoExprColumn, alt: str = "twosided") -> p
     -----
     The test statistic is calculated as:
 
-    .. math::
-        t = \\frac{\\bar{x}_1 - \\bar{x}_2}{\\sqrt{\\frac{s_1^2}{n_1} + \\frac{s_2^2}{n_2}}}
+    $$
+    t = \\frac{\\bar{x}_1 - \\bar{x}_2}
+             {\\sqrt{\\frac{s_1^2}{n_1} + \\frac{s_2^2}{n_2}}}
+    $$
 
-    where :math:`\\bar{x}_i`, :math:`s_i^2`, and :math:`n_i` are the sample mean,
-    sample variance, and sample size of the i-th sample, respectively.
+    where $\\bar{x}_i$, $s_i^2$, and $n_i$ are the sample mean, sample
+    variance, and sample size of the $i$-th sample.
 
     The degrees of freedom are approximated using the Welch-Satterthwaite equation:
 
-    .. math::
-        df = \\frac{(\\frac{s_1^2}{n_1} + \\frac{s_2^2}{n_2})^2}{\\frac{(s_1^2/n_1)^2}{n_1-1} + \\frac{(s_2^2/n_2)^2}{n_2-1}}
+    $$
+    df = \\frac{\\left(\\frac{s_1^2}{n_1} + \\frac{s_2^2}{n_2}\\right)^2}
+              {\\frac{(s_1^2/n_1)^2}{n_1 - 1} + \\frac{(s_2^2/n_2)^2}{n_2 - 1}}
+    $$
 
     The effect size is Hedges' g: Cohen's d recovered from the t-statistic, then
-    scaled by the small-sample bias correction :math:`J`:
+    scaled by the small-sample bias correction $J$:
 
-    .. math::
-        d = t \\sqrt{\\frac{2\\left(\\frac{s_1^2}{n_1}+\\frac{s_2^2}{n_2}\\right)}{s_1^2+s_2^2}}
-        \\qquad
-        g = J d, \\quad J = 1 - \\frac{3}{4\\,df - 1}
+    $$
+    d = t\\,\\sqrt{\\frac{2\\left(\\frac{s_1^2}{n_1} + \\frac{s_2^2}{n_2}\\right)}
+                      {s_1^2 + s_2^2}}
+    \\qquad
+    g = J\\,d, \\quad J = 1 - \\frac{3}{4\\,df - 1}
+    $$
     """
     alt = check_choice(alt, ALTERNATIVES, param="alt")
     return register_plugin_function(
@@ -550,14 +553,15 @@ def welchs_t_from_stats(
     -----
     The sample means and variances are computed from the summary statistics as:
 
-    .. math::
-        \\bar{x}_i = \\frac{s_i}{n_i}
-
-    .. math::
-        \\text{var}_i = \\frac{ss_i - \\frac{s_i^2}{n_i}}{n_i - 1}
+    $$
+    \\bar{x}_i = \\frac{s_i}{n_i}
+    \\qquad
+    \\text{var}_i = \\frac{ss_i - s_i^2 / n_i}{n_i - 1}
+    $$
 
     The test statistic, degrees of freedom, and effect size are then calculated
-    using the same formulas as in `welchs_t`.
+    using the same formulas as in `welchs_t`, with $\\text{var}_i$ in place of
+    $s_i^2$.
     """
     alt = check_choice(alt, ALTERNATIVES, param="alt")
     return register_plugin_function(
