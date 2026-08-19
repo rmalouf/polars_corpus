@@ -15,6 +15,12 @@
 #     at a time, in sorted order;
 #   * row groups small enough that slicing to a handful of texts doesn't decode
 #     much else, and aligned to text boundaries so it decodes nothing partial.
+#
+# Speaker metadata is denormalized onto every token rather than written to a
+# second file to be joined back, so selecting speakers is a filter and not a
+# join.  It is cheap to carry: a text has a handful of speakers, so the columns
+# are long runs that Parquet dictionary-encodes away -- a few percent of a
+# spoken text, and nothing at all for a written one, where they are all null.
 
 from collections import defaultdict
 from concurrent.futures import ProcessPoolExecutor
@@ -27,7 +33,6 @@ import pyarrow.parquet as pq
 
 TEXTS = Path("/Volumes/Corpora/bnc_xml/Texts")
 CORPUS_PATH = Path("bnc.parquet")
-SPEAKERS_PATH = Path("bnc-speakers.parquet")
 # Parsing runs in worker processes, not threads: lxml frees the GIL while it
 # parses, but that is only a fifth of the work here -- walking the tree and
 # building the DataFrame is Python, and threads measure no faster than serial.
@@ -39,9 +44,27 @@ N_WORKERS = 8
 # metadata and slightly worse compression.
 ROW_GROUP_TOKENS = 250_000
 
+# The <person> attributes worth keeping, as column -> (attribute, the code the
+# BNC uses for "not recorded").  Those codes read back as nulls, so a null test
+# covers both an unrecorded speaker and a written text with no speaker at all.
+SPEAKER_ATTRS = {
+    "sex": ("sex", "u"),
+    "age_group": ("ageGroup", "X"),
+    "soc": ("soc", "UU"),
+    "dialect": ("dialect", "NONE"),
+}
+# The rest of the metadata is in child elements rather than attributes.  `age`
+# and `educ` are left out as before: `educ` is "X" for all but a handful of
+# speakers, and `age` is free text ("40", "30+") that `age_group` already bins.
+SPEAKER_ELEMENTS = {
+    "pers_name": "persName",
+    "occupation": "occupation",
+    "pers_note": "persNote",
+}
+
 # Everything stays String: Parquet dictionary-encodes the repetitive columns on
 # disk, and Categorical would only cost memory once the corpus is read back.
-CORPUS_SCHEMA = pl.Schema(
+TOKEN_SCHEMA = pl.Schema(
     {
         "token": pl.String,
         "lemma": pl.String,
@@ -55,20 +78,33 @@ CORPUS_SCHEMA = pl.Schema(
     }
 )
 
-SPEAKERS_SCHEMA = pl.Schema(
-    {
-        "speaker_id": pl.String,
-        "sex": pl.String,
-        "ageGroup": pl.String,
-        "dialect": pl.String,
-        #'educ': pl.String,
-        "soc": pl.String,
-        "persName": pl.String,
-        #'age': pl.String,
-        "occupation": pl.String,
-        "persNote": pl.String,
-    }
+# Keyed on speaker_id, which the token side already carries, so joining the two
+# gives exactly TOKEN_SCHEMA followed by the metadata columns.
+SPEAKER_SCHEMA = pl.Schema(
+    {"speaker_id": pl.String}
+    | {column: pl.String for column in SPEAKER_ATTRS | SPEAKER_ELEMENTS}
 )
+
+CORPUS_SCHEMA = pl.Schema(
+    TOKEN_SCHEMA | {c: t for c, t in SPEAKER_SCHEMA.items() if c != "speaker_id"}
+)
+
+
+def get_speakers(doc):
+    """The document's participants, one row per speaker."""
+    rows = []
+    for person in doc.xpath("//person"):
+        row = [person.get("{http://www.w3.org/XML/1998/namespace}id")]
+        row += [
+            None if (value := person.get(attr)) == absent else value
+            for attr, absent in SPEAKER_ATTRS.values()
+        ]
+        row += [
+            found[0].text.strip() if (found := person.xpath(tag)) else None
+            for tag in SPEAKER_ELEMENTS.values()
+        ]
+        rows.append(row)
+    return pl.DataFrame(rows, schema=SPEAKER_SCHEMA, orient="row")
 
 
 def get_xml(filename):
@@ -81,7 +117,7 @@ def get_xml(filename):
     # HWX.xml, the corrected December 2006 text, and needs no pass over the
     # other files to work out which of the two to prefer.
     if docid != Path(filename).stem:
-        return None, None
+        return None
     if text := doc.xpath("//wtext"):
         text_mode = "written"
         text_type = text[0].xpath("./@type")[0]
@@ -90,27 +126,6 @@ def get_xml(filename):
         text_type = text[0].xpath("./@type")[0]
     else:
         raise ValueError("Unknown text type")
-
-    speakers = defaultdict(list)
-    for person in doc.xpath("//person"):
-        speakers["speaker_id"].append(
-            person.get("{http://www.w3.org/XML/1998/namespace}id")
-        )
-        for attr in [
-            "ageGroup",
-            "soc",
-            "sex",
-            "persName",
-            "occupation",
-            "dialect",
-            "persNote",
-        ]:
-            if (t := person.get(attr)) is None:
-                speakers[attr].append(None)
-            else:
-                speakers[attr].append(t)
-
-    speakers_df = pl.DataFrame(speakers, schema=SPEAKERS_SCHEMA)
 
     data = defaultdict(list)
     for s in doc.xpath("//s"):
@@ -147,8 +162,11 @@ def get_xml(filename):
                     data["pos"].append(None)
             sent_tag = "I"
 
-    corpus_df = pl.DataFrame(data, schema=CORPUS_SCHEMA)
-    return corpus_df, speakers_df
+    # Join rather than widen the loop above: the metadata is per speaker, and
+    # appending seven more constants per token would cost more than the join.
+    return pl.DataFrame(data, schema=TOKEN_SCHEMA).join(
+        get_speakers(doc), on="speaker_id", how="left", maintain_order="left"
+    )
 
 
 def write_row_group(writer, batch):
@@ -159,11 +177,10 @@ def write_row_group(writer, batch):
     writer.write_table(table, row_group_size=table.num_rows)
 
 
-def convert(paths, corpus_path=CORPUS_PATH, speakers_path=SPEAKERS_PATH):
+def convert(paths, corpus_path=CORPUS_PATH):
     """Parse `paths` in order, appending each batch of texts to the Parquet file."""
     schema = pl.DataFrame(schema=CORPUS_SCHEMA).to_arrow().schema
     batch, batch_tokens = [], 0
-    speakers = []
     with (
         pq.ParquetWriter(corpus_path, schema, compression="zstd") as writer,
         ProcessPoolExecutor(N_WORKERS) as pool,
@@ -173,12 +190,11 @@ def convert(paths, corpus_path=CORPUS_PATH, speakers_path=SPEAKERS_PATH):
         # how far the workers may run ahead of the writer -- without it every
         # text parsed so far would be held in memory, which is the one thing
         # this script is not allowed to do.
-        for done, (corpus_df, speakers_df) in enumerate(
+        for done, corpus_df in enumerate(
             pool.map(get_xml, paths, buffersize=2 * N_WORKERS), start=1
         ):
             if corpus_df is None:  # a stray copy of another text; see get_xml
                 continue
-            speakers.append(speakers_df)  # a few thousand rows in all
             # Close the group before the text that would overrun it, so only
             # a text longer than the target lands in one alone.
             if batch and batch_tokens + corpus_df.height > ROW_GROUP_TOKENS:
@@ -190,8 +206,6 @@ def convert(paths, corpus_path=CORPUS_PATH, speakers_path=SPEAKERS_PATH):
         if batch:
             write_row_group(writer, batch)
     print()
-
-    pl.concat(speakers).write_parquet(speakers_path)
 
 
 def check_corpus(corpus_path=CORPUS_PATH, file_id_column="file_id"):
@@ -218,7 +232,8 @@ if __name__ == "__main__":
     convert(sorted(TEXTS.glob("**/*.xml")))
     check_corpus()
 
-# Searching it back never loads the corpus:
+# Searching it back never loads the corpus, and the speaker metadata rides
+# along on the results:
 #
 #     import polars as pl
 #     import polars_corpus  # noqa: F401
