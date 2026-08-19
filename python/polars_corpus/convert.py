@@ -33,6 +33,16 @@ def from_nltk(corpus: CorpusReader) -> pl.DataFrame:
     * sentence_tag (str, optional): Sentence boundary marker ("B" for beginning, "I" for inside)
     * file_id (str): Source file identifier
     * category (str, optional): Corpus category (if corpus is categorized)
+
+    Examples
+    --------
+    import nltk
+
+    brown = plc.from_nltk(nltk.corpus.brown)
+
+
+
+
     """
     category_dict = dict()
     if hasattr(corpus, "categories"):
