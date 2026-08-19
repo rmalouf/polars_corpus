@@ -237,7 +237,7 @@ CATEGORIES = {
     ),
 }
 
-# Everything but the year stays String: Parquet dictionary-encodes the
+# Everything but the creation year stays String: Parquet dictionary-encodes the
 # repetitive columns on disk, and Categorical would only cost memory once the
 # corpus is read back.
 TOKEN_SCHEMA = pl.Schema(
@@ -245,24 +245,26 @@ TOKEN_SCHEMA = pl.Schema(
         "token": pl.String,
         "lemma": pl.String,
         "pos": pl.String,
-        "tag": pl.String,
+        "c5": pl.String,
         "sentence_tag": pl.String,
         "speaker_id": pl.String,
     }
 )
 
 # One value per text, so these are set as literals rather than appended a token
-# at a time.  `year` is the exact date -- of publication for a written text, of
-# the recording for a spoken one -- while `publication_date` is the coarser band
-# the BNC classified the text under, and is worth keeping beside it because 381
-# texts are banded but carry no date of their own.
+# at a time.  The two dates are different facts, not two readings of one:
+# `creation_year` is <creation date>, "the year of original composition", while
+# `publication_date` is the band the text was classified under, taken from the
+# date of publication for a written text and of the recording for a spoken one.
+# 383 texts are banded but composed in no recorded year, and 2 the other way
+# round.
 TEXT_SCHEMA = pl.Schema(
     {
         "file_id": pl.String,
         "mode": pl.String,
         "text_type": pl.String,
         "genre": pl.String,
-        "year": pl.Int16,
+        "creation_year": pl.Int16,
     }
     | {column: pl.String for column in CATEGORIES}
 )
@@ -329,13 +331,13 @@ def get_xml(filename):
         raise ValueError("Unknown text type")
 
     # "0000" is what the header gives for a text whose date is unknown.
-    year = doc.xpath("//creation/@date")[0]
+    created = doc.xpath("//creation/@date")[0]
     metadata = {
         "file_id": docid,
         "mode": text_mode,
         "text_type": text[0].get("type"),
         "genre": doc.xpath("//classCode")[0].text,
-        "year": None if year == "0000" else int(year),
+        "creation_year": None if created == "0000" else int(created),
     } | get_text_class(doc)
 
     data = defaultdict(list)
@@ -355,17 +357,17 @@ def get_xml(filename):
                 data["sentence_tag"].append(sent_tag)
                 if token.tag == "w":
                     data["token"].append(token.text.strip())
-                    data["tag"].append(token.get("c5"))
+                    data["c5"].append(token.get("c5"))
                     data["lemma"].append(token.get("hw"))
                     data["pos"].append(token.get("pos"))
                 elif token.tag == "c":
                     data["token"].append(token.text.strip())
-                    data["tag"].append(token.get("c5"))
+                    data["c5"].append(token.get("c5"))
                     data["lemma"].append(None)
                     data["pos"].append("STOP")
                 else:
                     data["token"].append(f"<{token.tag}/>")
-                    data["tag"].append(None)
+                    data["c5"].append(None)
                     data["lemma"].append(None)
                     data["pos"].append(None)
             sent_tag = "I"
