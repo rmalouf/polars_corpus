@@ -111,8 +111,6 @@ notebooks = [
     "cytoolz",
     "fastexcel",
     "great-tables",
-    "joblib",
-    "joblib-progress",
     "lxml",
     "matplotlib",
     "pyarrow>=14",

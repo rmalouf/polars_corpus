@@ -17,19 +17,21 @@
 #     much else, and aligned to text boundaries so it decodes nothing partial.
 
 from collections import defaultdict
+from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 
 import polars as pl
 from lxml import etree
 
-from joblib import Parallel, delayed
-from joblib_progress import joblib_progress
 import pyarrow.parquet as pq
 
 TEXTS = Path("/Volumes/Corpora/bnc_xml/Texts")
 CORPUS_PATH = Path("bnc.parquet")
 SPEAKERS_PATH = Path("bnc-speakers.parquet")
-N_JOBS = 8
+# Parsing runs in worker processes, not threads: lxml frees the GIL while it
+# parses, but that is only a fifth of the work here -- walking the tree and
+# building the DataFrame is Python, and threads measure no faster than serial.
+N_WORKERS = 8
 
 # Tokens to aim for per row group.  A row group is the unit a scan prunes to,
 # so this is the granularity a lazy `slice` can seek at: smaller groups mean a
@@ -71,11 +73,15 @@ SPEAKERS_SCHEMA = pl.Schema(
 
 def get_xml(filename):
     doc = etree.parse(str(filename))
-    # The id comes from the file name, not from the <idno> inside: G3C.xml is
-    # a copy of HWX.xml, idno and all, so reading the header would give one
-    # file id two runs of tokens far apart -- exactly what the lazy search
-    # refuses to search.
-    docid = Path(filename).stem
+    docid = doc.xpath('//idno[@type="bnc"]')[0].text
+    # G3C.xml is an earlier copy of HWX.xml, header and all, so two files
+    # claim the id HWX, which would give that id two runs of tokens far apart
+    # -- exactly what the lazy search refuses to search.  The stray copy is
+    # the one not named for the id it carries, so dropping it here keeps
+    # HWX.xml, the corrected December 2006 text, and needs no pass over the
+    # other files to work out which of the two to prefer.
+    if docid != Path(filename).stem:
+        return None, None
     if text := doc.xpath("//wtext"):
         text_mode = "written"
         text_type = text[0].xpath("./@type")[0]
@@ -158,25 +164,32 @@ def convert(paths, corpus_path=CORPUS_PATH, speakers_path=SPEAKERS_PATH):
     schema = pl.DataFrame(schema=CORPUS_SCHEMA).to_arrow().schema
     batch, batch_tokens = [], 0
     speakers = []
-    with pq.ParquetWriter(corpus_path, schema, compression="zstd") as writer:
-        with joblib_progress(total=len(paths)):
-            # A generator holds only the texts in flight, and joblib yields
-            # them back in the order the paths were given -- which is what
-            # keeps each file_id in a single run.
-            with Parallel(n_jobs=N_JOBS, return_as="generator", verbose=0) as parallel:
-                for corpus_df, speakers_df in parallel(
-                    delayed(get_xml)(path) for path in paths
-                ):
-                    speakers.append(speakers_df)  # a few thousand rows in all
-                    # Close the group before the text that would overrun it,
-                    # so only a text longer than the target lands in one alone.
-                    if batch and batch_tokens + corpus_df.height > ROW_GROUP_TOKENS:
-                        write_row_group(writer, batch)
-                        batch, batch_tokens = [], 0
-                    batch.append(corpus_df)
-                    batch_tokens += corpus_df.height
+    with (
+        pq.ParquetWriter(corpus_path, schema, compression="zstd") as writer,
+        ProcessPoolExecutor(N_WORKERS) as pool,
+    ):
+        # `map` hands the texts back in the order the paths were given, which
+        # is what keeps each file_id in a single run, and `buffersize` caps
+        # how far the workers may run ahead of the writer -- without it every
+        # text parsed so far would be held in memory, which is the one thing
+        # this script is not allowed to do.
+        for done, (corpus_df, speakers_df) in enumerate(
+            pool.map(get_xml, paths, buffersize=2 * N_WORKERS), start=1
+        ):
+            if corpus_df is None:  # a stray copy of another text; see get_xml
+                continue
+            speakers.append(speakers_df)  # a few thousand rows in all
+            # Close the group before the text that would overrun it, so only
+            # a text longer than the target lands in one alone.
+            if batch and batch_tokens + corpus_df.height > ROW_GROUP_TOKENS:
+                write_row_group(writer, batch)
+                batch, batch_tokens = [], 0
+            batch.append(corpus_df)
+            batch_tokens += corpus_df.height
+            print(f"\r{done:,} / {len(paths):,} texts", end="", flush=True)
         if batch:
             write_row_group(writer, batch)
+    print()
 
     pl.concat(speakers).write_parquet(speakers_path)
 

@@ -1403,19 +1403,6 @@ wheels = [
 ]
 
 [[package]]
-name = "joblib-progress"
-version = "1.0.6"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "joblib" },
-    { name = "rich" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/f5/65/d6a5a6b322ffd4319bb39f22b0c0d71ad89233843764c6f1afc0c4b3b7aa/joblib_progress-1.0.6.tar.gz", hash = "sha256:9b4d97f0ab0fc439be29e8d6ed3114b0a3140f60d709e8a6a6ed3633767e48bc", size = 3119, upload-time = "2024-11-07T13:12:53.455Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/cc/e4/d71e71edc972d534f51cff72fa30edb8b0e5df109b2e5ae67a3985faebb9/joblib_progress-1.0.6-py3-none-any.whl", hash = "sha256:fbd26706cb7fabf8c953dc5ca221ab3daa7e1daff6395e61655244e667bfa5a2", size = 3483, upload-time = "2024-11-07T13:12:52.188Z" },
-]
-
-[[package]]
 name = "json5"
 version = "0.15.0"
 source = { registry = "https://pypi.org/simple" }
@@ -3229,8 +3216,6 @@ notebooks = [
     { name = "cytoolz" },
     { name = "fastexcel" },
     { name = "great-tables" },
-    { name = "joblib" },
-    { name = "joblib-progress" },
     { name = "jupyterlab" },
     { name = "lxml" },
     { name = "matplotlib" },
@@ -3301,8 +3286,6 @@ notebooks = [
     { name = "cytoolz" },
     { name = "fastexcel" },
     { name = "great-tables" },
-    { name = "joblib" },
-    { name = "joblib-progress" },
     { name = "jupyterlab", specifier = ">=4.4.0" },
     { name = "lxml" },
     { name = "matplotlib" },
