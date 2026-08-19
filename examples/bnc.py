@@ -49,13 +49,13 @@ ROW_GROUP_TOKENS = 250_000
 # speaker column reads like the text columns beside it rather than in the BNC's
 # codes.  The code for "not recorded" maps to None, so a null test covers both
 # an unrecorded speaker and a written text with no speaker at all; a code no
-# table names is kept as it stands, which is how `soc` and `role` pass through
-# the values there is no point in spelling out.  All five attributes are on all
-# 6124 <person> elements, so nothing here has to cope with a missing one.
+# table names is kept as it stands, which is how `social_class` and `role` pass
+# through the values there is no point in spelling out.  All five attributes are
+# on all 6124 <person> elements, so nothing here has to cope with a missing one.
 SPEAKER_ATTRS = {
     "sex": ("sex", {"m": "Male", "f": "Female", "u": None}),
-    # The bands `author_age` and `respondent_age` use, so the three are
-    # comparable.
+    # The bands `author_age_group` and `respondent_age_group` use, so the three
+    # are comparable.
     "age_group": (
         "ageGroup",
         {
@@ -69,8 +69,8 @@ SPEAKER_ATTRS = {
         },
     ),
     # AB/C1/C2/DE are the grades the BNC's own tables use and what
-    # `respondent_class` holds, so only the unknown code needs naming.
-    "soc": ("soc", {"UU": None}),
+    # `respondent_social_class` holds, so only the unknown code needs naming.
+    "social_class": ("soc", {"UU": None}),
     "dialect": (
         "dialect",
         {
@@ -125,17 +125,21 @@ SPEAKER_ELEMENTS = {
 # BNC's code for "not recorded" mapped to None: a null then covers both an
 # unclassified text and a taxonomy that does not apply, so the written columns
 # read back null throughout a spoken text and the spoken ones null throughout a
-# written one.  The labels are those the Reference Guide gives in its tables in
-# section 1 (Design of the corpus).
+# written one.  Both the column names and the labels are the Reference Guide's,
+# from its tables in section 1 (Design of the corpus), so a column here is
+# searchable in the Guide by its own name.
 #
 # Three taxonomies are left out.  WRILEV (perceived difficulty) and WRISTA
 # (estimated circulation) "were incorrectly differentiated during the
 # preparation of the corpus and cannot be relied on" -- the Guide's own words.
-# ALLTYP says nothing that `mode`, `text_type` and `medium` do not.
+# ALLTYP says nothing that `mode`, `text_type` and `written_medium` do not.
 CATEGORIES = {
-    "period": ("ALLTIM", {0: None, 1: "1960-1974", 2: "1975-1984", 3: "1985-1993"}),
+    "publication_date": (
+        "ALLTIM",
+        {0: None, 1: "1960-1974", 2: "1975-1984", 3: "1985-1993"},
+    ),
     # Written texts.
-    "domain": (
+    "written_domain": (
         "WRIDOM",
         {
             1: "Imaginative",
@@ -149,7 +153,7 @@ CATEGORIES = {
             9: "Informative: leisure",
         },
     ),
-    "medium": (
+    "written_medium": (
         "WRIMED",
         {
             1: "Book",
@@ -159,7 +163,7 @@ CATEGORIES = {
             5: "To-be-spoken",
         },
     ),
-    "sample": (
+    "sampling_type": (
         "WRISAM",
         {
             0: None,
@@ -170,7 +174,7 @@ CATEGORIES = {
             5: "Composite sample",
         },
     ),
-    "pub_place": (
+    "publication_place": (
         "WRIPP",
         {
             0: None,
@@ -187,7 +191,7 @@ CATEGORIES = {
         {0: None, 1: "Corporate", 2: "Multiple", 3: "Sole"},
     ),
     "author_sex": ("WRIASE", {0: None, 1: "Male", 2: "Female", 3: "Mixed"}),
-    "author_age": (
+    "author_age_group": (
         "WRIAAG",
         {0: None, 1: "0-14", 2: "15-24", 3: "25-34", 4: "35-44", 5: "45-59", 6: "60+"},
     ),
@@ -209,9 +213,9 @@ CATEGORIES = {
     "audience_sex": ("WRITAS", {0: None, 1: "Male", 2: "Female", 3: "Mixed"}),
     # Spoken texts, both samples.
     "region": ("SPOREG", {0: None, 1: "South", 2: "Midlands", 3: "North"}),
-    "interaction": ("SPOLOG", {1: "Monologue", 2: "Dialogue"}),
+    "interaction_type": ("SPOLOG", {1: "Monologue", 2: "Dialogue"}),
     # Context-governed texts only.
-    "context": (
+    "spoken_context": (
         "SCGDOM",
         {
             1: "Educational/Informative",
@@ -222,12 +226,12 @@ CATEGORIES = {
     ),
     # Demographically sampled texts only: the recruit who carried the recorder,
     # not the speaker of the token, who is described by the speaker columns.
-    "respondent_age": (
+    "respondent_age_group": (
         "SDEAGE",
         {1: "0-14", 2: "15-24", 3: "25-34", 4: "35-44", 5: "45-59", 6: "60+"},
     ),
     "respondent_sex": ("SDESEX", {0: None, 1: "Male", 2: "Female"}),
-    "respondent_class": (
+    "respondent_social_class": (
         "SDECLA",
         {0: None, 1: "AB", 2: "C1", 3: "C2", 4: "DE"},
     ),
@@ -248,9 +252,10 @@ TOKEN_SCHEMA = pl.Schema(
 )
 
 # One value per text, so these are set as literals rather than appended a token
-# at a time.  `year` is the date of publication for a written text and of the
-# recording for a spoken one; `period` is the coarser band the BNC assigned,
-# which is not always null when `year` is.
+# at a time.  `year` is the exact date -- of publication for a written text, of
+# the recording for a spoken one -- while `publication_date` is the coarser band
+# the BNC classified the text under, and is worth keeping beside it because 381
+# texts are banded but carry no date of their own.
 TEXT_SCHEMA = pl.Schema(
     {
         "file_id": pl.String,
@@ -455,5 +460,6 @@ if __name__ == "__main__":
 # join -- here, fiction written by women:
 #
 #     fiction = corpus.filter(
-#         pl.col("domain") == "Imaginative", pl.col("author_sex") == "Female"
+#         pl.col("written_domain") == "Imaginative",
+#         pl.col("author_sex") == "Female",
 #     )
