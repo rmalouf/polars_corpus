@@ -152,3 +152,54 @@ def test_yules_k(tokens, predicate):
     """Yule's K is 0 for maximal diversity and grows as repetition increases."""
     df = pl.DataFrame({"tokens": tokens}, schema={"tokens": pl.String})
     assert predicate(df.select(plc.yules_k("tokens")).item())
+
+
+class TestVocabularyGrowth:
+    """Vocabulary growth curve: a running count of types."""
+
+    @pytest.mark.parametrize(
+        "tokens,expected",
+        [
+            pytest.param(list("abcde"), [1, 2, 3, 4, 5], id="all-unique"),
+            pytest.param(["the"] * 4, [1, 1, 1, 1], id="all-identical"),
+            pytest.param(
+                ["the", "cat", "sat", "on", "the", "mat"],
+                [1, 2, 3, 4, 4, 5],
+                id="mixed",
+            ),
+            # Null is a type, as in ttr, and only its first occurrence counts.
+            pytest.param(["a", None, "a", None, "b"], [1, 2, 2, 2, 3], id="nulls"),
+            pytest.param([], [], id="empty"),
+        ],
+    )
+    def test_growth(self, tokens, expected):
+        df = pl.DataFrame({"tokens": tokens}, schema={"tokens": pl.String})
+        curve = df.select(plc.vocabulary_growth("tokens")).to_series()
+        assert curve.to_list() == expected
+
+    @pytest.mark.parametrize("dtype", [pl.String, pl.Categorical, pl.Int32], ids=str)
+    def test_dtypes(self, dtype):
+        tokens = pl.Series(["1", "2", "1", "3"]).cast(dtype)
+        df = pl.DataFrame({"tokens": tokens})
+        assert df.select(plc.vocabulary_growth("tokens")).to_series().to_list() == [
+            1,
+            2,
+            2,
+            3,
+        ]
+
+    def test_ends_at_n_unique(self):
+        df = pl.DataFrame({"tokens": ["a", "b", "c", "a", "b"] * 20})
+        last = df.select(plc.vocabulary_growth("tokens")).to_series()[-1]
+        assert last == df.select(pl.col("tokens").n_unique()).item()
+
+    def test_per_file(self):
+        """The curve restarts for each group when used with `over`."""
+        df = pl.DataFrame(
+            {
+                "file_id": ["a", "a", "a", "b", "b", "b"],
+                "tokens": ["x", "y", "x", "x", "x", "z"],
+            }
+        )
+        curve = df.select(plc.vocabulary_growth("tokens").over("file_id")).to_series()
+        assert curve.to_list() == [1, 2, 2, 1, 1, 2]

@@ -10,7 +10,7 @@ from .utils import as_expr
 
 LIB = Path(__file__).parent
 
-__all__ = ["ttr", "msttr", "yules_k", "mtld"]
+__all__ = ["ttr", "msttr", "yules_k", "mtld", "vocabulary_growth"]
 
 
 def ttr(expr: IntoExpr) -> pl.Expr:
@@ -163,3 +163,26 @@ def yules_k(expr: IntoExpr) -> pl.Expr:
 
 
 ## LEXICAL GROWTH CURVES
+
+
+def vocabulary_growth(expr: IntoExpr) -> pl.Expr:
+    """
+    Calculate a vocabulary growth curve V(N).
+
+    A vocabulary growth curve is the running count of types seen so far: the
+    value in row N is the number of distinct tokens in the first N tokens of
+    the corpus, so the last value equals the total number of types. Like
+    `ttr`, this counts null as a type.
+
+    Parameters
+    ----------
+    expr : IntoExpr
+        Column name or expression holding the tokens to analyze.
+
+    Returns
+    -------
+    pl.Expr
+        Expression returning one type count per token, in corpus order.
+        Downsample long curves for plotting with `.gather_every(n)`.
+    """
+    return as_expr(expr).is_first_distinct().cum_sum()
