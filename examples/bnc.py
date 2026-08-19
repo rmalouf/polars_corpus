@@ -16,11 +16,11 @@
 #   * row groups small enough that slicing to a handful of texts doesn't decode
 #     much else, and aligned to text boundaries so it decodes nothing partial.
 #
-# Speaker metadata is denormalized onto every token rather than written to a
-# second file to be joined back, so selecting speakers is a filter and not a
-# join.  It is cheap to carry: a text has a handful of speakers, so the columns
-# are long runs that Parquet dictionary-encodes away -- a few percent of a
-# spoken text, and nothing at all for a written one, where they are all null.
+# Text and speaker metadata are denormalized onto every token rather than
+# written to a second file to be joined back, so restricting a search to a
+# subcorpus is a filter and not a join.  It is cheap to carry: a text column
+# holds one value for the whole text and a speaker column changes only between
+# turns, so both are long runs that Parquet dictionary-encodes away.
 
 from collections import defaultdict
 from concurrent.futures import ProcessPoolExecutor
@@ -44,14 +44,71 @@ N_WORKERS = 8
 # metadata and slightly worse compression.
 ROW_GROUP_TOKENS = 250_000
 
-# The <person> attributes worth keeping, as column -> (attribute, the code the
-# BNC uses for "not recorded").  Those codes read back as nulls, so a null test
-# covers both an unrecorded speaker and a written text with no speaker at all.
+# The <person> attributes worth keeping, as column -> (attribute, the label for
+# each code), decoded the way the text classifications above are so that a
+# speaker column reads like the text columns beside it rather than in the BNC's
+# codes.  The code for "not recorded" maps to None, so a null test covers both
+# an unrecorded speaker and a written text with no speaker at all; a code no
+# table names is kept as it stands, which is how `soc` and `role` pass through
+# the values there is no point in spelling out.  All five attributes are on all
+# 6124 <person> elements, so nothing here has to cope with a missing one.
 SPEAKER_ATTRS = {
-    "sex": ("sex", "u"),
-    "age_group": ("ageGroup", "X"),
-    "soc": ("soc", "UU"),
-    "dialect": ("dialect", "NONE"),
+    "sex": ("sex", {"m": "Male", "f": "Female", "u": None}),
+    # The bands `author_age` and `respondent_age` use, so the three are
+    # comparable.
+    "age_group": (
+        "ageGroup",
+        {
+            "Ag0": "0-14",
+            "Ag1": "15-24",
+            "Ag2": "25-34",
+            "Ag3": "35-44",
+            "Ag4": "45-59",
+            "Ag5": "60+",
+            "X": None,
+        },
+    ),
+    # AB/C1/C2/DE are the grades the BNC's own tables use and what
+    # `respondent_class` holds, so only the unknown code needs naming.
+    "soc": ("soc", {"UU": None}),
+    "dialect": (
+        "dialect",
+        {
+            "NONE": None,
+            "CAN": "Canadian",
+            "XDE": "German",
+            "XEA": "East Anglian",
+            "XFR": "French",
+            "XHC": "Home Counties",
+            "XHM": "Humberside",
+            "XIR": "Irish",
+            "XIS": "Indian subcontinent",
+            "XLC": "Lancashire",
+            "XLO": "London",
+            "XMC": "Central Midlands",
+            "XMD": "Merseyside",
+            "XME": "North-east Midlands",
+            "XMI": "Midlands",
+            "XMS": "South Midlands",
+            "XMW": "North-west Midlands",
+            "XNC": "Central Northern England",
+            "XNE": "North-east England",
+            "XNO": "Northern England",
+            "XOT": "Other or unidentifiable",
+            "XSD": "Scottish",
+            "XSL": "Lower south-west England",
+            "XSS": "Central south-west England",
+            "XSU": "Upper south-west England",
+            "XUR": "European",
+            "XUS": "American (US)",
+            "XWA": "Welsh",
+            "XWE": "West Indian",
+        },
+    ),
+    # How the speaker stood to the respondent who carried the recorder, in a
+    # demographically sampled text.  79 values, all of them already words, so
+    # only the two that mean "not recorded" are named.
+    "role": ("role", {"unspecified": None, "?": None}),
 }
 # The rest of the metadata is in child elements rather than attributes.  `age`
 # and `educ` are left out as before: `educ` is "X" for all but a handful of
@@ -62,8 +119,123 @@ SPEAKER_ELEMENTS = {
     "pers_note": "persNote",
 }
 
-# Everything stays String: Parquet dictionary-encodes the repetitive columns on
-# disk, and Categorical would only cost memory once the corpus is read back.
+# Each text carries one code from each of the classification taxonomies that
+# apply to it, all run together in the `targets` attribute of its <catRef>.
+# This maps column -> (taxonomy prefix, the label for each code), with the
+# BNC's code for "not recorded" mapped to None: a null then covers both an
+# unclassified text and a taxonomy that does not apply, so the written columns
+# read back null throughout a spoken text and the spoken ones null throughout a
+# written one.  The labels are those the Reference Guide gives in its tables in
+# section 1 (Design of the corpus).
+#
+# Three taxonomies are left out.  WRILEV (perceived difficulty) and WRISTA
+# (estimated circulation) "were incorrectly differentiated during the
+# preparation of the corpus and cannot be relied on" -- the Guide's own words.
+# ALLTYP says nothing that `mode`, `text_type` and `medium` do not.
+CATEGORIES = {
+    "period": ("ALLTIM", {0: None, 1: "1960-1974", 2: "1975-1984", 3: "1985-1993"}),
+    # Written texts.
+    "domain": (
+        "WRIDOM",
+        {
+            1: "Imaginative",
+            2: "Informative: natural & pure science",
+            3: "Informative: applied science",
+            4: "Informative: social science",
+            5: "Informative: world affairs",
+            6: "Informative: commerce & finance",
+            7: "Informative: arts",
+            8: "Informative: belief & thought",
+            9: "Informative: leisure",
+        },
+    ),
+    "medium": (
+        "WRIMED",
+        {
+            1: "Book",
+            2: "Periodical",
+            3: "Miscellaneous published",
+            4: "Miscellaneous unpublished",
+            5: "To-be-spoken",
+        },
+    ),
+    "sample": (
+        "WRISAM",
+        {
+            0: None,
+            1: "Whole text",
+            2: "Beginning sample",
+            3: "Middle sample",
+            4: "End sample",
+            5: "Composite sample",
+        },
+    ),
+    "pub_place": (
+        "WRIPP",
+        {
+            0: None,
+            1: "UK (unspecific)",
+            2: "Ireland",
+            3: "UK: North",
+            4: "UK: Midlands",
+            5: "UK: South",
+            6: "United States",
+        },
+    ),
+    "author_type": (
+        "WRIATY",
+        {0: None, 1: "Corporate", 2: "Multiple", 3: "Sole"},
+    ),
+    "author_sex": ("WRIASE", {0: None, 1: "Male", 2: "Female", 3: "Mixed"}),
+    "author_age": (
+        "WRIAAG",
+        {0: None, 1: "0-14", 2: "15-24", 3: "25-34", 4: "35-44", 5: "45-59", 6: "60+"},
+    ),
+    "author_domicile": (
+        "WRIAD",
+        {
+            0: None,
+            1: "UK and Ireland",
+            2: "Commonwealth",
+            3: "Continental Europe",
+            4: "USA",
+            5: "Elsewhere",
+        },
+    ),
+    "audience_age": (
+        "WRIAUD",
+        {1: "Child", 2: "Teenager", 3: "Adult", 4: "Any"},
+    ),
+    "audience_sex": ("WRITAS", {0: None, 1: "Male", 2: "Female", 3: "Mixed"}),
+    # Spoken texts, both samples.
+    "region": ("SPOREG", {0: None, 1: "South", 2: "Midlands", 3: "North"}),
+    "interaction": ("SPOLOG", {1: "Monologue", 2: "Dialogue"}),
+    # Context-governed texts only.
+    "context": (
+        "SCGDOM",
+        {
+            1: "Educational/Informative",
+            2: "Business",
+            3: "Public/Institutional",
+            4: "Leisure",
+        },
+    ),
+    # Demographically sampled texts only: the recruit who carried the recorder,
+    # not the speaker of the token, who is described by the speaker columns.
+    "respondent_age": (
+        "SDEAGE",
+        {1: "0-14", 2: "15-24", 3: "25-34", 4: "35-44", 5: "45-59", 6: "60+"},
+    ),
+    "respondent_sex": ("SDESEX", {0: None, 1: "Male", 2: "Female"}),
+    "respondent_class": (
+        "SDECLA",
+        {0: None, 1: "AB", 2: "C1", 3: "C2", 4: "DE"},
+    ),
+}
+
+# Everything but the year stays String: Parquet dictionary-encodes the
+# repetitive columns on disk, and Categorical would only cost memory once the
+# corpus is read back.
 TOKEN_SCHEMA = pl.Schema(
     {
         "token": pl.String,
@@ -71,22 +243,36 @@ TOKEN_SCHEMA = pl.Schema(
         "pos": pl.String,
         "tag": pl.String,
         "sentence_tag": pl.String,
-        "mode": pl.String,
-        "text_type": pl.String,
-        "file_id": pl.String,
         "speaker_id": pl.String,
     }
 )
 
-# Keyed on speaker_id, which the token side already carries, so joining the two
-# gives exactly TOKEN_SCHEMA followed by the metadata columns.
+# One value per text, so these are set as literals rather than appended a token
+# at a time.  `year` is the date of publication for a written text and of the
+# recording for a spoken one; `period` is the coarser band the BNC assigned,
+# which is not always null when `year` is.
+TEXT_SCHEMA = pl.Schema(
+    {
+        "file_id": pl.String,
+        "mode": pl.String,
+        "text_type": pl.String,
+        "genre": pl.String,
+        "year": pl.Int16,
+    }
+    | {column: pl.String for column in CATEGORIES}
+)
+
+# Keyed on speaker_id, which the token side already carries, so joining it on
+# is what completes CORPUS_SCHEMA.
 SPEAKER_SCHEMA = pl.Schema(
     {"speaker_id": pl.String}
     | {column: pl.String for column in SPEAKER_ATTRS | SPEAKER_ELEMENTS}
 )
 
 CORPUS_SCHEMA = pl.Schema(
-    TOKEN_SCHEMA | {c: t for c, t in SPEAKER_SCHEMA.items() if c != "speaker_id"}
+    TOKEN_SCHEMA
+    | TEXT_SCHEMA
+    | {c: t for c, t in SPEAKER_SCHEMA.items() if c != "speaker_id"}
 )
 
 
@@ -96,8 +282,8 @@ def get_speakers(doc):
     for person in doc.xpath("//person"):
         row = [person.get("{http://www.w3.org/XML/1998/namespace}id")]
         row += [
-            None if (value := person.get(attr)) == absent else value
-            for attr, absent in SPEAKER_ATTRS.values()
+            labels.get(value := person.get(attr), value)
+            for attr, labels in SPEAKER_ATTRS.values()
         ]
         row += [
             found[0].text.strip() if (found := person.xpath(tag)) else None
@@ -105,6 +291,18 @@ def get_speakers(doc):
         ]
         rows.append(row)
     return pl.DataFrame(rows, schema=SPEAKER_SCHEMA, orient="row")
+
+
+def get_text_class(doc):
+    """The document's classification codes, decoded to labels."""
+    codes = doc.xpath("//catRef/@targets")[0].split()
+    found = {}
+    for column, (prefix, labels) in CATEGORIES.items():
+        # A handful of texts are missing a code the rest of their sample has,
+        # which reads back the same as one recorded as unknown.
+        code = next((c for c in codes if c.startswith(prefix)), None)
+        found[column] = labels[int(code.removeprefix(prefix))] if code else None
+    return found
 
 
 def get_xml(filename):
@@ -120,12 +318,20 @@ def get_xml(filename):
         return None
     if text := doc.xpath("//wtext"):
         text_mode = "written"
-        text_type = text[0].xpath("./@type")[0]
     elif text := doc.xpath("//stext"):
         text_mode = "spoken"
-        text_type = text[0].xpath("./@type")[0]
     else:
         raise ValueError("Unknown text type")
+
+    # "0000" is what the header gives for a text whose date is unknown.
+    year = doc.xpath("//creation/@date")[0]
+    metadata = {
+        "file_id": docid,
+        "mode": text_mode,
+        "text_type": text[0].get("type"),
+        "genre": doc.xpath("//classCode")[0].text,
+        "year": None if year == "0000" else int(year),
+    } | get_text_class(doc)
 
     data = defaultdict(list)
     for s in doc.xpath("//s"):
@@ -141,9 +347,6 @@ def get_xml(filename):
                 pass
             else:
                 data["speaker_id"].append(speaker_id)
-                data["mode"].append(text_mode)
-                data["text_type"].append(text_type)
-                data["file_id"].append(docid)
                 data["sentence_tag"].append(sent_tag)
                 if token.tag == "w":
                     data["token"].append(token.text.strip())
@@ -162,10 +365,16 @@ def get_xml(filename):
                     data["pos"].append(None)
             sent_tag = "I"
 
-    # Join rather than widen the loop above: the metadata is per speaker, and
-    # appending seven more constants per token would cost more than the join.
-    return pl.DataFrame(data, schema=TOKEN_SCHEMA).join(
-        get_speakers(doc), on="speaker_id", how="left", maintain_order="left"
+    # Neither block of metadata is appended in the loop above: the text columns
+    # are one value each, and the speaker columns are cheaper to join on than to
+    # look up and append per token.
+    return (
+        pl.DataFrame(data, schema=TOKEN_SCHEMA)
+        .with_columns(
+            pl.lit(value, dtype=TEXT_SCHEMA[column]).alias(column)
+            for column, value in metadata.items()
+        )
+        .join(get_speakers(doc), on="speaker_id", how="left", maintain_order="left")
     )
 
 
@@ -232,8 +441,8 @@ if __name__ == "__main__":
     convert(sorted(TEXTS.glob("**/*.xml")))
     check_corpus()
 
-# Searching it back never loads the corpus, and the speaker metadata rides
-# along on the results:
+# Searching it back never loads the corpus, and the text and speaker metadata
+# ride along on the results:
 #
 #     import polars as pl
 #     import polars_corpus  # noqa: F401
@@ -241,3 +450,10 @@ if __name__ == "__main__":
 #     corpus = pl.scan_parquet("bnc.parquet")
 #     results = corpus.corpus.search("{take} * for granted")
 #     print(results.concordance())
+#
+# A subcorpus is a filter over those same columns, so it costs a scan and no
+# join -- here, fiction written by women:
+#
+#     fiction = corpus.filter(
+#         pl.col("domain") == "Imaginative", pl.col("author_sex") == "Female"
+#     )
