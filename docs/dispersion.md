@@ -1,6 +1,6 @@
 # Lexical dispersion
 
-Examples: [Lexical dispersion](notebook/dispersion.ipynb)
+Examples: [Lexical dispersion](notebooks/dispersion.ipynb)
 
 ::: polars_corpus.dispersion.dispersion
 ---
