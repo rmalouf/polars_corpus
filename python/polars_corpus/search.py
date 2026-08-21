@@ -343,8 +343,6 @@ class _SearchResultsBase:
         if _check_count(window, "window") == 0:
             raise ValueError("window must be at least 1 to have any collocates in it")
         _check_count(min_freq, "min_freq", " Use min_freq=0 to keep them all.")
-        # The concordance names its context columns after the expression's
-        # output name, so the expression has to name one column, not several.
         if isinstance(expr, (list, tuple)):
             raise ValueError(
                 "expr must name a single column to collocate with, not a list of "
@@ -357,8 +355,6 @@ class _SearchResultsBase:
             .select(
                 collocate=pl.col(f"{name}_left_context")
                 .list.concat(f"{name}_right_context")
-                # An empty context -- a match at the edge of the corpus -- has
-                # no collocates in it rather than one null one.
                 .explode(empty_as_null=False)
             )
             # A null token is not a collocate either.
@@ -418,8 +414,6 @@ class _SearchResultsBase:
         """
         from .view import ConcordanceWidget
 
-        # The widget shows the matched column and its context, so the bound
-        # variables would only take up room.
         conc = self.concordance(
             expr,
             window=window,
@@ -427,8 +421,6 @@ class _SearchResultsBase:
             metadata=metadata,
             bindings=False,
         )
-        # The widget shows one column; the concordance holds the matched ones
-        # ahead of any metadata, so its first is the one asked for.
         ConcordanceWidget(conc, page_size=page_size).show()
 
     def head(self, n: int) -> Self:
@@ -604,8 +596,6 @@ class _SearchResultsBase:
         """
         from .embeddings import encode
 
-        # The context columns are named after the expression's output name, so
-        # the expression has to name one column, not several.
         if isinstance(expr, (list, tuple)):
             raise ValueError(
                 "expr must name a single column to encode, not a list of them; "
@@ -619,7 +609,6 @@ class _SearchResultsBase:
             metadata=metadata,
             bindings=False,
         )
-        # window=0 leaves the match with no context columns around it.
         parts = [
             column
             for column in (f"{name}_left_context", name, f"{name}_right_context")
@@ -628,9 +617,6 @@ class _SearchResultsBase:
         keep = [metadata] if isinstance(metadata, str) else list(metadata or [])
         return (
             conc.lazy()
-            # Joining the lists rather than the joined strings keeps an empty
-            # context -- a match at the edge of the corpus -- from padding the
-            # line with a stray space.
             .select(pl.concat_list(parts).list.join(" ").alias(name), *keep)
             .with_columns(vector=encode(model, name))
             .collect()
@@ -895,8 +881,6 @@ class LazySearchResults(_SearchResultsBase):
             )
             orders.extend(group["_order"].to_list())
 
-        # The chunk loop grouped the matches by file; put them back in the
-        # order the matches frame holds them.
         return (
             pl.concat(parts)
             .with_columns(pl.Series("_order", orders, dtype=pl.UInt32))

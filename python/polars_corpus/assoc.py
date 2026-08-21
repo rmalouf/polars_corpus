@@ -48,7 +48,7 @@ def _as_freqs(
 
 def crosstab(corpus: T_Frame, x: IntoExprColumn, y: IntoExprColumn) -> T_Frame:
     """
-    Create a crosstabulation (contingency table) from two categorical variables.
+    Create a cross-tabulation (contingency table) from two categorical variables.
 
     Computes a contingency table showing the joint frequency distribution
     of two categorical variables, along with marginal totals and grand total.
@@ -68,8 +68,7 @@ def crosstab(corpus: T_Frame, x: IntoExprColumn, y: IntoExprColumn) -> T_Frame:
     Returns
     -------
     T_Frame
-        The contingency table, eager if `corpus` is a DataFrame and lazy if it
-        is a LazyFrame, with the following columns:
+        The contingency table with the following columns:
 
         - x : Levels/categories of the first variable
         - y : Levels/categories of the second variable

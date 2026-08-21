@@ -10,6 +10,7 @@ modest hardware without requiring external servers or databases.
   - [Word frequencies](notebooks/frequencies.ipynb)
   - [Keyword Analysis](notebooks/keywords.ipynb)
   - [Lexical Dispersion](notebooks/dispersion.ipynb)
+  - [Vocabulary](notebooks/vocabulary.ipynb)
 
 ## Reference:
 

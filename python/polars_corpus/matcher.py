@@ -176,13 +176,9 @@ def _search_eager(
 ) -> Optional[SearchResults]:
     """Search an eager corpus, which fits in memory whole."""
     df = as_eager(df)
-    # The default name binds only when the corpus has it; any other name is
-    # the caller's to get right, and is checked below.
     if file_id_column == DEFAULT_FILE_ID and file_id_column not in df.columns:
         file_id_column = None
     if file_id_column is not None:
-        # Checked ahead of the empty-corpus shortcut so a bad column name is
-        # reported the same way whether or not the corpus happens to be empty.
         check_columns(df, [file_id_column], param="file_id_column")
     if df.is_empty():
         return None

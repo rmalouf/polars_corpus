@@ -40,9 +40,9 @@ COLUMNS = {
 #   dispersion in corpus linguistics. Journal of Research Design and Statistics in
 #   Linguistics and Communication Science, 3(2), 189-216.
 
-# TODO: more measures, if they turn out to be wanted -- Carroll's D2, Rosengren's
-# S, Gries's KLD, DPnorm, and the adjusted frequencies (U, AF) that pair with
-# them. The eight here cover the ground for now.
+# TODO: more measures, if they turn out to be wanted
+#  -- Carroll's D2, Rosengren's S, Gries's KLD, DPnorm, and the adjusted
+#  frequencies (U, AF) that pair with # them.
 
 
 def dispersion(
@@ -99,33 +99,7 @@ def dispersion(
 
     Notes
     -----
-    Only the columns `expr` and `file_id_column` name are read.
-
-    Rows holding a null in either are dropped: a token with no value for `expr`
-    is not an occurrence of anything, and one with no file id belongs to no part
-    to be spread across. The file sizes the measures divide by count what
-    survives, so over a corpus whose `lemma` is null on punctuation, lemma
-    frequencies are measured per lemma-bearing token rather than per token.
-
-    'range', 'range%' and 'sd' scale with a word's frequency, so they compare
-    only between words of similar frequency; `freq` is reported alongside to
-    make that visible. The rest divide that scale out, and 'range%' also divides
-    out the number of files, so it can be compared across corpora cut into
-    different numbers of parts.
-
-    Which end of a sort holds the evenly spread words varies: 'sd', 'cv', 'cv%'
-    and 'dp' measure unevenness, the other four measure evenness. 'd' and 'da'
-    both run from 0 (the word falls in a single file) to 1 (spread perfectly
-    evenly), but 'da' compares the files to each other rather than to their
-    mean, so one outlying file sways it less. 'dp' runs from 0 (spread exactly
-    as the corpus is) up towards 1, reaching that ceiling only for a word
-    confined to a vanishingly small file. A corpus of a single file gives NaN
-    for 'sd', 'cv', 'cv%', 'd' and 'da', and 0 for 'dp'.
-
-    Asking for several measures at once costs less than asking for them one by
-    one: 'sd', 'cv', 'cv%' and 'd' all come out of one pass over the corpus, as
-    do 'range' and 'range%', and 'da' shares most of its work with the first
-    group. Only 'dp' reads the corpus its own way and shares nothing.
+    Rows holding a null in either `expr` and `file_id_column` are dropped.
 
     Examples
     --------
@@ -143,15 +117,8 @@ def dispersion(
     check_columns(lf, [file_id_column], param="file_id_column")
     term_name = check_expr(lf, term)
 
-    # Cut down to the two columns being read before anything else, so a null
-    # elsewhere in the corpus is none of this measure's business. It also settles
-    # `term` into a plain column, so the rest of the work can name it rather than
-    # re-evaluate it against a frame it no longer matches.
     lf = lf.select(term, file_id_column).drop_nulls()
 
-    # One frame per group of measures that reads the corpus the same way, so a
-    # group asked for at all is computed once however many of its measures are
-    # wanted.
     range_methods = [m for m in methods if m in RANGE_METHODS]
     sd_methods = [m for m in methods if m in SD_METHODS]
     frames = []
@@ -166,8 +133,6 @@ def dispersion(
             .with_columns(pl.col(file_id_column).n_unique().alias("_N"))
         )
         sizes = lf.group_by(file_id_column).agg(pl.len().alias("_size"))
-        # Keep the raw count as well: the measures work from the rate, but the
-        # frequency reported alongside them is of occurrences, not of shares.
         per_file = per_file.join(sizes, on=file_id_column).select(
             term_name,
             "_N",
@@ -179,9 +144,6 @@ def dispersion(
         if "da" in methods:
             frames.append(_dispersion_da(per_file, term_name))
 
-    # DP weighs each file's share of the word against a share of its own, so it
-    # works from the counts and the file sizes side by side rather than from the
-    # per-file frequencies the measures above share.
     if "dp" in methods:
         frames.append(_dispersion_dp(lf, term_name, file_id_column))
 
@@ -193,8 +155,6 @@ def dispersion(
     if min_freq:
         result = result.filter(pl.col("freq") >= min_freq)
 
-    # Report the measures in the order asked for, not the order the groups
-    # above happened to compute them in.
     result = result.select(term_name, "freq", *(COLUMNS[m] for m in methods))
 
     return collect_like(result, corpus)
@@ -243,9 +203,7 @@ def _dispersion_sd(
     )
 
     mean = pl.col("_S") / pl.col("_N")
-    # Population sd: the files are the whole corpus, not a sample drawn from it.
     variance = (pl.col("_Q") - pl.col("_S") ** 2 / pl.col("_N")) / pl.col("_N")
-    # Watch out for rounding, which can drive variance below 0.
     sd = variance.clip(lower_bound=0).sqrt()
     cv = sd / mean
     cv_norm = (cv / (pl.col("_N") - 1).sqrt()).clip(upper_bound=1)
