@@ -42,7 +42,7 @@ COLUMNS = {
 
 # TODO: more measures, if they turn out to be wanted
 #  -- Carroll's D2, Rosengren's S, Gries's KLD, DPnorm, and the adjusted
-#  frequencies (U, AF) that pair with # them.
+#  frequencies (U, AF) that pair with them.
 
 
 def dispersion(
