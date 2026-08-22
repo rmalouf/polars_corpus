@@ -21,7 +21,10 @@ target/
 
 site/
 .coverage
-.claude/
+# Claude Code: shared project config is tracked, per-machine settings are not.
+.claude/*
+!.claude/skills/
+!.claude/commands/
 .pytest_cache/
 stuff/
 .DS_Store
