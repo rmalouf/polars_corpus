@@ -37,22 +37,23 @@ class CorpusExpr:
         return ngrams(n, self._expr)
 
     def chunk_id(self) -> pl.Expr:
-        """Convert BIO tags to chunk IDs.
-
-        Returns consecutive integer IDs for each chunk, with None for 'O' tags.
-        Each 'B' tag starts a new chunk with an incrementing ID. 'I' tags
-        continue the current chunk. 'O' tags are assigned None.
+        """
+        Number the chunks this column of BIO tags marks out.
 
         Returns
         -------
         pl.Expr
-            Expression with chunk IDs (integers) or None for outside tags.
+            Expression giving each token the number of "B" tags at or before
+            it, so 1 for the first chunk and 2 for the second, and null where
+            its tag is "O".
+
+        See Also
+        --------
+        polars_corpus.chunk_id : Function form, with the details.
 
         Examples
         --------
-        >>> df = pl.DataFrame({
-        ...     "bio": ["B", "I", "O", "B", "I"]
-        ... })
+        >>> df = pl.DataFrame({"bio": ["B", "I", "O", "B", "I"]})
         >>> df.with_columns(pl.col("bio").corpus.chunk_id().alias("chunk_idx"))
         shape: (5, 2)
         ┌─────┬───────────┐

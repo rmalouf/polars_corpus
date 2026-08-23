@@ -189,5 +189,31 @@ _parser = Lark(GRAMMAR, start="cqp", parser="lalr", transformer=_CQPCompiler())
 
 
 def cqp(query: str) -> list[Opcode]:
-    """Parse a CQP query string into a list of opcodes."""
+    """
+    Compile a CQP query into the opcodes the matcher runs.
+
+    Parameters
+    ----------
+    query : str
+        CQP query, e.g. `[pos="NN.*"] [lemma="be"]`. See QUERY_LANGUAGE.md for
+        the syntax.
+
+    Returns
+    -------
+    list of Opcode
+        The program the matcher runs, one opcode per step. A `Token` opcode
+        carries the serialized Polars expression that tests a token, and
+        `Split` and `Jump` encode alternation and repetition as relative
+        offsets. The closing `Match` is not appended here; `search_cqp` adds
+        it before running the program.
+
+    Raises
+    ------
+    lark.exceptions.LarkError
+        If `query` is not a well-formed CQP query.
+
+    See Also
+    --------
+    polars_corpus.search_cqp : Run such a query against a corpus.
+    """
     return _parser.parse(query)  # type: ignore[return-value]

@@ -261,49 +261,75 @@ def search_cqp(
     file_id_column: Optional[str] = DEFAULT_FILE_ID,
     chunk_tokens: int = DEFAULT_CHUNK_TOKENS,
 ) -> Optional[SearchResults | LazySearchResults]:
-    """Search corpus using a CQP-style query.
+    """
+    Find every place in a corpus where a CQP query matches.
+
+    A CQP query is a sequence of token patterns. Each one is written in
+    brackets as a test against the corpus's columns, so `[pos="NN.*"]` matches
+    a single token whose `pos` column matches that regular expression. Within
+    a bracket, `&` and `|` combine tests and `!=` negates one. Between
+    brackets, the patterns match consecutive tokens, and quantifiers such as
+    `+` and `{2,3}` apply to them as they do in a simple query.
+
+    Because the tests name columns directly, a CQP query can use any
+    annotation the corpus carries, not just the token, tag and lemma that
+    `search` has shorthands for. Anything a simple query can express, a CQP
+    query can express too: `search` compiles to CQP and runs the result.
+
+    Unlike simple queries, these tests are case-sensitive by default. Add `%c`
+    to one to ignore case, as in `[token="fox"%c]`.
 
     Parameters
     ----------
-    df : pl.DataFrame or pl.LazyFrame
-        Corpus to be searched.
-    query: str
-        CQP query string
+    df : DataFrame | LazyFrame
+        Corpus to search. A LazyFrame is searched a chunk of whole files at a
+        time, so the corpus is never held in memory at once.
+    query : str
+        CQP query, e.g. `[pos="NN.*"] [lemma="be"]`. See QUERY_LANGUAGE.md for
+        the syntax.
     file_id_column : str, optional
-        Column name holding file ids; matches won't span a change in its
-        value. The default "file_id" binds only when the corpus has that
-        column; None searches the whole corpus regardless (eager only -- a
-        LazyFrame always needs the column to chunk by).
+        Column holding file ids, which mark where one text ends and the next
+        begins. No match crosses a change in its value. The default of
+        "file_id" applies only if the corpus has that column, so a corpus
+        without one still searches. Pass None to search the corpus as one
+        continuous run of tokens; this works for eager corpora only, since a
+        LazyFrame needs the column to chunk by.
     chunk_tokens : int, default 10_000_000
-        Number of tokens to aim for per chunk when searching a LazyFrame.
-        Ignored for an eager corpus.
+        Tokens to aim for per chunk when searching a LazyFrame. Lower it to
+        use less memory, raise it for fewer passes over the corpus. Ignored
+        for an eager corpus.
 
     Returns
     -------
     SearchResults or LazySearchResults or None
-        Result of the search  (lazy in, lazy out) or None with no matches.
+        The matches: `SearchResults` for a DataFrame, `LazySearchResults` for
+        a LazyFrame. None if the query matched nothing, so check the result
+        before using it.
 
     Raises
     ------
     ValueError
-        If `df` is not a polars frame, does not have `file_id_column`, or is
-        a LazyFrame given without one
-    ParseException
-        If there's an error in the query
-    RuntimeError
-        If there's an internal error in the search procedure
+        If `df` is not a Polars DataFrame or LazyFrame, is missing
+        `file_id_column`, or is a LazyFrame given `file_id_column=None`; if
+        `chunk_tokens` is not a positive integer; or if `query` binds the same
+        variable twice.
+    lark.exceptions.LarkError
+        If `query` is not a well-formed CQP query.
 
-    Notes
-    -----
-    For CQP query syntax documentation, see the CQP documentation.
+    See Also
+    --------
+    search : The same search, written in the simple query language.
 
     Examples
     --------
-    >>> search_cqp(corpus, '[word="fox"]')
-    >>> search_cqp(corpus, '[pos="NN.*"]+ [pos="VB.*"]')
-    >>> search_cqp(pl.scan_parquet("bnc.parquet"), '[word="fox"]',
-    ...            file_id_column="file_id")
-
+    >>> import polars_corpus as plc
+    >>> plc.search_cqp(corpus, '[token="fox"%c]')  # %c to ignore case
+    >>> plc.search_cqp(corpus, '[pos="NN.*"]+ [pos="VB.*"]')  # Nouns, then a verb
+    >>> plc.search_cqp(corpus, '[pos!="NN.*"]')  # Anything but a noun
+    >>> # A column that the simple query shorthands cannot reach:
+    >>> plc.search_cqp(corpus, '[speaker="A" & lemma="think"]')
+    >>> # Out of core, over a corpus too large to hold in memory:
+    >>> plc.search_cqp(pl.scan_parquet("bnc.parquet"), '[token="fox"%c]')
     """
     return _search(df, query, query, file_id_column, chunk_tokens)
 
@@ -317,113 +343,88 @@ def search(
     file_id_column: Optional[str] = DEFAULT_FILE_ID,
     chunk_tokens: int = DEFAULT_CHUNK_TOKENS,
 ) -> Optional[SearchResults | LazySearchResults]:
-    """Search corpus using simple query language (BNCweb-style).
+    """
+    Find every place in a corpus where a simple (BNCweb-style) query matches.
 
-    This function uses a simple query syntax similar to BNCweb's. Queries
-    are case-insensitive throughout and support wildcards, alternatives,
-    word sequences, POS tags, and lemma searches.
+    A simple query is written the way the words appear. `fox` finds the word;
+    `quick brown fox` finds the three of them in sequence.
+
+    Inside a word, `?` stands for one character, and `*` and `+` stand for any
+    number of them. So `s?ng` finds *sing*, *sang* and *song*, and `*able`
+    finds words ending in *able*. Between words, `*` and `+` stand for whole
+    tokens instead: `eat * up` finds both *eat up* and *eat it up*, while
+    `eat + up` finds only *eat it up*.
+
+    `_TAG` constrains a token's tag, `{lemma}` constrains its lemma, and
+    `$name:` captures part of the match so that `concordance` can give it a
+    column. Every test ignores case.
+
+    The query is compiled to CQP and run by `search_cqp`. Anything this syntax
+    cannot express can be written as a CQP query instead.
 
     Parameters
     ----------
-    df : pl.DataFrame or pl.LazyFrame
-        Corpus to be searched.
+    df : DataFrame | LazyFrame
+        Corpus to search. A LazyFrame is searched a chunk of whole files at a
+        time, so the corpus is never held in memory at once.
     query : str
-        Simple query string (BNCweb-style syntax)
-    token_column : str, optional
-        Column name for token searches (default: "token")
-    pos_column : str, optional
-        Column name for POS tag searches (default: "pos")
-    lemma_column : str, optional
-        Column name for lemma searches (default: "lemma")
+        Simple query, e.g. `quick brown fox` or `{light}_V*`. See
+        [Simple query language](simple_query.md) for the full syntax.
+    token_column : str, default "token"
+        Column a bare word in the query is matched against.
+    pos_column : str, default "pos"
+        Column the `_TAG` part of a query is matched against.
+    lemma_column : str, default "lemma"
+        Column a `{lemma}` query is matched against. Only read by a query that
+        asks for a lemma, so an unlemmatized corpus still searches.
     file_id_column : str, optional
-        Column name holding file ids; matches won't span a change in its
-        value. The default "file_id" binds only when the corpus has that
-        column; None searches the whole corpus regardless (eager only -- a
-        LazyFrame always needs the column to chunk by).
+        Column holding file ids, which mark where one text ends and the next
+        begins. No match crosses a change in its value. The default of
+        "file_id" applies only if the corpus has that column, so a corpus
+        without one still searches. Pass None to search the corpus as one
+        continuous run of tokens; this works for eager corpora only, since a
+        LazyFrame needs the column to chunk by.
     chunk_tokens : int, default 10_000_000
-        Number of tokens to aim for per chunk when searching a LazyFrame.
-        Ignored for an eager corpus.
+        Tokens to aim for per chunk when searching a LazyFrame. Lower it to
+        use less memory, raise it for fewer passes over the corpus. Ignored
+        for an eager corpus.
 
     Returns
     -------
     SearchResults or LazySearchResults or None
-        Result of the search (lazy in, lazy out) or None if no matches
-        found
+        The matches: `SearchResults` for a DataFrame, `LazySearchResults` for
+        a LazyFrame. None if the query matched nothing, so check the result
+        before using it.
 
     Raises
     ------
     ValueError
-        If `df` is not a polars frame, does not have `file_id_column`, or is
-        a LazyFrame given without one
-    ParseException
-        If there's an error in the query syntax
-    RuntimeError
-        If there's an internal error in the search procedure
+        If `df` is not a Polars DataFrame or LazyFrame, is missing
+        `file_id_column`, or is a LazyFrame given `file_id_column=None`; if
+        `chunk_tokens` is not a positive integer; or if `query` binds the same
+        variable twice.
+    lark.exceptions.LarkError
+        If `query` is not a well-formed simple query.
+    polars.exceptions.ColumnNotFoundError
+        If the corpus has no column the query asks for -- a `_TAG` query
+        against a corpus with no `pos_column`, say. Point the `*_column`
+        arguments at the columns the corpus does have.
 
-    Notes
-    -----
-    Simple query syntax supports:
-
-    - **Basic words**: `fox` matches "fox", "Fox", "FOX" (case-insensitive)
-    - **Wildcards**:
-      - `?` for single character: `s?ng` → sing, sang, song
-      - `*` for zero or more: `*able` → able, table, capable
-      - `+` for one or more: `+able` → table, capable (not "able")
-    - **Alternatives**: `[car,truck]`, `neighbo[u,]r`
-    - **Sequences**: `quick brown fox`
-    - **Gaps**:
-      - `*` for optional token: `eat * up` → "eat up", "eat it up"
-      - `+` for required token: `eat + up` → "eat it up" (not "eat up")
-    - **POS tags**: `word_TAG` for word+POS, `_TAG` for POS only
-      - `lights_NN2` → "lights" tagged as NN2
-      - `*ly_AJ0` → adjectives ending in "-ly"
-      - `_PNX` → any reflexive pronoun
-    - **Lemmas**: `{lemma}`, `{lemma/POS}`, or `{lemma}_TAG` for lemma searches
-      - `{light}` → all forms of "light"
-      - `{light/V}` → verbal forms using simplified POS (V, N, A, etc.)
-      - `{walk}_VBD` → lemma "walk" with exact POS tag VBD
-      - `{be}_V*` → lemma "be" with any verb POS tag
-      - `{eat} * up` → lemma "eat" followed by "up"
-    - **Variable bindings**: `$varname: pattern` to capture subpatterns
-      - `$target: fox` → capture "fox" position
-      - `$phrase: (quick brown)` → capture multi-token span
-      - Access via `match.bindings[varname]`
-    - **Escaping**: `\\?` for literal question mark
-
-    For CQP queries with advanced features, use `search_cqp()` instead.
+    See Also
+    --------
+    search_cqp : The same search, written as a CQP query.
 
     Examples
     --------
-    >>> search(corpus, "fox")  # Find "fox" (case-insensitive)
-    >>> search(corpus, "s?ng")  # Find sing, sang, song
-    >>> search(corpus, "*able")  # Find words ending in "able"
-    >>> search(corpus, "[car,truck]")  # Find either "car" or "truck"
-    >>> search(corpus, "quick brown fox")  # Find exact sequence
-    >>> search(corpus, "fox + over")  # "fox" followed by any word, then "over"
-
-    >>> # POS tag searches
-    >>> search(corpus, "lights_NN2")  # "lights" as plural noun
-    >>> search(corpus, "*ly_AJ0")  # Adjectives ending in "-ly"
-    >>> search(corpus, "_PNX")  # Any reflexive pronoun
-
-    >>> # Lemma searches
-    >>> search(corpus, "{light}")  # All forms of lemma "light"
-    >>> search(corpus, "{light/V}")  # Verbal forms (simplified POS)
-    >>> search(corpus, "{walk}_VBD")  # Lemma "walk" with exact POS tag
-    >>> search(corpus, "{eat} * up")  # Lemma "eat" followed by "up"
-
-    >>> # Variable bindings
-    >>> results = search(corpus, "$verb: {walk}")
-    >>> match = results.matches[0]
-    >>> verb_span = match.bindings["verb"]
-    >>> verb_text = corpus["token"][verb_span.start:verb_span.end]
-
-    >>> # Search in a different column
-    >>> search(corpus, "NN*", token_column="pos")  # Find noun POS tags
-
-    >>> # Keep matches from spanning file boundaries
-    >>> search(corpus, "quick brown", file_id_column="file_id")
-
+    >>> import polars_corpus as plc
+    >>> plc.search(corpus, "fox")
+    >>> plc.search(corpus, "quick brown fox")  # A sequence of words
+    >>> plc.search(corpus, "*ly_AJ0")  # Adjectives ending in "-ly"
+    >>> plc.search(corpus, "{eat} * up")  # Forms of "eat", then "up"
+    >>> # A query written over a differently annotated corpus:
+    >>> plc.search(corpus, "{light}_V*", lemma_column="headword", pos_column="c5")
+    >>> # $name: captures part of the match, for concordance() to column off:
+    >>> plc.search(corpus, "$adj: _AJ0 $noun: _NN1")
     """
     cqp_query = simple_to_cqp(query, token_column, pos_column, lemma_column)
     return _search(df, cqp_query, query, file_id_column, chunk_tokens)

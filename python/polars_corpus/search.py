@@ -194,54 +194,71 @@ class _SearchResultsBase:
         metadata: Optional[str | list[str]] = None,
         bindings: bool | str | list[str] = True,
     ) -> pl.DataFrame:
-        """Generate a KWIC (Key Word In Context) concordance DataFrame.
+        """
+        Lay the matches out as a KWIC (keyword in context) concordance.
 
-        Creates a concordance table showing the matched text with surrounding
-        context. The concordance format includes left context, the matched
-        keyword(s), and right context in separate columns.
+        Returns one row per match. The matched words go in a column named
+        after `expr`, the words before them in `{expr}_left_context`, and the
+        words after them in `{expr}_right_context`. All three hold a list of
+        tokens rather than a joined string, so they can be filtered and
+        aggregated like any other list column.
 
         Parameters
         ----------
-        expr : IntoExprColumn, default "token"
-            Column name or Polars expression specifying which column(s)
-            to use for generating the concordance display. A list names
-            several at once.
+        expr : IntoExprColumn or list of IntoExprColumn, default "token"
+            Column name or expression to read the concordance text from
+            (e.g. token or lemma). Pass a list to get one set of columns per
+            name, so that words and tags can be shown side by side.
         window : int, default 0
-            Number of tokens to include on both left and right sides of
-            each match. The default of 0 gives the matches with no context.
-            Ignored when chunk_column is given.
+            Words of context to take on each side of a match. The default of 0
+            takes none, and the context columns are then left out. Ignored
+            when `chunk_column` is given.
         chunk_column : str, optional
-            Column name defining chunk boundaries for context extraction.
-            When specified, context extends to chunk boundaries marked by
-            "B" (begin) and "I" (inside) tags, ignoring the window parameter.
-            Context stops at the first non-"I" tag in each direction.
-        metadata : str or list[str], optional
-            Column name(s) from the source corpus to attach to each match as
-            plain (non-list) columns, e.g. file_id or category. The value is
-            taken from the first token of each match.
-        bindings : bool, str or list[str], default True
-            Which of the query's `$name:` bindings to give a column of their
-            own. True takes them all -- and so does nothing to a query that
-            binds none -- while False takes none. A name, or a list of names,
-            takes just those; see the `variables` attribute for what a query
-            bound.
+            Column of BIO tags, marking each chunk with "B" on its first token
+            and "I" on the rest. Context then runs to the edges of the chunk
+            holding the match instead of counting a fixed number of words:
+            back to the "B" that opened the chunk, and forward to the last "I"
+            before the next one. Pass a sentence tag column to get the whole
+            sentence a match sits in. `window` is ignored.
+        metadata : str or list of str, optional
+            Column(s) of the corpus to carry through to each row as ordinary
+            values rather than lists, e.g. `file_id` or `category`. The value
+            is read off the match's first token.
+        bindings : bool, str or list of str, default True
+            Which of the query's `$name:` captures to give a column of their
+            own. True takes all of them, which does nothing if the query
+            captured none. False takes none. A name, or a list of names, takes
+            just those. See `variables` for what a query captured.
 
         Returns
         -------
         pl.DataFrame
-            Concordance DataFrame with columns named according to the input
-            expression(s). For each column in expr, creates:
-            - "{column}_left_context": List of tokens before the match
-            - "{column}": List of matched tokens
-            - "{column}_right_context": List of tokens after the match
-            - "{column}_{variable}": List of tokens bound to each variable
-            Context columns are omitted when window=0.
-            Each name in metadata adds a single scalar column with that name.
+            One row per match, in the order the results hold them. That is
+            corpus order, unless `sample` or `shuffle` has reordered them. For
+            each column `expr` names:
+
+            - `{column}` : the matched words, as a list
+            - `{column}_left_context` : the words before the match, left out
+              when `window` is 0 and no `chunk_column` is given
+            - `{column}_right_context` : the words after the match, left out
+              under the same condition
+            - `{column}_{name}` : the words captured by each `$name:`
+
+            Each name in `metadata` adds one more column, holding a single
+            value rather than a list.
+
+        Raises
+        ------
+        ValueError
+            If `window` is negative; if the corpus is missing a column named
+            in `metadata` or `chunk_column`, or `chunk_column` does not hold
+            strings; or if `bindings` names something the query did not
+            capture.
 
         Notes
         -----
         Context stops at a file boundary when the results know their
-        file_id_column, as results of a search that named one do. Without it
+        `file_id_column`, as results of a search that named one do. Without it
         context is taken from the corpus in the order it is held, so it will
         run from the end of one file into the start of the next.
 
@@ -252,12 +269,14 @@ class _SearchResultsBase:
         Examples
         --------
         >>> results.concordance("token", window=3)
-        >>> results.concordance("token")  # No context, matches only
-        >>> results.concordance("token", chunk_column="sentence_tag")  # Chunk boundaries
-        >>> results.concordance(["token", "pos"], window=5)  # Multiple columns
-        >>> results.concordance("token", window=5, metadata=["file_id", "category"])
+        >>> results.concordance("token")  # The matches on their own
+        >>> results.concordance(["token", "pos"], window=5)  # Words and tags
+        >>> # Whole sentences of context, labelled with where they came from:
+        >>> results.concordance(
+        ...     "token", chunk_column="sentence_tag", metadata=["file_id", "category"]
+        ... )
 
-        >>> # A column per bound variable: token_adj and token_noun
+        >>> # A column per capture: token_adj and token_noun
         >>> results = plc.search(corpus, "$adj: _AJ0 $noun: _NN1")
         >>> results.concordance("token", window=5)
         >>> results.concordance("token", bindings="adj")  # Just the one
@@ -294,51 +313,75 @@ class _SearchResultsBase:
         min_freq: int = 5,
         freqs_name: str = "freqs",
     ) -> pl.DataFrame:
-        """Generate a collocate DataFrame.
+        """
+        Count the words that occur near the matches.
 
-        Analyzes the tokens that appear near the search matches within a specified
-        window and computes frequency statistics useful for collocation analysis.
-        Returns a DataFrame with collocate frequencies and corpus frequencies.
+        Takes the `window` words on each side of every match and counts how
+        often each word occurs across all of them. This is the same context
+        `concordance` shows; the matched words themselves are not counted.
+
+        Each count comes with the three other frequencies an association
+        measure needs, so the result can be passed straight to one to find the
+        words that occur near the matches more often than their own corpus
+        frequency would predict. See [Association metrics](assoc.md).
 
         Parameters
         ----------
         expr : IntoExprColumn, default "token"
-            Column name or Polars expression specifying which column to use
-            for collocate analysis. It must name a single column.
+            Column name or expression to read the collocates from (e.g. token
+            or lemma). It must name a single column.
         window : int, default 5
-            Number of tokens to include on both left and right sides of
-            each match. Must be at least 1.
+            Words to take on each side of a match. Must be at least 1.
         min_freq : int, default 5
-            Minimum frequency of each node-collocate pair within the window span.
-            Node-collocate pairs with lower frequencies are not displayed in DataFrame.
-            Pass 0 to keep them all.
+            Number of times a word must occur in the windows to be reported.
+            Association measures are unstable for rare pairs, so the default
+            drops them. Pass 0 to keep them all.
         freqs_name : str, default "freqs"
-            Name for the output frequencies struct column.
+            Name for the struct column the counts come back in.
 
         Returns
         -------
         pl.DataFrame
-            Collocate DataFrame with columns:
-            - collocate: The collocating token
-            - freqs: Struct with fields {f12, f1, f2, n} where:
-                - f12: observed node-collocate frequency
-                - f1: total number of window positions (matches * window * 2)
-                - f2: total frequency of collocate in corpus
-                - n: total words in corpus
+            One row per distinct word found in the windows, in no particular
+            order:
+
+            - `collocate` : the word
+            - `freqs` : a struct of four counts, named as the association
+              measures expect:
+
+                - `f12` : times the word fell in a window
+                - `f1` : number of window positions available
+                - `f2` : the word's frequency in the whole corpus
+                - `n` : number of tokens in the corpus
+
+        Raises
+        ------
+        ValueError
+            If `window` is less than 1, `min_freq` is negative, or `expr`
+            names more than one column.
 
         Notes
         -----
-        The returned frequencies are laid out the way `crosstab` lays its own
-        out, so the association measures take them as they come.
+        The struct has the same layout `crosstab` produces, so the association
+        measures take it as it comes.
 
-        `f1` counts the window positions the matches ask for, which is more
-        than they get where a window runs off the end of a file.
+        `f1` is `len(results) * window * 2`, the number of positions the
+        windows could hold. A window that runs off the end of a file holds
+        fewer, so `f1` is a slight overcount.
+
+        A word in the windows of two nearby matches is counted once for each,
+        so overlapping windows count their shared words twice. A word's `f12`
+        can therefore come out higher than its corpus frequency `f2`.
 
         Examples
         --------
         >>> results.collocates("token")
         >>> results.collocates("token", window=3, min_freq=10)
-        >>> collocs.with_columns(ll=pl.col("freqs").corpus.loglik())
+        >>> # Rank the collocates by how strongly they attract the search term:
+        >>> collocs = results.collocates("token")
+        >>> collocs.with_columns(ll=pl.col("freqs").corpus.loglik()).sort(
+        ...     "ll", descending=True
+        ... )
         """
         if _check_count(window, "window") == 0:
             raise ValueError("window must be at least 1 to have any collocates in it")
@@ -381,36 +424,43 @@ class _SearchResultsBase:
         metadata: Optional[str | list[str]] = None,
         page_size: int = 25,
     ) -> None:
-        """Display an interactive concordance viewer in Jupyter.
+        """
+        Browse the concordance in a Jupyter notebook, a page at a time.
 
-        Creates and displays an interactive viewer for browsing concordance
-        results with KWIC formatting, pagination, sorting, and filtering.
+        Builds the same lines `concordance` builds and displays them in a
+        widget that pages, sorts and filters. Returns nothing; it draws in the
+        notebook.
 
         Parameters
         ----------
-        expr : IntoExprColumn, default "token"
-            Column name or Polars expression specifying which column(s)
-            to use for generating the concordance display. Where it names
-            several, the first is the one shown.
+        expr : IntoExprColumn or list of IntoExprColumn, default "token"
+            Column name or expression to read the concordance text from
+            (e.g. token or lemma). Where it names several, the first is the
+            one shown.
         window : int, default 5
-            Number of tokens to include on both left and right sides of
-            each match. Pass 0 for no context. Ignored when chunk_column
-            is given.
+            Words of context to show on each side of a match. Pass 0 for none.
+            Ignored when `chunk_column` is given.
         chunk_column : str, optional
-            Column name defining chunk boundaries for context extraction.
-            When specified, context extends to chunk boundaries marked by
-            "B" (begin) and "I" (inside) tags, ignoring the window parameter.
-        metadata : str or list[str], optional
-            Column name(s) from the source corpus to attach to each match as
-            plain (non-list) columns, e.g. file_id or category.
+            Column of BIO tags, to take context out to the edges of the chunk
+            holding each match rather than by a fixed count, as in
+            `concordance`.
+        metadata : str or list of str, optional
+            Column(s) of the corpus to carry into the underlying concordance,
+            e.g. `file_id` or `category`. The viewer draws only the match and
+            its context, so these are not yet shown.
         page_size : int, default 25
-            Number of concordance lines to display per page.
+            Concordance lines to draw per page.
+
+        See Also
+        --------
+        concordance : The same lines as a DataFrame, to compute over.
 
         Examples
         --------
-        >>> results.view()  # Use defaults
+        >>> results.view()
         >>> results.view("token", window=10, page_size=50)
-        >>> results.view("token", chunk_column="sent_tag")
+        >>> # Whole sentences of context rather than a fixed window:
+        >>> results.view("token", chunk_column="sentence_tag")
         """
         from .view import ConcordanceWidget
 
@@ -424,27 +474,30 @@ class _SearchResultsBase:
         ConcordanceWidget(conc, page_size=page_size).show()
 
     def head(self, n: int) -> Self:
-        """Return the first n search results.
+        """
+        Keep the first `n` matches, dropping the rest.
+
+        "First" in the order the results are currently in: corpus order as a
+        search returns them, or the order `sample` or `shuffle` left them in.
 
         Parameters
         ----------
         n : int
-            Number of results to return from the beginning.
-            If n exceeds the total number of matches, returns all matches.
+            Matches to keep. Asking for more than there are keeps them all.
 
         Returns
         -------
         Self
-            New results object containing the first n matches.
+            The same kind of results, cut down to those matches.
 
         Raises
         ------
         ValueError
-            If n is negative.
+            If `n` is negative.
 
         Examples
         --------
-        >>> first_10 = results.head(10)
+        >>> results.head(10).concordance("token", window=5)
         """
         _check_count(n, "n")
         if n >= len(self):
@@ -452,27 +505,30 @@ class _SearchResultsBase:
         return self._take(range(n))
 
     def tail(self, n: int) -> Self:
-        """Return the last n search results.
+        """
+        Keep the last `n` matches, dropping the rest.
+
+        "Last" in the order the results are currently in: corpus order as a
+        search returns them, or the order `sample` or `shuffle` left them in.
 
         Parameters
         ----------
         n : int
-            Number of results to return from the end.
-            If n exceeds the total number of matches, returns all matches.
+            Matches to keep. Asking for more than there are keeps them all.
 
         Returns
         -------
         Self
-            New results object containing the last n matches.
+            The same kind of results, cut down to those matches.
 
         Raises
         ------
         ValueError
-            If n is negative.
+            If `n` is negative.
 
         Examples
         --------
-        >>> last_10 = results.tail(10)
+        >>> results.tail(10).concordance("token", window=5)
         """
         _check_count(n, "n")
         if n >= len(self):
@@ -480,35 +536,42 @@ class _SearchResultsBase:
         return self._take(range(len(self) - n, len(self)))
 
     def sample(self, k: int, seed: Optional[int] = None) -> Self:
-        """Return a random sample of search results.
+        """
+        Draw `k` of the matches at random, without replacement.
+
+        Useful when a query has more hits than can be read through. Every
+        match is equally likely to be drawn, so the sample is not weighted
+        toward the start of the corpus. The matches come back in the order
+        drawn, not in corpus order.
 
         Parameters
         ----------
         k : int
-            Number of results to sample. Must be between 0 and the
-            total number of matches.
+            Matches to draw. Cannot be more than there are.
         seed : int, optional
-            Random seed for reproducible sampling. If None, uses
-            the current random state.
+            Seed for the draw. Set it to get the same sample back every time
+            the code is rerun, which is what reporting a result needs. Without
+            one, the draw differs each run.
 
         Returns
         -------
         Self
-            New results object containing k randomly sampled matches.
+            The same kind of results, holding the `k` matches drawn.
 
         Raises
         ------
         ValueError
-            If k is negative or exceeds the number of available matches.
+            If `k` is negative or larger than the number of matches.
 
         Notes
         -----
-        The random state is preserved, so this method does not affect
-        the global random state.
+        Seeding is local: the global random state is put back afterwards, so
+        this does not disturb anything else in the notebook drawing at random.
 
         Examples
         --------
-        >>> sample_100 = results.sample(100, seed=42)
+        >>> # 100 hits to read through, the same 100 on every rerun:
+        >>> results.sample(100, seed=42).view()
         """
         _check_count(k, "k")
         if k > len(self):
@@ -524,27 +587,28 @@ class _SearchResultsBase:
             random.setstate(state)
 
     def shuffle(self, seed: Optional[int] = None) -> Self:
-        """Return search results in randomized order.
+        """
+        Put the matches in random order, keeping all of them.
 
         Parameters
         ----------
         seed : int, optional
-            Random seed for reproducible shuffling. If None, uses
-            the current random state.
+            Seed for the shuffle. Set it to get the same order back every time
+            the code is rerun. Without one, the order differs each run.
 
         Returns
         -------
         Self
-            New results object with matches in random order.
+            The same kind of results, with the matches reordered.
 
         Notes
         -----
-        The random state is preserved, so this method does not affect
-        the global random state.
+        Seeding is local: the global random state is put back afterwards, so
+        this does not disturb anything else in the notebook drawing at random.
 
         Examples
         --------
-        >>> shuffled = results.shuffle(seed=123)
+        >>> results.shuffle(seed=123).head(20)
         """
         return self.sample(len(self), seed)
 
@@ -624,46 +688,48 @@ class _SearchResultsBase:
 
 
 class SearchResults(_SearchResultsBase):
-    """Results of a corpus search query.
+    """
+    The matches found by searching an in-memory corpus.
 
-    This class wraps the results of a corpus search and provides methods for
-    generating concordances, extracting matches, and manipulating result sets.
-    SearchResults objects are typically created by the search functions and
-    provide a fluent interface for working with search matches.
+    Returned by `search` and `search_cqp` when given a DataFrame; there is no
+    reason to construct one directly. It holds the corpus, and for each match
+    the span of tokens the query covered. The words themselves stay in the
+    corpus and are read back out when a method needs them.
+
+    Use `len()` to count the matches, and `concordance` or `collocates` to
+    turn them into a frame. `head`, `tail` and `sample` cut them down to a
+    readable number, and `shuffle` reorders them; all four return results of
+    this same kind, so they can be chained.
 
     Parameters
     ----------
-    df : pl.DataFrame
-        The source corpus DataFrame containing the original data. It must be
-        eager: the matches index into it by position, and every method here
-        reads its rows.
+    df : DataFrame
+        Corpus the search ran over. It must be eager: the matches index into
+        it by position, and every method here reads its rows.
     query : str
-        The CQP query string that generated these results.
-    matches : list[Match]
-        List of Match objects representing the matched text positions and bindings.
-    variables : list[str]
-        Names the query bound, in the order to show them.
+        Query these results came from, shown in their `repr`.
+    matches : list of Match
+        The matched spans, in corpus order, each with what it captured.
+    variables : list of str
+        Names the query captured, in the order to show them.
     file_id_column : str, optional
-        Column name holding file ids. When given, concordance context stops at
-        a change in its value, as the matches themselves did during the search.
+        Column holding file ids. When given, concordance context stops at a
+        change in its value, as the matches themselves did during the search.
 
-    Attributes
-    ----------
-    _df : pl.DataFrame
-        The source corpus DataFrame.
-    _query : str
-        The original search query.
-    _matches : list[Match]
-        The matched text spans with bindings.
+    See Also
+    --------
+    LazySearchResults : The same interface over a corpus too large to hold in
+        memory.
 
     Examples
     --------
-    >>> import polars as pl
     >>> import polars_corpus as plc
-    >>> corpus = pl.DataFrame({"token": ["The", "quick", "brown", "fox"]})
-    >>> results = plc.search(corpus, '[token="quick"]')
-    >>> print(results)
-    SearchResults<'[token="quick"]'; 1 match>
+    >>> results = plc.search(corpus, "quick")
+    >>> results
+    SearchResults<'quick'; 1 match>
+    >>> len(results)
+    1
+    >>> results.concordance("token", window=3)
     """
 
     def __init__(
@@ -745,34 +811,35 @@ class SearchResults(_SearchResultsBase):
         )
 
     def with_spans_as_chunks(self, name: str = "spans") -> pl.DataFrame:
-        """Add a column containing span information to the corpus DataFrame.
+        """
+        Write the matches back onto the corpus as a column of BIO tags.
 
-        Creates a new column in the corpus DataFrame that marks which tokens
-        are part of search matches. The spans are represented as chunk tags
-        where 'B' indicates the beginning of a match and 'I' indicates
-        continuation of a match.
+        The reverse of pulling the matches out of the corpus: this marks them
+        where they sit. The first token of each match is tagged "B", the rest
+        of it "I", and every token no match covers "O". The result is an
+        ordinary column, so the matches can be counted, grouped or plotted
+        alongside the rest of the corpus.
 
         Parameters
         ----------
-        name : str, default 'spans'
-            Name of the new column to add containing the span information.
+        name : str, default "spans"
+            Name for the tag column added to the corpus.
 
         Returns
         -------
         pl.DataFrame
-            The corpus DataFrame with the added spans column.
+            The corpus, one row per token as before, with the tag column
+            added.
 
-        Notes
-        -----
-        This method is useful for post-processing or visualization when you
-        need to know which tokens in the corpus correspond to search matches.
-        The span encoding follows the standard BIO (Begin-Inside-Outside)
-        tagging scheme used in NLP.
+        See Also
+        --------
+        polars_corpus.with_chunk_index : Number the chunks such a column marks.
 
         Examples
         --------
-        >>> df_with_spans = results.with_spans_as_chunks('match_tags')
-        >>> df_with_spans = results.with_spans_as_chunks()  # Default name 'spans'
+        >>> tagged = results.with_spans_as_chunks()
+        >>> # One "B" per match, so counting them counts matches per file:
+        >>> tagged.group_by("file_id").agg((pl.col("spans") == "B").sum())
         """
         # Extract spans from matches for Rust function
         spans = [match.span for match in self._matches]
@@ -782,33 +849,50 @@ class SearchResults(_SearchResultsBase):
 
 
 class LazySearchResults(_SearchResultsBase):
-    """Results of searching a lazy corpus, held without the corpus in memory.
+    """
+    The matches found by searching an out-of-core corpus.
 
-    Built by the search functions when given a LazyFrame. Matches are kept as
-    a small DataFrame of file-relative spans, and every method that needs
-    corpus rows -- concordances above all -- materializes one chunk of whole
-    files at a time, so the whole corpus is never in memory at once.
+    Returned by `search` and `search_cqp` when given a LazyFrame; there is no
+    reason to construct one directly. It has the same methods as
+    `SearchResults`, but never holds the corpus in memory. It stores each
+    match as an offset within the file the match falls in, and re-reads the
+    corpus when a method needs the words. Each read covers only the part of a
+    chunk that its matches fall in, so a concordance over a 100M-word corpus
+    costs a partial scan rather than the memory to hold the corpus.
+
+    `SearchResults.matches` has no counterpart here. With no corpus in memory,
+    there is nothing for match positions to index into.
 
     Parameters
     ----------
-    lf : pl.LazyFrame
-        The corpus the search ran over. Tokens sharing a file id must be
+    lf : LazyFrame
+        Corpus the search ran over. Tokens sharing a file id must be
         contiguous, as the search itself already checked.
     query : str
-        The query string that generated these results.
-    matches : pl.DataFrame
+        Query these results came from, shown in their `repr`.
+    matches : DataFrame
         One row per match: the file id column, `start` and `end` (token
         offsets within the file), `_file` (row index into `files`), and --
-        when the query bound variables -- a `bindings` struct column of
+        when the query captured variables -- a `bindings` struct column of
         per-variable file-relative spans.
-    variables : list[str]
-        Names the query bound, in the order it binds them.
+    variables : list of str
+        Names the query captured, in the order it captures them.
     file_id_column : str
-        Column name holding file ids.
-    files : pl.DataFrame
+        Column holding file ids.
+    files : DataFrame
         One row per file in corpus order: the file id column, `_file`,
         `_len`, `_offset` (global token offset) and `_chunk` (which chunk of
         the search held it).
+
+    See Also
+    --------
+    SearchResults : The same interface over a corpus held in memory.
+
+    Examples
+    --------
+    >>> import polars_corpus as plc
+    >>> results = plc.search(pl.scan_parquet("bnc.parquet"), "{eat} * up")
+    >>> results.concordance("token", window=5)
     """
 
     def __init__(
@@ -899,25 +983,28 @@ class LazySearchResults(_SearchResultsBase):
         )
 
     def with_spans_as_chunks(self, name: str = "spans") -> pl.LazyFrame:
-        """Tag each corpus token with the match holding it, lazily.
+        """
+        Write the matches back onto the corpus as BIO tags, lazily.
 
-        The lazy counterpart of `SearchResults.with_spans_as_chunks`: rather
-        than a corpus-height eager column, returns a LazyFrame extending the
-        corpus with a BIO tag column -- 'B' opening each match, 'I' inside
-        one, 'O' elsewhere -- for the caller to collect, sink, or filter.
+        The lazy counterpart of `SearchResults.with_spans_as_chunks`. It tags
+        the corpus the same way: "B" on the first token of each match, "I" on
+        the rest, "O" elsewhere. Returning a LazyFrame lets the corpus be
+        filtered down to the matched tokens before anything is materialized.
 
         Parameters
         ----------
-        name : str, default 'spans'
-            Name of the tag column to add.
+        name : str, default "spans"
+            Name for the tag column added to the corpus.
 
         Returns
         -------
         pl.LazyFrame
-            The corpus with the added spans column.
+            The corpus, one row per token as before, with the tag column
+            added.
 
         Examples
         --------
+        >>> # Just the matched tokens, without materializing the corpus:
         >>> results.with_spans_as_chunks().filter(pl.col("spans") != "O").collect()
         """
         fid = self._file_id_column
@@ -981,35 +1068,37 @@ def concordance(
     metadata: Optional[str | list[str]] = None,
     bindings: bool | str | list[str] = True,
 ) -> pl.DataFrame:
-    """Generate a concordance from search results (functional interface).
+    """
+    Lay the matches out as a KWIC (keyword in context) concordance.
 
     Parameters
     ----------
     search_results : SearchResults or LazySearchResults
-        The search results to generate concordance from.
-    expr : IntoExprColumn, default "token"
-        Column name or Polars expression for concordance display. A list
-        names several at once.
+        Matches to lay out, as `search` or `search_cqp` returned them.
+    expr : IntoExprColumn or list of IntoExprColumn, default "token"
+        Column name or expression to read the concordance text from (e.g.
+        token or lemma). A list gives each its own trio of columns.
     window : int, default 0
-        Number of tokens to include on both left and right sides of each
-        match. The default of 0 gives the matches with no context. Ignored
-        when chunk_column is given.
+        Words of context to take on each side of a match. The default of 0
+        takes none, and the context columns are left off. Ignored when
+        `chunk_column` is given.
     chunk_column : str, optional
-        Column name defining chunk boundaries for context extraction.
-        When specified, context extends to chunk boundaries marked by
-        "B" (begin) and "I" (inside) tags, ignoring the window parameter.
-    metadata : str or list[str], optional
-        Column name(s) from the source corpus to attach to each match as
-        plain (non-list) columns, e.g. file_id or category.
-    bindings : bool, str or list[str], default True
-        Which of the query's `$name:` bindings to give a column of their own.
-        True takes them all, False none, and a name or list of them just those.
+        Column of BIO tags. Context then runs to the edges of the chunk
+        holding the match instead of counting a fixed number of words. Pass a
+        sentence tag column to get whole sentences.
+    metadata : str or list of str, optional
+        Column(s) of the corpus to carry through to each row as ordinary
+        values rather than lists, e.g. `file_id` or `category`.
+    bindings : bool, str or list of str, default True
+        Which of the query's `$name:` captures to give a column of their own.
+        True takes all of them, False none, and a name or list of names takes
+        just those.
 
     Returns
     -------
     pl.DataFrame
-        KWIC concordance DataFrame, laid out as `SearchResults.concordance`
-        describes.
+        One row per match, in the order the results hold them, laid out as
+        `SearchResults.concordance` describes.
 
     See Also
     --------
@@ -1030,28 +1119,30 @@ def collocates(
     min_freq: int = 5,
     freqs_name: str = "freqs",
 ) -> pl.DataFrame:
-    """Extract collocate frequency information from search results.
+    """
+    Count the words that occur near the matches.
 
     Parameters
     ----------
     search_results : SearchResults or LazySearchResults
-        The search results to analyze for collocates.
+        Matches to collocate around, as `search` or `search_cqp` returned them.
     expr : IntoExprColumn, default "token"
-        Column name or Polars expression containing the tokens to analyze.
-        It must name a single column.
+        Column name or expression the collocates are read from (e.g. token or
+        lemma). It must name a single column.
     window : int, default 5
-        Number of tokens to include on both left and right sides of each
-        match. Must be at least 1.
+        Words to take on each side of each match. Must be at least 1.
     min_freq : int, default 5
-        Minimum frequency of each node-collocate pair within the window span.
-        Pass 0 to keep them all.
+        Times a word must occur in those windows to be reported. Pass 0 to
+        keep them all.
     freqs_name : str, default "freqs"
-        Name for the output frequencies struct column.
+        Name for the struct column the counts come back in.
 
     Returns
     -------
     pl.DataFrame
-        Collocate DataFrame, laid out as `SearchResults.collocates` describes.
+        One row per distinct word in the windows, with the four counts an
+        association measure needs, laid out as `SearchResults.collocates`
+        describes.
 
     See Also
     --------

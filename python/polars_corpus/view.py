@@ -13,36 +13,56 @@ __all__ = ["ConcordanceWidget"]
 
 
 class ConcordanceWidget:
-    """Interactive browser for concordance DataFrames in Jupyter notebooks.
+    """
+    Browse a concordance in a Jupyter notebook, a page at a time.
 
-    Provides a linguist-friendly interface for navigating concordance results with
-    KWIC (Key Word In Context) formatting, pagination, sorting, and filtering.
+    Displays the lines in KWIC layout, with the match in the middle and its
+    context to either side. The viewer can page through the lines, sort them,
+    and filter them.
+
+    Sorting by the left context orders the lines by the word just before the
+    match, then by the word before that, and so on; sorting by the right
+    context does the same going rightwards. Filtering keeps the lines that
+    contain what the viewer types, looking in the match and both contexts,
+    ignoring case, and treating the text literally rather than as a regex.
+
+    `SearchResults.view` builds one of these from a search. Build one directly
+    to browse a concordance you have already modified.
 
     Parameters
     ----------
-    df : pl.DataFrame
-        Concordance DataFrame with left context, match, and right context columns.
-        Expected to have columns ending in '_left_context', the base column name,
-        and '_right_context'.
+    df : DataFrame
+        Concordance to browse, as `SearchResults.concordance` returns it.
     column : str, optional
-        The base column name to display (e.g., 'token'). If None, the first
-        matched column in the concordance is used.
+        Name of the column holding the matched words, e.g. "token". The
+        context columns are found by appending `_left_context` and
+        `_right_context` to it. Defaults to the first matched column in `df`.
     page_size : int, default 25
-        Number of concordance lines to display per page.
+        Concordance lines to show per page.
 
     Attributes
     ----------
     df : pl.DataFrame
-        The concordance DataFrame being displayed.
+        The lines currently shown. Filtering narrows this; clearing the filter
+        restores the full concordance.
     column : str
-        The column being displayed.
+        The column being shown.
+
+    Raises
+    ------
+    ValueError
+        If `df` holds no column of matched words, or none named `column`.
+    ImportError
+        If anywidget is not installed.
+
+    See Also
+    --------
+    polars_corpus.SearchResults.view : Build one of these from a search.
 
     Examples
     --------
-    >>> results = plc.search(corpus, "_AJ0")
-    >>> conc = results.concordance('token', window=5)
-    >>> widget = ConcordanceWidget(conc, 'token')
-    >>> widget.show()
+    >>> conc = plc.search(corpus, "_AJ0").concordance("token", window=5)
+    >>> ConcordanceWidget(conc, page_size=50).show()
     """
 
     def __init__(
@@ -787,7 +807,7 @@ export function render({ model, el }) {
         self.df = self.original_df.filter(mask)
 
     def show(self) -> None:
-        """Display the widget."""
+        """Display the widget in the notebook."""
         from IPython.display import display
 
         display(self.widget)  # type: ignore[no-untyped-call]

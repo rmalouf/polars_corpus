@@ -11,38 +11,49 @@ __all__ = ["from_nltk"]
 
 
 def from_nltk(corpus: CorpusReader) -> pl.DataFrame:
-    """Converts an NLTK corpus into a Polars DataFrame with automatic detection of corpus features.
+    """
+    Read an NLTK corpus into a Polars DataFrame, one row per token.
+
+    Works with any corpus NLTK can read: Brown, the Gutenberg texts, anything
+    under `nltk.corpus`, or a reader pointed at a directory of your own.
+
+    The columns depend on what the reader offers. A tagged corpus gets a `pos`
+    column, a corpus read as sentences gets a `sentence_tag` column, and a
+    categorized corpus gets a `category` column. None of this needs declaring;
+    an untagged corpus simply arrives without a `pos` column.
 
     Parameters
     ----------
     corpus : CorpusReader
-        Any NLTK CorpusReader object (e.g., PlaintextCorpusReader, CategorizedPlaintextCorpusReader,
-        TaggedCorpusReader)
+        Any NLTK corpus reader, e.g. `nltk.corpus.brown` or a
+        `PlaintextCorpusReader` over a directory of your own.
 
     Returns
     -------
-    DataFrame
-        A Polars DataFrame where each row represents a token with associated metadata.
+    pl.DataFrame
+        One row per token, in corpus order, with as many of these columns as
+        the reader can supply:
 
-    Notes
-    -----
-    The resulting DataFrame contains the following columns (depending on corpus type):
+        - `token` : the word itself
+        - `pos` : its part-of-speech tag, if the corpus is tagged
+        - `sentence_tag` : "B" on the first token of each sentence and "I" on
+          the rest, if the reader reads sentences
+        - `file_id` : the file the token came from
+        - `category` : the file's category, if the corpus is categorized
 
-    * token (str): The word/token text
-    * pos (str, optional): Part-of-speech tag (if corpus provides tagged data)
-    * sentence_tag (str, optional): Sentence boundary marker ("B" for beginning, "I" for inside)
-    * file_id (str): Source file identifier
-    * category (str, optional): Corpus category (if corpus is categorized)
+    Raises
+    ------
+    AttributeError
+        If the reader exposes none of `sents()`, `tagged_words()` or
+        `words()`, so its tokens cannot be read.
 
     Examples
     --------
-    import nltk
-
-    brown = plc.from_nltk(nltk.corpus.brown)
-
-
-
-
+    >>> import nltk
+    >>> import polars_corpus as plc
+    >>> brown = plc.from_nltk(nltk.corpus.brown)
+    >>> # `category` is there because Brown is categorized:
+    >>> brown.group_by("category").len()
     """
     category_dict = dict()
     if hasattr(corpus, "categories"):
