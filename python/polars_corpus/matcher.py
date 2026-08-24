@@ -264,47 +264,27 @@ def search_cqp(
     """
     Find every place in a corpus where a CQP query matches.
 
-    A CQP query is a sequence of token patterns. Each one is written in
-    brackets as a test against the corpus's columns, so `[pos="NN.*"]` matches
-    a single token whose `pos` column matches that regular expression. Within
-    a bracket, `&` and `|` combine tests and `!=` negates one. Between
-    brackets, the patterns match consecutive tokens, and quantifiers such as
-    `+` and `{2,3}` apply to them as they do in a simple query.
-
-    Because the tests name columns directly, a CQP query can use any
-    annotation the corpus carries, not just the token, tag and lemma that
-    `search` has shorthands for. Anything a simple query can express, a CQP
-    query can express too: `search` compiles to CQP and runs the result.
-
-    Unlike simple queries, these tests are case-sensitive by default. Add `%c`
-    to one to ignore case, as in `[token="fox"%c]`.
-
     Parameters
     ----------
     df : DataFrame | LazyFrame
-        Corpus to search. A LazyFrame is searched a chunk of whole files at a
-        time, so the corpus is never held in memory at once.
+        Corpus to search.
     query : str
         CQP query, e.g. `[pos="NN.*"] [lemma="be"]`. See QUERY_LANGUAGE.md for
         the syntax.
     file_id_column : str, optional
         Column holding file ids, which mark where one text ends and the next
-        begins. No match crosses a change in its value. The default of
-        "file_id" applies only if the corpus has that column, so a corpus
-        without one still searches. Pass None to search the corpus as one
-        continuous run of tokens; this works for eager corpora only, since a
-        LazyFrame needs the column to chunk by.
+        begins. No match crosses a change in its value. Pass `None` to search
+        the corpus as one continuous run of tokens.
     chunk_tokens : int, default 10_000_000
         Tokens to aim for per chunk when searching a LazyFrame. Lower it to
-        use less memory, raise it for fewer passes over the corpus. Ignored
-        for an eager corpus.
+        use less memory, raise it for fewer passes over the corpus. Ignored if
+        the corpus is a DataFrame.
 
     Returns
     -------
     SearchResults or LazySearchResults or None
         The matches: `SearchResults` for a DataFrame, `LazySearchResults` for
-        a LazyFrame. None if the query matched nothing, so check the result
-        before using it.
+        a LazyFrame, or None if the query matched nothing.
 
     Raises
     ------
@@ -318,7 +298,7 @@ def search_cqp(
 
     See Also
     --------
-    search : The same search, written in the simple query language.
+    search : Search a corpus using a simple query language.
 
     Examples
     --------
@@ -346,27 +326,10 @@ def search(
     """
     Find every place in a corpus where a simple (BNCweb-style) query matches.
 
-    A simple query is written the way the words appear. `fox` finds the word;
-    `quick brown fox` finds the three of them in sequence.
-
-    Inside a word, `?` stands for one character, and `*` and `+` stand for any
-    number of them. So `s?ng` finds *sing*, *sang* and *song*, and `*able`
-    finds words ending in *able*. Between words, `*` and `+` stand for whole
-    tokens instead: `eat * up` finds both *eat up* and *eat it up*, while
-    `eat + up` finds only *eat it up*.
-
-    `_TAG` constrains a token's tag, `{lemma}` constrains its lemma, and
-    `$name:` captures part of the match so that `concordance` can give it a
-    column. Every test ignores case.
-
-    The query is compiled to CQP and run by `search_cqp`. Anything this syntax
-    cannot express can be written as a CQP query instead.
-
     Parameters
     ----------
     df : DataFrame | LazyFrame
-        Corpus to search. A LazyFrame is searched a chunk of whole files at a
-        time, so the corpus is never held in memory at once.
+        Corpus to search.
     query : str
         Simple query, e.g. `quick brown fox` or `{light}_V*`. See
         [Simple query language](simple_query.md) for the full syntax.
@@ -375,26 +338,21 @@ def search(
     pos_column : str, default "pos"
         Column the `_TAG` part of a query is matched against.
     lemma_column : str, default "lemma"
-        Column a `{lemma}` query is matched against. Only read by a query that
-        asks for a lemma, so an unlemmatized corpus still searches.
+        Column a `{lemma}` query is matched against.
     file_id_column : str, optional
         Column holding file ids, which mark where one text ends and the next
-        begins. No match crosses a change in its value. The default of
-        "file_id" applies only if the corpus has that column, so a corpus
-        without one still searches. Pass None to search the corpus as one
-        continuous run of tokens; this works for eager corpora only, since a
-        LazyFrame needs the column to chunk by.
+        begins. No match crosses a change in its value. Pass `None` to search
+        the corpus as one continuous run of tokens.
     chunk_tokens : int, default 10_000_000
         Tokens to aim for per chunk when searching a LazyFrame. Lower it to
-        use less memory, raise it for fewer passes over the corpus. Ignored
-        for an eager corpus.
+        use less memory, raise it for fewer passes over the corpus. Ignored if
+        the corpus is a DataFrame.
 
     Returns
     -------
     SearchResults or LazySearchResults or None
         The matches: `SearchResults` for a DataFrame, `LazySearchResults` for
-        a LazyFrame. None if the query matched nothing, so check the result
-        before using it.
+        a LazyFrame or None if the query matched nothing.
 
     Raises
     ------
@@ -412,7 +370,7 @@ def search(
 
     See Also
     --------
-    search_cqp : The same search, written as a CQP query.
+    search_cqp : Search a corpus using a CQP query.
 
     Examples
     --------

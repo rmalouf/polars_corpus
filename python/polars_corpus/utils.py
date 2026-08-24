@@ -211,7 +211,7 @@ def ngrams(n: int, in_expr: IntoExpr, as_str: bool = True) -> pl.Expr:
     pl.Expr
         Expression giving the n-gram starting at each row. The last `n - 1`
         rows have no full n-gram to start and come out null, as does any
-        n-gram covering a null token, so the caller can drop them.
+        n-gram covering a null token.
 
     Notes
     -----
@@ -219,7 +219,7 @@ def ngrams(n: int, in_expr: IntoExpr, as_str: bool = True) -> pl.Expr:
     from the end of one file into the start of the next. Add `.over()` on the
     file id column to stop them at the boundary:
 
-    >>> df.select(pl.col("token").corpus.ngrams(2).over("file_id"))
+    ```>>> df.select(pl.col("token").corpus.ngrams(2).over("file_id"))```
     """
     if not isinstance(n, int) or isinstance(n, bool) or n < 1:
         raise ValueError(f"n must be a positive integer, got {n!r}")

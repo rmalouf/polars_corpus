@@ -32,13 +32,6 @@ COLUMNS = {
     "dp": "DP",
 }
 
-# - Juilland, A., & Chang-Rodriguez, E. (1964). Frequency dictionary of Spanish words.
-#   The Hague: Mouton.
-# - Gries, S. Th. (2008). Dispersions and adjusted frequencies in corpora.
-#   International Journal of Corpus Linguistics, 13(4), 403-437.
-# - Burch, B., Egbert, J., & Biber, D. (2017). Measuring and interpreting lexical
-#   dispersion in corpus linguistics. Journal of Research Design and Statistics in
-#   Linguistics and Communication Science, 3(2), 189-216.
 
 # TODO: more measures, if they turn out to be wanted
 #  -- Carroll's D2, Rosengren's S, Gries's KLD, DPnorm, and the adjusted
@@ -70,24 +63,21 @@ def dispersion(
         - 'sd' : standard deviation of the per-file frequencies
         - 'cv' : coefficient of variation, `sd` over the mean
         - 'cv%' : the coefficient of variation as a percentage
-        - 'd' : Julliand's D, `1 - cv / sqrt(N - 1)` for `N` files
-        - 'da' : Burch's DA, from the average difference between pairs of files
-        - 'dp' : Gries's DP, how far the word's spread over the files falls
+        - 'd' : Julliand's $D$, `1 - cv / sqrt(N - 1)` for `N` files
+        - 'da' : Burch's $D_A$, from the average difference between pairs of files
+        - 'dp' : Gries's $D_P$, how far the word's spread over the files falls
           from the corpus's own
     min_freq : int, default 0
-        Minimum corpus frequency a word needs to be reported. Every measure
-        here is unstable for rare words, so raising this is usually the first
-        thing to do with a ranked result.
+        Minimum corpus frequency a word needs to be reported.
     file_id_column : str, default "file_id"
-        Column holding file ids, defining the parts the word is spread across.
+        Column holding file ids.
 
     Returns
     -------
-    T_Frame
-        One row per word, in no particular order, with its corpus frequency in
-        `freq` and one column per measure asked for, in the order asked for:
-        'range', 'range%', 'sd', 'cv', 'cv%', 'D', 'DA' or 'DP'. Eager if
-        `corpus` is a DataFrame, lazy if it is a LazyFrame.
+    DataFrame or LazyFrame
+        One row per word, with its corpus frequency in `freq` and one column
+        per measure asked for, in the order asked for: 'range', 'range%',
+        'sd', 'cv', 'cv%', 'D', 'DA' or 'DP'.
 
     Raises
     ------
@@ -100,6 +90,16 @@ def dispersion(
     Notes
     -----
     Rows holding a null in either `expr` and `file_id_column` are dropped.
+
+    References
+    ----------
+    - Juilland, A., & Chang-Rodriguez, E. 1964. *Frequency dictionary of Spanish words.*
+      The Hague: Mouton.
+    - Gries, S. Th. 2008. Dispersions and adjusted frequencies in corpora. *International
+      Journal of Corpus Linguistics* 13(4):403-437.
+    - Burch, B., Egbert, J., & Biber, D. 2017. Measuring and interpreting lexical dispersion
+      in corpus linguistics. *Journal of Research Design and Statistics in Linguistics and
+      Communication Science* 3(2):189-216.
 
     Examples
     --------
@@ -149,7 +149,6 @@ def dispersion(
 
     result = frames[0]
     for frame in frames[1:]:
-        # Every group reports `freq`, and every group agrees about it.
         result = result.join(frame.drop("freq"), on=term_name)
 
     if min_freq:

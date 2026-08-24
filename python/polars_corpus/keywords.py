@@ -49,15 +49,16 @@ def keywords(
     expr : IntoExpr
         Column name or expression identifying the word/type to compute keyness
         for (e.g., token or lemma). Note that `expr` is evaluated against the
-        concatenated target+reference corpora, not either alone.
+        combined target+reference corpora.
     method : {'chisq', 'll', 'minsens', 'pmi', 'smp', 'ttest'}
         [Association metric](assoc.md) used to rank keywords:
-        - 'chisq' : Pearson's chi-squared (χ²)
-        - 'll' : Log-likelihood ratio (G²)
-        - 'minsens' : Minimum sensitivity
-        - 'pmi' : Pointwise Mutual Information
-        - 'smp' : Kilgarriff's simple maths parameter (requires `k`)
-        - 'ttest' : Welch's t-test on per-file relative frequencies
+
+         - 'chisq' : Pearson's chi-squared (χ²)
+         - 'll' : Log-likelihood ratio (G²)
+         - 'minsens' : Minimum sensitivity
+         - 'pmi' : Pointwise Mutual Information
+         - 'smp' : Kilgarriff's simple maths parameter (requires `k`)
+         - 'ttest' : Welch's t-test on per-file relative frequencies
     min_target_tf : int, default 0
         Minimum term frequency in the target corpus required for a word to be
         included in the results. Ignored when `method` is 'ttest'.
@@ -74,7 +75,7 @@ def keywords(
 
     Returns
     -------
-    T_Frame
+    DataFrame | LazyFrame
         Keywords ranked by association strength, most target-specific first.
         Eager if `target` is a DataFrame, lazy if it is a LazyFrame.
 
@@ -193,7 +194,6 @@ def _keywords_assoc(
         case "minsens":
             assoc_expr = minsens(f12, f1, f2, n).alias("MinSens")
         case "smp":
-            # keywords() has already rejected a missing k.
             assert k is not None
             assoc_expr = smp(f12, f1, f2, n, k).alias("SMP")
         case _:

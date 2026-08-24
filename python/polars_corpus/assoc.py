@@ -275,6 +275,11 @@ def loglik(f12: IntoExpr, f1: IntoExpr, f2: IntoExpr, n: IntoExpr) -> pl.Expr:
     where the four terms are the cells of the 2×2 table and
     $e_{12} = f_1\\,f_2 / n$ is the joint frequency expected under
     independence.
+
+    References
+    ----------
+    - Dunning, T. 1993. Accurate methods for the statistics of surprise and
+    coincidence. *Computational Linguistics* 19:61–74.
     """
     return register_plugin_function(
         plugin_path=LIB,

@@ -261,10 +261,7 @@ def keyword_plot(
     Plot ranked keywords as a horizontal lollipop/stem chart.
 
     Each row of `keyword_df` becomes a stem, positioned by `keyness_expr` and
-    labeled with `term_expr`, giving a quick visual read of the strongest
-    keywords and how strong they are relative to each other. `keyword_df` is
-    plotted in the order it is given (e.g. the output of `keywords`), so it
-    should already be sorted by association strength.
+    labeled with `term_expr`.
 
     Parameters
     ----------
@@ -376,8 +373,7 @@ def text_plot(
     Plot labeled points on a two-dimensional map.
 
     Draws each row of `xy` with its label, for reading a projection of
-    embedding vectors (e.g. from UMAP) down to two dimensions. The axes carry
-    no scale, since the coordinates only mean something relative to each other.
+    embedding vectors (e.g. from UMAP) down to two dimensions.
 
     Parameters
     ----------

@@ -35,9 +35,9 @@ def encode(model: SentenceTransformer, in_expr: IntoExpr) -> pl.Expr:
 
     References
     ----------
-    Reimers, N. and I. Gurevych. 2019. Sentence-BERT: Sentence Embeddings using Siamese
-    BERT-Networks. Proceedings of the 2019 Conference on Empirical Methods in Natural
-    Language Processing. https://arxiv.org/abs/1908.10084
+    - Reimers, N. and I. Gurevych. 2019. Sentence-BERT: Sentence Embeddings using
+      Siamese BERT-Networks. *Proceedings of the 2019 Conference on Empirical Methods
+      in Natural Language Processing.* https://arxiv.org/abs/1908.10084
     """
     expr = as_expr(in_expr)
     dim = model.get_embedding_dimension()
