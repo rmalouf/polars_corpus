@@ -14,6 +14,7 @@ modest hardware without requiring external servers or databases.
 
 ## Reference:
 
+  - [Reading corpora](io.md)
   - [Simple query language](simple_query.md)
   - [Concordances](search.md)
   - [Association metrics](assoc.md)

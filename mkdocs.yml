@@ -73,6 +73,7 @@ nav:
       - Dispersion: notebooks/dispersion.ipynb
       - Vocabulary: notebooks/vocabulary.ipynb
   - Reference:
+      - Reading corpora: io.md
       - Search: search.md
       - Association metrics: assoc.md
       - Lexical metrics: lexical.md

@@ -19,8 +19,7 @@ def from_nltk(corpus: CorpusReader) -> pl.DataFrame:
 
     The columns depend on what the reader offers. A tagged corpus gets a `pos`
     column, a corpus read as sentences gets a `sentence_tag` column, and a
-    categorized corpus gets a `category` column. None of this needs declaring;
-    an untagged corpus simply arrives without a `pos` column.
+    categorized corpus gets a `category` column.
 
     Parameters
     ----------

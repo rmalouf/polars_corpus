@@ -50,9 +50,8 @@ are the original exemplars. `search.py`, `matcher.py`, `view.py`, `chunk.py`,
 `convert.py` and `cqp_parser.py` were brought to this style in a later pass and
 read as exemplars too.
 
-Still undocumented, if you are looking for work: `read_text_corpus` and
-`scan_text_corpus` in `corpus_io.py`, and most of the `.corpus` namespace
-methods in `exprs.py`.
+Still undocumented, if you are looking for work: most of the `.corpus`
+namespace methods in `exprs.py`.
 
 ## Summary line
 
