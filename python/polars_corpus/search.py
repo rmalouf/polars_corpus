@@ -852,8 +852,8 @@ class LazySearchResults(_SearchResultsBase):
     """
     The matches found by searching an out-of-core corpus.
 
-    Returned by `search` and `search_cqp` when given a LazyFrame; there is no
-    reason to construct one directly. It has the same methods as
+    Returned by `search` and `search_cqp` when given a LazyFrame that has
+    file ids to chunk on; there is no reason to construct one directly. It has the same methods as
     `SearchResults`, but never holds the corpus in memory. It stores each
     match as an offset within the file the match falls in, and re-reads the
     corpus when a method needs the words. Each read covers only the part of a

@@ -3,7 +3,7 @@
 import polars as pl
 import polars_corpus as plc
 import pytest
-from polars_corpus import LazySearchResults, scan_text_corpus
+from polars_corpus import LazySearchResults, SearchResults, scan_text_corpus
 from polars_corpus.matcher import search, search_cqp
 
 from .helpers import corpus
@@ -216,15 +216,58 @@ def test_null_file_id_forms_its_own_file():
     assert len(results) == 2
 
 
+@pytest.mark.parametrize(
+    "df,file_id_column",
+    [
+        pytest.param(FILES, None, id="ids-ignored"),
+        pytest.param(FILES.drop("file_id"), "file_id", id="no-ids-to-find"),
+    ],
+)
+def test_lazy_without_file_ids_is_searched_whole(df, file_id_column):
+    """Nothing to chunk on, so the corpus is read in and searched in memory."""
+    query = '[token="brown"] [token="fox"]'
+    lazy = search_cqp(df.lazy(), query, file_id_column)
+
+    assert isinstance(lazy, SearchResults)
+    assert lazy.concordance("token", window=3).equals(
+        search_cqp(df, query, file_id_column).concordance("token", window=3)
+    )
+
+
+def test_lazy_without_file_ids_matches_across_them():
+    """One continuous run of tokens: a match may straddle a file boundary."""
+    query = '[token="fox"] [token="brown"]'
+
+    assert search_cqp(FILES.lazy(), query, file_id_column="file_id") is None
+    assert len(search_cqp(FILES.lazy(), query, file_id_column=None)) == 1
+
+
+def test_named_file_id_column_must_exist():
+    """Only the default name is optional; one the caller asked for is checked.
+
+    The name is wrong whatever the corpus holds, so the error comes before it
+    is read: the UDF here would raise if the search reached the tokens.
+    """
+
+    def unread(_: pl.DataFrame) -> pl.DataFrame:
+        raise AssertionError("the corpus was read")
+
+    lf = FILES.lazy().map_batches(unread, schema=FILES.schema)
+
+    with pytest.raises(ValueError, match="no column 'doc'"):
+        search_cqp(lf, '[token="fox"]', file_id_column="doc")
+
+
 def test_bad_chunk_tokens():
     with pytest.raises(ValueError, match="chunk_tokens"):
         search_cqp(FILES.lazy(), '[token="fox"]', "file_id", chunk_tokens=0)
 
 
-def test_empty_lazy_corpus():
+@pytest.mark.parametrize("file_id_column", ["file_id", None])
+def test_empty_lazy_corpus(file_id_column):
     lf = pl.DataFrame({"token": [], "file_id": []}).lazy()
 
-    assert search_cqp(lf, '[token="fox"]', file_id_column="file_id") is None
+    assert search_cqp(lf, '[token="fox"]', file_id_column) is None
 
 
 def test_scan_text_corpus_is_searchable(tmp_path):

@@ -195,17 +195,10 @@ def _search_lazy(
     lf: pl.LazyFrame,
     cqp_query: str,
     query: str,
-    file_id_column: Optional[str],
+    file_id_column: str,
     chunk_tokens: int,
 ) -> Optional[LazySearchResults]:
     """Search a lazy corpus one chunk of whole files at a time."""
-    if file_id_column is None:
-        raise ValueError(
-            "searching a LazyFrame processes the corpus in chunks of whole "
-            "files, so file_id_column must name the column grouping tokens "
-            "by file, e.g. file_id_column='file_id'"
-        )
-    check_columns(lf, [file_id_column], param="file_id_column")
     if (
         not isinstance(chunk_tokens, int)
         or isinstance(chunk_tokens, bool)
@@ -251,7 +244,15 @@ def _search(
 ) -> Optional[SearchResults | LazySearchResults]:
     """Search `df` for the compiled `cqp_query`, reporting it as `query`."""
     if isinstance(df, pl.LazyFrame):
-        return _search_lazy(df, cqp_query, query, file_id_column, chunk_tokens)
+        if file_id_column is not None and file_id_column in df.collect_schema():
+            return _search_lazy(df, cqp_query, query, file_id_column, chunk_tokens)
+        if file_id_column not in (None, DEFAULT_FILE_ID):
+            # Only the default name is soft, and a wrong one is worth saying
+            # before the corpus is read rather than after.
+            check_columns(df, [file_id_column], param="file_id_column")
+        # No file ids to cut chunks on, so read the corpus in and search it
+        # whole, the way an eager one is.
+        df = df.collect(engine="streaming")
     return _search_eager(df, cqp_query, query, file_id_column)
 
 
@@ -274,25 +275,27 @@ def search_cqp(
     file_id_column : str, optional
         Column holding file ids, which mark where one text ends and the next
         begins. No match crosses a change in its value. Pass `None` to search
-        the corpus as one continuous run of tokens.
+        the corpus as one continuous run of tokens. A LazyFrame is searched a
+        chunk of files at a time, so one searched without file ids is read
+        into memory and searched whole.
     chunk_tokens : int, default 10_000_000
-        Tokens to aim for per chunk when searching a LazyFrame. Lower it to
-        use less memory, raise it for fewer passes over the corpus. Ignored if
-        the corpus is a DataFrame.
+        Tokens to aim for per chunk when searching a LazyFrame by file. Lower
+        it to use less memory, raise it for fewer passes over the corpus.
+        Ignored for any other corpus.
 
     Returns
     -------
     SearchResults or LazySearchResults or None
-        The matches: `SearchResults` for a DataFrame, `LazySearchResults` for
-        a LazyFrame, or None if the query matched nothing.
+        The matches, or None if the query matched nothing. A LazyFrame with
+        file ids gives `LazySearchResults`, which never holds the corpus in
+        memory; any other corpus gives `SearchResults`.
 
     Raises
     ------
     ValueError
-        If `df` is not a Polars DataFrame or LazyFrame, is missing
-        `file_id_column`, or is a LazyFrame given `file_id_column=None`; if
-        `chunk_tokens` is not a positive integer; or if `query` binds the same
-        variable twice.
+        If `df` is not a Polars DataFrame or LazyFrame or is missing
+        `file_id_column`; if `chunk_tokens` is not a positive integer; or if
+        `query` binds the same variable twice.
     lark.exceptions.LarkError
         If `query` is not a well-formed CQP query.
 
@@ -342,25 +345,27 @@ def search(
     file_id_column : str, optional
         Column holding file ids, which mark where one text ends and the next
         begins. No match crosses a change in its value. Pass `None` to search
-        the corpus as one continuous run of tokens.
+        the corpus as one continuous run of tokens. A LazyFrame is searched a
+        chunk of files at a time, so one searched without file ids is read
+        into memory and searched whole.
     chunk_tokens : int, default 10_000_000
-        Tokens to aim for per chunk when searching a LazyFrame. Lower it to
-        use less memory, raise it for fewer passes over the corpus. Ignored if
-        the corpus is a DataFrame.
+        Tokens to aim for per chunk when searching a LazyFrame by file. Lower
+        it to use less memory, raise it for fewer passes over the corpus.
+        Ignored for any other corpus.
 
     Returns
     -------
     SearchResults or LazySearchResults or None
-        The matches: `SearchResults` for a DataFrame, `LazySearchResults` for
-        a LazyFrame or None if the query matched nothing.
+        The matches, or None if the query matched nothing. A LazyFrame with
+        file ids gives `LazySearchResults`, which never holds the corpus in
+        memory; any other corpus gives `SearchResults`.
 
     Raises
     ------
     ValueError
-        If `df` is not a Polars DataFrame or LazyFrame, is missing
-        `file_id_column`, or is a LazyFrame given `file_id_column=None`; if
-        `chunk_tokens` is not a positive integer; or if `query` binds the same
-        variable twice.
+        If `df` is not a Polars DataFrame or LazyFrame or is missing
+        `file_id_column`; if `chunk_tokens` is not a positive integer; or if
+        `query` binds the same variable twice.
     lark.exceptions.LarkError
         If `query` is not a well-formed simple query.
     polars.exceptions.ColumnNotFoundError

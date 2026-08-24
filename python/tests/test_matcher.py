@@ -1,6 +1,7 @@
 import polars as pl
 import pytest
 from lark.exceptions import LarkError
+from polars_corpus import SearchResults
 from polars_corpus.matcher import Span, search, search_cqp
 
 from .helpers import corpus, spans
@@ -141,11 +142,13 @@ def test_invalid_regex(sample_corpus):
         search_cqp(sample_corpus, '[word="[unclosed"]')
 
 
-@pytest.mark.parametrize("fn,query", [(search, "fox"), (search_cqp, '[word="fox"]')])
-def test_lazy_corpus_needs_file_id_column(sample_corpus, fn, query):
-    """A LazyFrame is searched in chunks of files, so it needs the file ids."""
-    with pytest.raises(ValueError, match="file_id_column"):
-        fn(sample_corpus.lazy(), query)
+@pytest.mark.parametrize("fn,query", [(search, "fox"), (search_cqp, '[token="fox"]')])
+def test_lazy_corpus_without_file_ids(fn, query):
+    """A LazyFrame with no file ids to chunk on is searched whole, in memory."""
+    results = fn(corpus(token="the quick brown fox").lazy(), query)
+
+    assert isinstance(results, SearchResults)
+    assert spans(results) == [(3, 4)]
 
 
 class TestSpan:
