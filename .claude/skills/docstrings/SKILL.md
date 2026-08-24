@@ -52,8 +52,7 @@ read as exemplars too.
 
 Still undocumented, if you are looking for work: `read_text_corpus` and
 `scan_text_corpus` in `corpus_io.py`, and most of the `.corpus` namespace
-methods in `exprs.py`. `productivity.py` is unfinished and not wired up; leave
-it alone.
+methods in `exprs.py`.
 
 ## Summary line
 

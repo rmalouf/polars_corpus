@@ -6,7 +6,15 @@ import polars as pl
 
 from .assoc import chisq, crosstab, loglik, minsens, pmi, smp
 from .chunk import chunk_id, with_chunk_index
-from .lexical import msttr, mtld, ttr, yules_k
+from .lexical import (
+    count_hapaxes,
+    frequency_spectrum,
+    msttr,
+    mtld,
+    ttr,
+    vocabulary_growth,
+    yules_k,
+)
 from .matcher import search, search_cqp
 from .search import LazySearchResults, SearchResults
 from .utils import ngrams
@@ -32,6 +40,15 @@ class CorpusExpr:
 
     def mtld(self, **kwargs: Any) -> pl.Expr:
         return mtld(self._expr, **kwargs)
+
+    def vocabulary_growth(self) -> pl.Expr:
+        return vocabulary_growth(self._expr)
+
+    def frequency_spectrum(self, sort: bool = False) -> pl.Expr:
+        return frequency_spectrum(self._expr, sort=sort)
+
+    def count_hapaxes(self) -> pl.Expr:
+        return count_hapaxes(self._expr)
 
     def ngrams(self, n: int) -> pl.Expr:
         return ngrams(n, self._expr)

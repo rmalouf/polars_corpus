@@ -13,8 +13,6 @@ from .exprs import *  # noqa: F403
 from .keywords import *  # noqa: F403
 from .lexical import *  # noqa: F403
 from .matcher import *  # noqa: F403
-
-# from .productivity import *  # noqa: F403  (work in progress)
 from .search import *  # noqa: F403
 from .utils import *  # noqa: F403
 from .view import *  # noqa: F403

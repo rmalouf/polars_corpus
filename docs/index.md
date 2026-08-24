@@ -18,6 +18,7 @@ modest hardware without requiring external servers or databases.
   - [Concordances](search.md)
   - [Association metrics](assoc.md)
   - [Lexical dispersion](dispersion.md)
+  - [Lexical metrics](lexical.md)
   - [Keyword analysis](keywords.md)
   - [Embeddings](embed.md)
   - [General utilities](utils.md)

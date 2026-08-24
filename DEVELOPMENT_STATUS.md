@@ -58,8 +58,6 @@ tests.
 
 ### Incomplete
 
-- **`productivity.py`** — frequency spectrum, Yule's K, hapax counts. Written
-  but not wired into `__init__.py` and not expected to work.
 - **`visualizations.py`** — the three plots above work and are tested; the
   mosaic plot from a crosstab and the collocation graph are still TODOs.
 
@@ -80,8 +78,9 @@ tests.
    pytest automatically; run them by hand. Worth revisiting closer to a release.
 2. **No Rust unit tests.** The engine is exercised only through Python
    integration tests.
-3. **`pyrefly check` is clean.** `productivity.py` carries a file-level
-   `# pyrefly: ignore-errors` until it is finished; remove it then.
+3. **`pyrefly check` reports two errors**, both from the `.corpus` namespace
+   methods in `exprs.py` passing a `freqs_name` argument that `crosstab` no
+   longer takes. No file carries a `# pyrefly: ignore-errors` marker.
 4. **The `.corpus` namespace is invisible to type checkers.**
    `pl.api.register_expr_namespace` installs a descriptor onto polars' classes
    with a runtime `setattr`, which no stub can describe, so
@@ -115,19 +114,16 @@ them produced only noise.
 
 ## Roadmap
 
-**Before a release**
-1. Finish `productivity.py` or drop it, and drop its `ignore-errors` marker.
-
 **Before 1.0**
-2. Proximity operators.
-3. Publish to PyPI.
-4. Add CI, deferred until closer to release.
+1. Proximity operators.
+2. Publish to PyPI.
+3. Add CI, deferred until closer to release.
 
 **Quality**
-5. Make the binding stack part of the backtracking state, so a zero-width
+4. Make the binding stack part of the backtracking state, so a zero-width
    binding always reports its empty span (Known Issues 6).
-6. Rust unit tests for the matcher.
-7. Benchmarks (`examples/bench.py` is a starting point).
+5. Rust unit tests for the matcher.
+6. Benchmarks (`examples/bench.py` is a starting point).
 
 ---
 

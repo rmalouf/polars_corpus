@@ -10,7 +10,15 @@ from .utils import as_expr
 
 LIB = Path(__file__).parent
 
-__all__ = ["ttr", "msttr", "yules_k", "mtld", "vocabulary_growth"]
+__all__ = [
+    "ttr",
+    "msttr",
+    "mtld",
+    "vocabulary_growth",
+    "frequency_spectrum",
+    "count_hapaxes",
+    "yules_k",
+]
 
 
 def ttr(expr: IntoExpr) -> pl.Expr:
@@ -129,6 +137,90 @@ def mtld(expr: IntoExpr, threshold: float = 0.720) -> pl.Expr:
     )
 
 
+def vocabulary_growth(expr: IntoExpr) -> pl.Expr:
+    """
+    Calculate a vocabulary growth curve V(N).
+
+    A vocabulary growth curve is the running count of types seen so far: the
+    value in row N is the number of distinct tokens in the first N tokens of
+    the corpus, so the last value equals the total number of types. Like
+    `ttr`, this counts null as a type.
+
+    Parameters
+    ----------
+    expr : IntoExpr
+        Column name or expression holding the tokens to analyze.
+
+    Returns
+    -------
+    pl.Expr
+        Expression returning one type count per token, in corpus order.
+
+    References
+    ----------
+    - Baayen, R. H. 1996, The effect of lexical specialization on the growth curve
+      of the vocabulary. *Computational Linguistics* 22:455-480.
+    - Baayen, R. H. 2001. *Word Frequency Distributions.* Kluwer Academic Publishers.
+    """
+    return as_expr(expr).is_first_distinct().cum_sum()
+
+
+def frequency_spectrum(expr: IntoExpr, sort: bool = False) -> pl.Expr:
+    """
+    Calculate the frequency spectrum of a corpus.
+
+    The frequency spectrum counts the types at each frequency: how many types
+    occur once, how many occur twice, and so on.
+
+    Parameters
+    ----------
+    expr : IntoExpr
+        Column name or expression holding the tokens to analyze.
+    sort : bool, default=False
+        Sort the result by frequency class. Unsorted, the rows come back in
+        whatever order `value_counts` produced, which differs from one
+        evaluation of the same expression to the next.
+
+    Returns
+    -------
+    pl.Expr
+        Expression returning one row per frequency class, as a struct with
+        fields `m` (the frequency) and `V(m,N)` (the number of types that
+        occur `m` times).
+    """
+    spectrum = (
+        as_expr(expr)
+        .value_counts(name="m", parallel=True)
+        .struct.field("m")
+        .value_counts(name="V(m,N)", parallel=True)
+    )
+    if sort:
+        spectrum = spectrum.sort()
+    return spectrum
+
+
+def count_hapaxes(expr: IntoExpr) -> pl.Expr:
+    """
+    Count the hapax legomena in a corpus.
+
+    A hapax legomenon is a type that occurs exactly once. Hapaxes are the
+    first frequency class of the spectrum, `V(1,N)`, and their share of the
+    vocabulary is a common measure of productivity. Like `ttr`, this counts
+    null as a type.
+
+    Parameters
+    ----------
+    expr : IntoExpr
+        Column name or expression holding the tokens to analyze.
+
+    Returns
+    -------
+    pl.Expr
+        Expression returning the number of hapaxes as an integer scalar.
+    """
+    return as_expr(expr).is_unique().sum()
+
+
 def yules_k(expr: IntoExpr) -> pl.Expr:
     """
     Calculate Yule's K characteristic.
@@ -157,32 +249,9 @@ def yules_k(expr: IntoExpr) -> pl.Expr:
     """
     tokens = as_expr(expr)
     n = tokens.len()
-    spectrum = tokens.unique_counts().alias("f").value_counts()
-    inner = (spectrum.struct[0] ** 2 * spectrum.struct[1]) / (n * n)
-    return 10000 * (inner.sum() - (1 / n))
-
-
-## LEXICAL GROWTH CURVES
-
-
-def vocabulary_growth(expr: IntoExpr) -> pl.Expr:
-    """
-    Calculate a vocabulary growth curve V(N).
-
-    A vocabulary growth curve is the running count of types seen so far: the
-    value in row N is the number of distinct tokens in the first N tokens of
-    the corpus, so the last value equals the total number of types. Like
-    `ttr`, this counts null as a type.
-
-    Parameters
-    ----------
-    expr : IntoExpr
-        Column name or expression holding the tokens to analyze.
-
-    Returns
-    -------
-    pl.Expr
-        Expression returning one type count per token, in corpus order.
-        Downsample long curves for plotting with `.gather_every(n)`.
-    """
-    return as_expr(expr).is_first_distinct().cum_sum()
+    # Sorted so that the two field extractions, which each re-evaluate the
+    # spectrum, agree on row order; counts are cast to avoid u32 overflow.
+    spectrum = frequency_spectrum(tokens, sort=True)
+    m = spectrum.struct.field("m").cast(pl.Float64)
+    v_m = spectrum.struct.field("V(m,N)").cast(pl.Float64)
+    return 10000 * ((m.pow(2) * v_m / (n * n)).sum() - (1 / n))

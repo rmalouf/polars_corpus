@@ -203,3 +203,30 @@ class TestVocabularyGrowth:
         )
         curve = df.select(plc.vocabulary_growth("tokens").over("file_id")).to_series()
         assert curve.to_list() == [1, 2, 2, 1, 1, 2]
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        "ttr",
+        "msttr",
+        "mtld",
+        "yules_k",
+        "vocabulary_growth",
+        "frequency_spectrum",
+        "count_hapaxes",
+    ],
+)
+def test_expr_namespace_matches_function(name):
+    """`pl.col(...).corpus.<measure>()` gives what the function form gives."""
+    tokens = ["the", "cat", "sat", "on", "the", "mat", None] * 200
+    df = pl.DataFrame({"tokens": tokens}, schema={"tokens": pl.String})
+    method = getattr(pl.col("tokens").corpus, name)
+    function = getattr(plc, name)
+    # Sorted because `frequency_spectrum` leaves its rows in whatever order
+    # `value_counts` produced, which differs from one evaluation to the next.
+    assert (
+        df.select(method().alias("v"))
+        .sort("v")
+        .equals(df.select(function("tokens").alias("v")).sort("v"))
+    )

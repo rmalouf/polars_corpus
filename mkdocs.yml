@@ -71,9 +71,11 @@ nav:
       - Concordances: notebooks/concordance.ipynb
       - Keyword Analysis: notebooks/keywords.ipynb
       - Dispersion: notebooks/dispersion.ipynb
+      - Vocabulary: notebooks/vocabulary.ipynb
   - Reference:
       - Search: search.md
       - Association metrics: assoc.md
+      - Lexical metrics: lexical.md
       - Lexical dispersion: dispersion.md
       - Keyword analysis: keywords.md
       - Embeddings: embed.md
