@@ -195,8 +195,7 @@ def cqp(query: str) -> list[Opcode]:
     Parameters
     ----------
     query : str
-        CQP query, e.g. `[pos="NN.*"] [lemma="be"]`. See QUERY_LANGUAGE.md for
-        the syntax.
+        CQP query, e.g. `[pos="NN.*"] [lemma="be"]`.
 
     Returns
     -------

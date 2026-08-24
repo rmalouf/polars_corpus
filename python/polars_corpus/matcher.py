@@ -270,8 +270,7 @@ def search_cqp(
     df : DataFrame | LazyFrame
         Corpus to search.
     query : str
-        CQP query, e.g. `[pos="NN.*"] [lemma="be"]`. See QUERY_LANGUAGE.md for
-        the syntax.
+        CQP query, e.g. `[pos="NN.*"] [lemma="be"]`.
     file_id_column : str, optional
         Column holding file ids, which mark where one text ends and the next
         begins. No match crosses a change in its value. Pass `None` to search
@@ -311,6 +310,9 @@ def search_cqp(
     >>> plc.search_cqp(corpus, '[pos!="NN.*"]')  # Anything but a noun
     >>> # A column that the simple query shorthands cannot reach:
     >>> plc.search_cqp(corpus, '[speaker="A" & lemma="think"]')
+    >>> # Capture part of the match; `$name:` takes a node or a parenthesized
+    >>> # group, and each one gets a concordance column of its own:
+    >>> plc.search_cqp(corpus, '$det: [pos="DT"] $adjs: ([pos="JJ"]+) [pos="NN"]')
     >>> # Out of core, over a corpus too large to hold in memory:
     >>> plc.search_cqp(pl.scan_parquet("bnc.parquet"), '[token="fox"%c]')
     """

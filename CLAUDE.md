@@ -48,7 +48,9 @@ Column names are defaults, not requirements: every function that reads one of
 these roles takes a `*_column` parameter to point it elsewhere.
 
 ## Query Languages
-The package supports Simple (BNCweb-style) and CQP query syntaxes. See [QUERY_LANGUAGE.md](QUERY_LANGUAGE.md) for syntax details.
+The package supports Simple (BNCweb-style) and CQP query syntaxes. See
+[docs/simple_query.md](docs/simple_query.md) for the Simple language; the CQP
+grammar in `cqp_parser.py` and the `search_cqp()` docstring cover the other.
 
 ## Coding Standards
 - Use numpy-style docstrings. Keep them minimal, focused on API usage

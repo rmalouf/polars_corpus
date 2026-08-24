@@ -1,6 +1,6 @@
 # Development Status - polars-corpus
 
-**Last updated:** 2026-08-16
+**Last updated:** 2026-08-24
 **Version:** 0.2.0-pre
 **Status:** Pre-release; core is stable, not yet published to PyPI
 
@@ -10,10 +10,12 @@
 
 A corpus linguistics toolkit for Polars, split between a Python API and a Rust
 matching engine. Search, concordancing, collocation, keywords, dispersion, the
-statistical measures and the plots are all working and covered by tests. The
-user guide now exists. The main functional gap is proximity operators in the Simple query
-language; the main process gaps are the absence of CI and of any Rust unit
-tests.
+statistical measures and the plots are all working and covered by tests.
+Documentation is mkdocs reference pages built from the docstrings, plus the
+example notebooks and the Simple query language reference; there is no
+narrative guide, and CQP has no page of its own. The main functional gap is
+proximity operators in the Simple query language; the main process gaps are the
+absence of CI and of any Rust unit tests.
 
 ---
 
@@ -21,11 +23,11 @@ tests.
 
 | | |
 |---|---|
-| Python source | ~5,700 lines, 19 modules |
+| Python source | ~6,000 lines, 18 modules |
 | Rust source | ~1,100 lines, 6 files |
-| Tests | ~4,300 lines, 883 tests in 15 files |
-| User guide | 6 pages plus 4 on the query languages (Quarto / great-docs) |
-| Examples | 9 notebooks, 2 scripts |
+| Tests | ~4,500 lines, 913 tests in 15 files |
+| Docs | 10 pages plus 5 example notebooks (mkdocs-material / mkdocstrings) |
+| Examples | 9 notebooks, 3 scripts |
 
 ---
 
@@ -64,7 +66,20 @@ tests.
 ### Not implemented
 
 - **Proximity operators** (`<<s>>`, `<<3>>`, `<<5<<`, `>>5>>`) in the Simple
-  query language. See SIMPLE_QUERY_STATUS.md.
+  query language. They are not in the grammar and raise
+  `UnexpectedCharacters`. There is no direct CQP equivalent, so translation
+  needs one of:
+  1. *Expand to CQP disjunctions.* `day <<3>> night` becomes
+     `([token="day"%c] []{0,3} [token="night"%c]) | ([token="night"%c] []{0,3} [token="day"%c])`.
+     Simple, but combinatorial once constraints nest, e.g.
+     `waste <<s>> (time <<3>> money)`.
+  2. *Add proximity opcodes to the Rust matcher.* Efficient and the right
+     long-term answer, but the largest change.
+  3. *Filter after matching.* Search each term separately and post-process by
+     distance. Least efficient, and awkward to compose.
+
+  Sentence-level proximity (`<<s>>`) additionally needs a sentence boundary
+  column, which `with_chunk_index()` can already supply.
 - **Parallel chunk processing.** The lazy search loop is sequential; Polars
   already parallelizes the mask expressions within each chunk, and on the BNC
   the chunked search runs as fast as the eager one, so threading the loop has
@@ -104,7 +119,10 @@ tests.
    first as a null and the second as an empty list, which is now the visible
    face of the bug. The fix is probably to record the binding stack's depth
    with each task and truncate back to it when the task is resumed.
-7. **No published wheels or PyPI release.**
+7. **`{lemma/CLASS}_TAG` drops the class.** A Simple query that gives both a
+   simplified POS class and an explicit tag keeps the `_TAG` and discards the
+   class without complaint (`LEMMA` in `simple_parser.py`).
+8. **No published wheels or PyPI release.**
 
 Notebooks are excluded from ruff (`[tool.ruff] extend-exclude`). They are
 working scratchpads and are expected to sit in unfinished states, so linting
@@ -124,6 +142,9 @@ them produced only noise.
    binding always reports its empty span (Known Issues 6).
 5. Rust unit tests for the matcher.
 6. Benchmarks (`examples/bench.py` is a starting point).
+7. A CQP reference page in `docs/`, the way `docs/simple_query.md` documents
+   the Simple language. CQP syntax is currently covered only by the grammar in
+   `cqp_parser.py` and the examples on `search_cqp()`.
 
 ---
 
@@ -166,7 +187,16 @@ why.
 
 ## Notes
 
-- The Simple query language compiles straight to CQP with no intermediate AST.
+- The Simple query language compiles straight to CQP with no intermediate AST:
+  `simple_parser.simple_to_cqp()` emits a CQP string that the same matcher
+  behind `search_cqp()` compiles. The grammar (`_GRAMMAR` in
+  `simple_parser.py`) is lark, built into an LALR parser once at import; each
+  call runs a `SimpleCompiler` transformer holding the requested column names.
+  Because whitespace separates query items, a whole token (`{walk}_VB*`) has to
+  lex as one terminal, so the transformer re-matches each terminal to recover
+  its parts, against regexes (`_POS_TAG_PARTS`, `_LEMMA_PARTS`) built from the
+  same fragments as the grammar so the two cannot drift. `docs/simple_query.md`
+  documents the language for users; the grammar is the specification.
 - Tests assert on actual matched spans rather than match counts.
 - Association measures take a `freqs` struct column, so frequency column names
   are named once in `crosstab()` rather than repeated at every call site.
