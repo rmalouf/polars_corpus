@@ -61,10 +61,10 @@ def keywords(
          - 'ttest' : Welch's t-test on per-file relative frequencies
     min_target_tf : int, default 0
         Minimum term frequency in the target corpus required for a word to be
-        included in the results. Ignored when `method` is 'ttest'.
+        included in the results.
     min_target_df : int, default 0
         Minimum document frequency in the target corpus required for a word to be
-        included in the results. Ignored when `method` is 'ttest'.
+        included in the results.
     k: float, default None
         Constant added to both frequencies in Kilgarriff's "simple maths
         parameter"; larger values favor more frequent words. Required when
@@ -81,9 +81,12 @@ def keywords(
 
         Every method but 'ttest' returns the frequency table with one column
         named for the measure. 'ttest' returns the words more frequent in the
-        target, ranked by p-value ascending, with columns `t`, `p`, `df`, and
-        `g`. The test statistic `t` and the p-value `p` indicate the strength of
-        evidence for an association, while Hedges' `g` is the effect size.
+        target, ranked by p-value ascending, with the target-corpus counts the
+        thresholds are applied to (`target_tf`, `target_df`) and the columns
+        `t`, `p`, `df`, and `g`. The test statistic `t` and the p-value `p`
+        indicate the strength of evidence for an association, while Hedges' `g`
+        is the effect size. Note that `df` here is the test's degrees of
+        freedom, not a document frequency.
 
     Raises
     ------
@@ -129,11 +132,6 @@ def keywords(
         warnings.warn(
             f"k={k} is only used when method='smp'; ignoring it", stacklevel=2
         )
-    if method == "ttest" and (min_target_tf or min_target_df):
-        warnings.warn(
-            "min_target_tf and min_target_df are not applied when method='ttest'",
-            stacklevel=2,
-        )
 
     target_lf = as_corpus(target, "target corpus")
     reference_lf = as_corpus(reference, "reference corpus")
@@ -151,7 +149,9 @@ def keywords(
     keyword_name = combined.collect_schema().names()[0]
 
     if method == "ttest":
-        result = _keywords_ttest(combined, keyword_name, file_id_column)
+        result = _keywords_ttest(
+            combined, keyword_name, min_target_tf, min_target_df, file_id_column
+        )
     else:
         freq_table = crosstab(combined, keyword_name, PART_FIELD)
         target_df = (
@@ -215,15 +215,27 @@ def _keywords_assoc(
 def _keywords_ttest(
     combined: pl.LazyFrame,
     expr_name: str,
+    min_target_tf: int,
+    min_target_df: int,
     file_id_column: str = "file_id",
 ) -> pl.LazyFrame:
     """Rank keywords by Welch's t-test on per-file relative frequencies.
 
     `combined` is the two corpora concatenated, with a `PART_FIELD` column
     marking which is which. Returns the words overrepresented in the target
-    (`t` > 0), sorted by p-value ascending, with the test's `t`, `p`, `df`, and
-    `g` (Hedges' g) columns unnested alongside the word.
+    (`t` > 0) that clear `min_target_tf` and `min_target_df`, sorted by p-value
+    ascending, with the target counts and the test's `t`, `p`, `df`, and `g`
+    (Hedges' g) columns alongside the word.
     """
+    target_counts = (
+        combined.filter(pl.col(PART_FIELD) == "target")
+        .group_by(expr_name)
+        .agg(
+            target_tf=pl.len(),
+            target_df=pl.col(file_id_column).n_unique(),
+        )
+    )
+
     result = (
         combined.group_by(file_id_column, PART_FIELD, expr_name)
         .agg(pl.len().alias("freq"))
@@ -254,7 +266,15 @@ def _keywords_ttest(
         )
         .select(expr_name, "t_test")
         .unnest("t_test")
-        .filter(pl.col("t") > 0)
+        # An inner join: a word absent from the target has no counts, and with
+        # a target mean of zero it can never come out of the test as a keyword.
+        .join(target_counts, on=expr_name, how="inner")
+        .filter(
+            pl.col("t") > 0,
+            pl.col("target_tf") >= min_target_tf,
+            pl.col("target_df") >= min_target_df,
+        )
+        .select(expr_name, "target_tf", "target_df", "t", "p", "df", "g")
         .sort(by="p")
     )
     return result

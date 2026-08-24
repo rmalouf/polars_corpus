@@ -137,17 +137,43 @@ def test_keywords_k_ignored_by_other_methods() -> None:
         keywords(TARGET, REFERENCE, pl.col("norm"), "ll", k=1)
 
 
-@pytest.mark.parametrize("threshold", ["min_target_tf", "min_target_df"])
-def test_keywords_ttest_ignores_thresholds(threshold: str) -> None:
-    # ttest can't apply them, so say so rather than silently returning everything.
-    with pytest.warns(UserWarning, match="not applied when method='ttest'"):
-        keywords(TARGET, REFERENCE, pl.col("norm"), "ttest", **{threshold: 2})
+@pytest.mark.parametrize(
+    "threshold,value,expected",
+    [
+        # ttest reports only the words overrepresented in the target, so "the"
+        # is absent throughout; the thresholds cut that set down further.
+        ("min_target_tf", 0, {"cat", "dog", "fish"}),
+        ("min_target_tf", 2, {"cat", "dog"}),  # fish (tf=1) excluded
+        ("min_target_tf", 3, {"cat"}),  # dog (tf=2) also excluded
+        ("min_target_df", 2, {"cat"}),  # dog/fish (df=1) excluded
+        ("min_target_df", 3, set()),  # only "the" reaches df=3, and it is not key
+    ],
+)
+def test_keywords_ttest_frequency_thresholds(
+    threshold: str, value: int, expected: set[str]
+) -> None:
+    result = keywords(TARGET, REFERENCE, pl.col("norm"), "ttest", **{threshold: value})
+    assert set(result["norm"]) == expected
+
+
+def test_keywords_ttest_thresholds_keep_statistics() -> None:
+    # The thresholds pick which words are reported; they must not disturb the
+    # per-file relative frequencies the test is computed from, whose
+    # denominator is every token in the file.
+    full = keywords(TARGET, REFERENCE, pl.col("norm"), "ttest")
+    filtered = keywords(TARGET, REFERENCE, pl.col("norm"), "ttest", min_target_tf=2)
+    assert_frame_equal(
+        full.filter(pl.col("norm").is_in(filtered["norm"].implode())), filtered
+    )
 
 
 def test_keywords_ttest() -> None:
     result = keywords(TARGET, REFERENCE, pl.col("norm"), "ttest")
 
-    assert result.columns == ["norm", "t", "p", "df", "g"]
+    assert result.columns == ["norm", "target_tf", "target_df", "t", "p", "df", "g"]
+    # The target counts the thresholds cut on are reported alongside the test.
+    got = dict(zip(result["norm"], result["target_df"]))
+    assert got == {word: TARGET_DF[word] for word in result["norm"]}
     # ttest only reports words overrepresented in the target (t > 0).
     assert (result["t"] > 0).all()
     # Hedges' g shares the t-statistic's sign.
