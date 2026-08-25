@@ -270,7 +270,8 @@ def search_cqp(
     df : DataFrame | LazyFrame
         Corpus to search.
     query : str
-        CQP query, e.g. `[pos="NN.*"] [lemma="be"]`.
+        CQP query, e.g. `[pos="NN.*"] [lemma="be"]`. See
+        [CQP query language](cqp_query.md) for the full syntax.
     file_id_column : str, optional
         Column holding file ids, which mark where one text ends and the next
         begins. No match crosses a change in its value. Pass `None` to search
@@ -297,6 +298,8 @@ def search_cqp(
         `query` binds the same variable twice.
     lark.exceptions.LarkError
         If `query` is not a well-formed CQP query.
+    polars.exceptions.ColumnNotFoundError
+        If the corpus has no column a constraint in `query` names.
 
     See Also
     --------

@@ -1,6 +1,6 @@
 # Development Status - polars-corpus
 
-**Last updated:** 2026-08-24
+**Last updated:** 2026-08-25
 **Version:** 0.2.0-pre
 **Status:** Pre-release; core is stable, not yet published to PyPI
 
@@ -12,10 +12,10 @@ A corpus linguistics toolkit for Polars, split between a Python API and a Rust
 matching engine. Search, concordancing, collocation, keywords, dispersion, the
 statistical measures and the plots are all working and covered by tests.
 Documentation is mkdocs reference pages built from the docstrings, plus the
-example notebooks and the Simple query language reference; there is no
-narrative guide, and CQP has no page of its own. The main functional gap is
-proximity operators in the Simple query language; the main process gaps are the
-absence of CI and of any Rust unit tests.
+example notebooks and a reference page for each of the two query languages;
+there is no narrative guide. The main functional gap is proximity operators in
+the Simple query language; the main process gaps are the absence of CI and of
+any Rust unit tests.
 
 ---
 
@@ -26,7 +26,7 @@ absence of CI and of any Rust unit tests.
 | Python source | ~6,000 lines, 18 modules |
 | Rust source | ~1,100 lines, 6 files |
 | Tests | ~4,500 lines, 913 tests in 15 files |
-| Docs | 10 pages plus 5 example notebooks (mkdocs-material / mkdocstrings) |
+| Docs | 11 pages plus 5 example notebooks (mkdocs-material / mkdocstrings) |
 | Examples | 9 notebooks, 3 scripts |
 
 ---
@@ -142,9 +142,6 @@ them produced only noise.
    binding always reports its empty span (Known Issues 6).
 5. Rust unit tests for the matcher.
 6. Benchmarks (`examples/bench.py` is a starting point).
-7. A CQP reference page in `docs/`, the way `docs/simple_query.md` documents
-   the Simple language. CQP syntax is currently covered only by the grammar in
-   `cqp_parser.py` and the examples on `search_cqp()`.
 
 **Coverage**
 
@@ -202,7 +199,8 @@ why.
   lex as one terminal, so the transformer re-matches each terminal to recover
   its parts, against regexes (`_POS_TAG_PARTS`, `_LEMMA_PARTS`) built from the
   same fragments as the grammar so the two cannot drift. `docs/simple_query.md`
-  documents the language for users; the grammar is the specification.
+  documents the language for users, `docs/cqp_query.md` documents what it
+  compiles to, and the two grammars are the specification.
 - Tests assert on actual matched spans rather than match counts.
 - Association measures take a `freqs` struct column, so frequency column names
   are named once in `crosstab()` rather than repeated at every call site.

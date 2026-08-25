@@ -29,8 +29,8 @@ Simple queries are translated internally into CQP expressions. In most cases you
 | `{light/V}`              | lemma *light* with a verb tag                                   |
 | `{walk}_VBD`             | lemma *walk* with POS tag `VBD`                                 |
 | `{box}_{SUBST}`          | lemma *box* with a noun tag                                     |
-| `(cat\|dog)`             | either *cat* or *dog*                                           |
-| `(red fox\|blue whale)`  | either of the two sequences                                     |
+| <code>(cat&#124;dog)</code> | either *cat* or *dog*                                           |
+| <code>(red fox&#124;blue whale)</code> | either of the two sequences                                     |
 | `(very)? good`           | optional *very*, followed by *good*                             |
 | `(ha){2,4}`              | between two and four occurrences of *ha*                        |
 | `$x: fox`                | match *fox* and bind it to variable `x`                         |

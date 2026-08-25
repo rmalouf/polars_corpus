@@ -82,4 +82,5 @@ nav:
       - Embeddings: embed.md
       - Utilities: utils.md
       - Simple query language: simple_query.md
+      - CQP query language: cqp_query.md
 

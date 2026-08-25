@@ -16,6 +16,7 @@ modest hardware without requiring external servers or databases.
 
   - [Reading corpora](io.md)
   - [Simple query language](simple_query.md)
+  - [CQP query language](cqp_query.md)
   - [Concordances](search.md)
   - [Association metrics](assoc.md)
   - [Lexical dispersion](dispersion.md)
