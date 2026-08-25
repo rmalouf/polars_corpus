@@ -103,7 +103,9 @@ class TestMTLD:
         "tokens,predicate",
         [
             pytest.param(
-                [f"word{i}" for i in range(100)], lambda v: v > 50, id="high-diversity"
+                [f"word{i % 20}" for i in range(100)],
+                lambda v: v > 20,
+                id="high-diversity",
             ),
             pytest.param(["the"] * 100, lambda v: v < 10, id="low-diversity"),
         ],
@@ -118,13 +120,41 @@ class TestMTLD:
         ids=["at-minimum", "below-minimum"],
     )
     def test_requires_ten_tokens(self, n_tokens, defined):
-        df = pl.DataFrame({"tokens": [f"w{i}" for i in range(n_tokens)]})
+        df = pl.DataFrame({"tokens": ["the"] * n_tokens})
+        assert (df.select(plc.mtld("tokens")).item() is not None) is defined
+
+    @pytest.mark.parametrize(
+        "tokens,defined",
+        [
+            pytest.param(
+                [f"word{i}" for i in range(100)], False, id="neither-direction"
+            ),
+            pytest.param(
+                ["a", "a", "a"] + [f"word{i}" for i in range(7)],
+                False,
+                id="backward-only",
+            ),
+            pytest.param(
+                [f"word{i}" for i in range(7)] + ["a", "a", "a"],
+                False,
+                id="forward-only",
+            ),
+            pytest.param([f"word{i % 20}" for i in range(100)], True, id="both"),
+        ],
+    )
+    def test_null_unless_a_factor_closes(self, tokens, defined):
+        """A pass that closes no factor reports the TTR rescaled, not a score."""
+        df = pl.DataFrame({"tokens": tokens})
         assert (df.select(plc.mtld("tokens")).item() is not None) is defined
 
     def test_nulls_are_a_token(self):
-        tokens = [f"word{i}" for i in range(10)] + [None, None]
-        df = pl.DataFrame({"tokens": tokens})
-        assert df.select(plc.mtld("tokens")).item() > 0
+        """Null is an ordinary type: a run of nulls scores like a run of one word."""
+        nulls = pl.DataFrame({"tokens": [None] * 100}, schema={"tokens": pl.String})
+        words = pl.DataFrame({"tokens": ["the"] * 100})
+        assert (
+            nulls.select(plc.mtld("tokens")).item()
+            == words.select(plc.mtld("tokens")).item()
+        )
 
     def test_custom_threshold(self):
         df = pl.DataFrame({"tokens": ["the"] * 100})

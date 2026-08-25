@@ -31,11 +31,14 @@ fn py_msttr(inputs: &[Series], kwargs: MSTTRKwargs) -> PolarsResult<Series> {
 }
 
 /// Count factors from an iterator of optional string references
-fn count_factors<'a, I>(tokens: I, threshold: f64) -> f64
+///
+/// Returns `None` if no factor closed, leaving only a partial: tokens per
+/// factor would then measure the sequence's TTR, not a factor length.
+fn count_factors<'a, I>(tokens: I, threshold: f64) -> Option<f64>
 where
     I: Iterator<Item = Option<&'a str>>,
 {
-    let mut factors = 0.0;
+    let mut factors: f64 = 0.0;
     let mut types: PlHashSet<Option<&'a str>> = PlHashSet::new();
     let mut token_count: usize = 0;
 
@@ -51,14 +54,17 @@ where
         }
     }
 
-    // Add partial factor if there are remaining tokens
-    if token_count > 0 {
-        let ttr = types.len() as f64 / token_count as f64;
-        let partial_factor = (1.0 - ttr) / (1.0 - threshold);
-        factors += partial_factor;
+    if factors == 0.0 {
+        return None;
     }
 
-    factors
+    // Tokens left over at the end contribute a fraction of a factor
+    if token_count > 0 {
+        let ttr = types.len() as f64 / token_count as f64;
+        factors += (1.0 - ttr) / (1.0 - threshold);
+    }
+
+    Some(factors)
 }
 
 #[derive(Deserialize)]
@@ -76,9 +82,9 @@ fn py_mtld(inputs: &[Series], kwargs: MTLDKwargs) -> PolarsResult<Series> {
         return Ok(Series::new("mtld".into(), &[None::<f64>]));
     }
 
-    let forward_mtld = n_tokens as f64 / count_factors(ca.iter(), threshold);
-    let backward_mtld = n_tokens as f64 / count_factors(ca.iter().rev(), threshold);
-    let mtld = (forward_mtld + backward_mtld) / 2.0;
+    let mtld = count_factors(ca.iter(), threshold)
+        .zip(count_factors(ca.iter().rev(), threshold))
+        .map(|(forward, backward)| (n_tokens as f64 / forward + n_tokens as f64 / backward) / 2.0);
 
     Ok(Series::new("mtld".into(), &[mtld]))
 }

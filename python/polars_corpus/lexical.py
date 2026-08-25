@@ -107,9 +107,13 @@ def mtld(expr: IntoExpr, threshold: float = 0.720) -> pl.Expr:
     Returns
     -------
     pl.Expr
-        Expression returning the MTLD score as a float scalar.
-        Returns null if the text contains fewer than 10 tokens.
-        Higher values indicate greater lexical diversity.
+        Expression returning the MTLD score as a float scalar, the mean number
+        of tokens per factor. Higher values indicate greater lexical diversity.
+        The score is null in two cases:
+
+        - the text holds fewer than 10 tokens
+        - the running TTR never falls to `threshold`, in one direction or the
+          other, so that no factor closes
 
     Raises
     ------
