@@ -146,6 +146,12 @@ them produced only noise.
    the Simple language. CQP syntax is currently covered only by the grammar in
    `cqp_parser.py` and the examples on `search_cqp()`.
 
+**Coverage**
+
+See [FEATURE_GAPS.md](FEATURE_GAPS.md) for what the toolkit is still missing
+against what a linguist expects: collocation is the big one, then a
+`frequency_list()` function, concordance sorting and export, and `from_spacy()`.
+
 ---
 
 ## Target Audience
