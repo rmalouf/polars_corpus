@@ -3,7 +3,7 @@
 **Last updated:** 2026-08-25
 **Scope:** what to add to cover the basic corpus-analysis toolkit
 
-This is a survey of the documentation -- the ten reference pages, the five
+This is a survey of the documentation -- the eleven reference pages, the five
 example notebooks, `mkdocs.yml`, the README -- against what a linguist expects
 a corpus tool to do.
 
@@ -135,13 +135,12 @@ Two decisions shape the API more than the conversion does:
 
 ## 8. The query language and the missing guide
 
-One genuine code gap and three pages nobody has written. By the standard
+One genuine code gap and two pages nobody has written. By the standard
 above, they rank the same.
 
 - **Proximity operators** (`<<3>>`, `<<s>>`) -- the biggest query-language
   gap, already on the roadmap. The same machinery gives sentence-bounded
   collocation windows, so it pays twice.
-- **No CQP reference page**, already on the roadmap.
 - **No narrative getting-started guide.** The nav entries are commented out in
   `mkdocs.yml`.
 - **`assoc.md`, `lexical.md` and `utils.md` are bare mkdocstrings stubs** --
