@@ -89,8 +89,7 @@ does not match *jumps*, and
 [token=".*ing"]
 ```
 
-is how to ask for tokens ending in *ing*. The pattern is wrapped in `^(...)$`
-before it is run, so anchors of your own are unnecessary.
+matches tokens ending in *ing*.
 
 ### Case
 
@@ -215,7 +214,7 @@ across lines:
 [pos="NN"]
 ```
 
-An empty node is how a gap of fixed width is written:
+An empty node can be used to match a fixed-width gap:
 
 ```text
 [token="fox"] [] [token="over"]
