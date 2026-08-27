@@ -15,6 +15,8 @@ from polars_corpus.assoc import (
 )
 from polars_corpus.collocations import MEASURES as BUILTINS
 
+from .helpers import log_ratio, named_by_alias
+
 # Two files, with "fox" once in each. Positions:
 #
 #    0    1     2     3   4     5    6   7    8   9  | 10  11    12  13  14
@@ -241,15 +243,6 @@ BUILTIN_FUNCTIONS = [
     ("zscore", zscore),
     ("minsens", minsens),
 ]
-
-
-def log_ratio(f12: pl.Expr, f1: pl.Expr, f2: pl.Expr, n: pl.Expr) -> pl.Expr:
-    """A measure the library does not ship (Hardie 2014)."""
-    return ((f12 / f1) / ((f2 - f12) / (n - f1))).log(2)
-
-
-def named_by_alias(f12: pl.Expr, f1: pl.Expr, f2: pl.Expr, n: pl.Expr) -> pl.Expr:
-    return log_ratio(f12, f1, f2, n).alias("LogRatio")
 
 
 @pytest.mark.parametrize(

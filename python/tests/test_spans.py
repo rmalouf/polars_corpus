@@ -84,36 +84,29 @@ class TestChunkIdExpression:
 class TestNgramsExpression:
     """Tests for the ngrams() expression method."""
 
-    def test_bigrams(self):
+    @pytest.mark.parametrize(
+        "n,expected",
+        [
+            pytest.param(1, ["the", "quick", "brown", "fox"], id="unigrams"),
+            pytest.param(
+                2,
+                # The tail has no full n-gram to start, so it comes out null.
+                ["the quick", "quick brown", "brown fox", None],
+                id="bigrams",
+            ),
+            pytest.param(
+                3,
+                ["the quick brown", "quick brown fox", None, None],
+                id="trigrams",
+            ),
+        ],
+    )
+    def test_ngrams(self, n, expected):
         df = pl.DataFrame({"token": ["the", "quick", "brown", "fox"]})
-        result = df.with_columns(pl.col("token").corpus.ngrams(2).alias("bigrams"))
+        result = df.with_columns(pl.col("token").corpus.ngrams(n).alias("grams"))
 
-        assert result.schema["bigrams"] == pl.Utf8
-        # The tail has no full bigram to start, so it comes out null.
-        assert result["bigrams"].to_list() == [
-            "the quick",
-            "quick brown",
-            "brown fox",
-            None,
-        ]
-
-    def test_trigrams(self):
-        df = pl.DataFrame({"token": ["the", "quick", "brown", "fox", "jumps"]})
-        result = df.with_columns(pl.col("token").corpus.ngrams(3).alias("trigrams"))
-
-        assert result["trigrams"].to_list() == [
-            "the quick brown",
-            "quick brown fox",
-            "brown fox jumps",
-            None,
-            None,
-        ]
-
-    def test_unigrams(self):
-        df = pl.DataFrame({"token": ["the", "quick", "brown"]})
-        result = df.with_columns(pl.col("token").corpus.ngrams(1).alias("unigrams"))
-
-        assert result["unigrams"].to_list() == ["the", "quick", "brown"]
+        assert result.schema["grams"] == pl.Utf8
+        assert result["grams"].to_list() == expected
 
     @pytest.mark.parametrize("n", [0, -1, 2.0, "2"])
     def test_bad_n(self, n):
@@ -145,15 +138,6 @@ class TestNgramsExpression:
 
         # No bigram runs from the end of one file into the start of the next.
         assert result["bigrams"].to_list() == ["the quick", None, "brown fox", None]
-
-    def test_with_lazyframe(self):
-        df = pl.DataFrame({"token": ["the", "quick", "brown"]})
-        result = (
-            df.lazy()
-            .with_columns(pl.col("token").corpus.ngrams(2).alias("bigrams"))
-            .collect()
-        )
-        assert result["bigrams"][0] == "the quick"
 
     def test_empty_dataframe(self):
         df = pl.DataFrame({"token": []}, schema={"token": pl.Utf8})

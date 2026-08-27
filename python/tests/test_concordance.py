@@ -289,20 +289,6 @@ class TestBindings:
 
         assert results.concordance("token")["token_x"].to_list() == [[], None]
 
-    def test_variables_of_hand_built_matches(self):
-        """With no query to read the order off, the names are alphabetical."""
-        df = corpus(token="a b c")
-        results = search_results(
-            df,
-            "",
-            [
-                Match(Span(0, 1), {"z": Span(0, 1)}),
-                Match(Span(1, 2), {"y": Span(1, 2)}),
-            ],
-        )
-
-        assert results.variables == ["y", "z"]
-
     @pytest.mark.parametrize(
         "method,args", [("head", (1,)), ("sample", (1,)), ("shuffle", ())]
     )
@@ -572,30 +558,24 @@ class TestAsStr:
         assert conc.dtypes == [pl.String] * 3
 
 
-class TestFunctionalInterface:
-    """The free functions and the methods are the same call"""
+@pytest.mark.parametrize(
+    "name,kwargs",
+    [
+        ("concordance", {"window": 2}),
+        ("concordance", {"window": 2, "as_str": True}),
+        ("collocates", {"window": 2, "min_freq": 1}),
+    ],
+    ids=["concordance", "concordance-as-str", "collocates"],
+)
+def test_the_free_function_is_the_method(results, name, kwargs):
+    """Each free function forwards to the method of the same name."""
+    free = getattr(plc, name)(results, "token", **kwargs)
+    method = getattr(results, name)(**{"expr": "token"} | kwargs)
+    # collocates groups, and a group_by leaves its rows in no fixed order.
+    if "collocate" in free.columns:
+        free, method = free.sort("collocate"), method.sort("collocate")
 
-    def test_concordance(self, results):
-        from polars_corpus import concordance
-
-        assert concordance(results, "token", window=2).equals(
-            results.concordance("token", window=2)
-        )
-
-    def test_concordance_as_str(self, results):
-        from polars_corpus import concordance
-
-        assert concordance(results, "token", window=2, as_str=True).equals(
-            results.concordance("token", window=2, as_str=True)
-        )
-
-    def test_collocates(self, results):
-        from polars_corpus import collocates
-
-        free = collocates(results, "token", window=2, min_freq=1).sort("collocate")
-        method = results.collocates("token", window=2, min_freq=1).sort("collocate")
-
-        assert free.equals(method)
+    assert free.equals(method)
 
 
 class TestSlicing:

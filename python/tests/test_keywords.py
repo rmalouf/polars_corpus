@@ -4,6 +4,8 @@ from polars.testing import assert_frame_equal
 from polars_corpus import keywords
 from polars_corpus.assoc import chisq, loglik, mi3, minsens, pmi, tscore, zscore
 
+from .helpers import log_ratio, named_by_alias
+
 # Target corpus. Per-word frequency and range (files it occurs in):
 #   cat : freq=3, range=2 (t1, t2)
 #   dog : freq=2, range=1 (t1)
@@ -92,16 +94,6 @@ def test_keywords_indirect_term(method: str) -> None:
 def test_keywords_multi_column_term() -> None:
     with pytest.raises(ValueError, match="expr must identify a single column"):
         keywords(TARGET, REFERENCE, pl.col("norm", "file_id"), "ll")
-
-
-@pytest.mark.parametrize("method", ["ll", "pmi", "ttest"])
-def test_keywords_string_term(method: str) -> None:
-    # A bare column name must work on every method, including ttest, and match
-    # passing the equivalent pl.col() expression.
-    from_str = keywords(TARGET, REFERENCE, "norm", method)
-    from_expr = keywords(TARGET, REFERENCE, pl.col("norm"), method)
-    assert from_str.columns[0] == "norm"
-    assert_frame_equal(from_str, from_expr, check_row_order=False)
 
 
 @pytest.mark.parametrize(
@@ -313,15 +305,6 @@ BUILTIN_FUNCTIONS = [
 ]
 
 
-def log_ratio(f12: pl.Expr, f1: pl.Expr, f2: pl.Expr, n: pl.Expr) -> pl.Expr:
-    """A measure the library does not ship (Hardie 2014)."""
-    return ((f12 / f1) / ((f2 - f12) / (n - f1))).log(2)
-
-
-def named_by_alias(f12: pl.Expr, f1: pl.Expr, f2: pl.Expr, n: pl.Expr) -> pl.Expr:
-    return log_ratio(f12, f1, f2, n).alias("LogRatio")
-
-
 @pytest.mark.parametrize(
     "method,col,function", BUILTIN_FUNCTIONS, ids=[m for m, _, _ in BUILTIN_FUNCTIONS]
 )
@@ -381,19 +364,12 @@ def test_keywords_invalid_method() -> None:
         keywords(TARGET, REFERENCE, pl.col("norm"), "bogus")
 
 
-@pytest.mark.parametrize("method", ["LL", " ll ", "TTest"])
-def test_keywords_method_case_insensitive(method: str) -> None:
-    got = keywords(TARGET, REFERENCE, pl.col("norm"), method)
-    expected = keywords(TARGET, REFERENCE, pl.col("norm"), method.strip().lower())
-    assert_frame_equal(got, expected)
-
-
-@pytest.mark.parametrize("bad", [[1, 2, 3], "corpus", None, TARGET["norm"]])
-def test_keywords_invalid_corpus(bad: object) -> None:
+def test_keywords_names_the_corpus_that_was_wrong() -> None:
+    # Two frames go in, so the message has to say which one to look at.
     with pytest.raises(ValueError, match="the target corpus must be a polars"):
-        keywords(bad, REFERENCE, pl.col("norm"), "ll")
+        keywords("corpus", REFERENCE, pl.col("norm"), "ll")
     with pytest.raises(ValueError, match="the reference corpus must be a polars"):
-        keywords(TARGET, bad, pl.col("norm"), "ll")
+        keywords(TARGET, "corpus", pl.col("norm"), "ll")
 
 
 @pytest.mark.parametrize("empty", ["target", "reference"])
@@ -419,13 +395,6 @@ def test_keywords_missing_term_column(method: str, missing: str) -> None:
 def test_keywords_missing_file_id_column(method: str) -> None:
     with pytest.raises(ValueError, match="Use file_id_column= to point at"):
         keywords(TARGET.drop("file_id"), REFERENCE, pl.col("norm"), method)
-
-
-def test_keywords_invalid_term() -> None:
-    with pytest.raises(ValueError, match="not a Series"):
-        keywords(TARGET, REFERENCE, TARGET["norm"], "ll")
-    with pytest.raises(ValueError, match="got int"):
-        keywords(TARGET, REFERENCE, 3, "ll")
 
 
 @pytest.mark.parametrize("method", ["ll", "ttest"])

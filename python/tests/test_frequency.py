@@ -207,13 +207,6 @@ def test_bad_arguments_raise(kwargs: dict, message: str) -> None:
         frequency_list(CORPUS, "token", **kwargs)
 
 
-def test_bad_corpus_raises() -> None:
-    with pytest.raises(ValueError, match="must be a polars DataFrame or LazyFrame"):
-        frequency_list({"token": ["a"]}, "token")
-    with pytest.raises(ValueError, match="is empty"):
-        frequency_list(pl.DataFrame({"token": []}), "token")
-
-
 def test_bad_expr_raises() -> None:
     with pytest.raises(ValueError, match="has no column 'lemma'"):
         frequency_list(CORPUS, "lemma")

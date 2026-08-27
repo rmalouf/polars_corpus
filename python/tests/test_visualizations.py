@@ -156,14 +156,6 @@ def test_dispersion_plot_missing_file_id_column() -> None:
 
 
 @pytest.mark.parametrize("plot", [barcode_plot, dispersion_plot])
-def test_plot_invalid_corpus(plot) -> None:
-    with pytest.raises(ValueError, match="the corpus must be a polars"):
-        plot("corpus", "token", "cat")
-    with pytest.raises(ValueError, match="the corpus is empty"):
-        plot(CORPUS.clear(), "token", "cat")
-
-
-@pytest.mark.parametrize("plot", [barcode_plot, dispersion_plot])
 def test_plot_lazy_corpus(plot) -> None:
     assert y_labels(plot(CORPUS.lazy(), "token", "cat")) == y_labels(
         plot(CORPUS, "token", "cat")

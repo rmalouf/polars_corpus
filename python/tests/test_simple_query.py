@@ -476,15 +476,10 @@ class TestBindings:
     @pytest.mark.parametrize(
         "query,expected",
         [
-            ("$x: fox", '$x: ([token="fox"%c])'),
-            ("$a: quick $b: brown", '$a: ([token="quick"%c]) $b: ([token="brown"%c])'),
             ("$suffix: *able", '$suffix: ([token=".*able"%c])'),
-            (
-                "$phrase: (quick brown)",
-                '$phrase: (([token="quick"%c] [token="brown"%c]))',
-            ),
             ("($mods: very)+", '($mods: ([token="very"%c]))+'),
         ],
     )
     def test_translation_to_cqp(self, query, expected):
+        """The bindings the simple_to_cqp docstring examples do not cover."""
         assert simple_to_cqp(query) == expected

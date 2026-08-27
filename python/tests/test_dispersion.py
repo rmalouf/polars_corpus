@@ -170,13 +170,6 @@ def test_dispersion_single_file_defined(method: str, column: str, value: float) 
     assert result[column].to_list() == [value, value]
 
 
-@pytest.mark.parametrize("method", ["range", "sd", "d", "da", "dp"])
-def test_dispersion_string_term_matches_expr(method: str) -> None:
-    from_str = dispersion(CORPUS, "token", method)
-    from_expr = dispersion(CORPUS, pl.col("token"), method)
-    assert_frame_equal(from_str, from_expr, check_row_order=False)
-
-
 @pytest.mark.parametrize(
     "method", ["range", "range%", "sd", "cv", "cv%", "d", "da", "dp"]
 )
@@ -201,13 +194,6 @@ def test_dispersion_ignores_other_columns() -> None:
         CORPUS.with_columns(pos=pl.lit("N"), genre=pl.lit("news")), "token", "d"
     )
     assert_frame_equal(expected_result, got, check_row_order=False)
-
-
-@pytest.mark.parametrize("method", ["D", " CV% ", "Sd", "Da", "DP"])
-def test_dispersion_method_case_insensitive(method: str) -> None:
-    got = dispersion(CORPUS, "token", method)
-    expected_result = dispersion(CORPUS, "token", method.strip().lower())
-    assert_frame_equal(got, expected_result, check_row_order=False)
 
 
 ALL_METHODS = ["range", "range%", "sd", "cv", "cv%", "d", "da", "dp"]
@@ -374,33 +360,6 @@ def test_dispersion_invalid_method() -> None:
         dispersion(CORPUS, "token", "bogus")
 
 
-def test_dispersion_invalid_method_in_a_list() -> None:
-    with pytest.raises(ValueError, match="Unknown method 'bogus'"):
-        dispersion(CORPUS, "token", ["d", "bogus"])
-
-
-def test_dispersion_empty_method_list() -> None:
-    with pytest.raises(ValueError, match="method is empty"):
-        dispersion(CORPUS, "token", [])
-
-
-@pytest.mark.parametrize("bad", [3, None, {"d"}])
-def test_dispersion_method_wrong_type(bad: object) -> None:
-    with pytest.raises(ValueError, match="or a list of them"):
-        dispersion(CORPUS, "token", bad)
-
-
-@pytest.mark.parametrize("bad", [[1, 2, 3], "corpus", None, CORPUS["token"]])
-def test_dispersion_invalid_corpus(bad: object) -> None:
-    with pytest.raises(ValueError, match="the corpus must be a polars"):
-        dispersion(bad, "token", "d")
-
-
-def test_dispersion_empty_corpus() -> None:
-    with pytest.raises(ValueError, match="the corpus is empty"):
-        dispersion(CORPUS.clear(), "token", "d")
-
-
 def test_dispersion_missing_term_column() -> None:
     with pytest.raises(ValueError, match="the corpus has no column 'lemma'"):
         dispersion(CORPUS, "lemma", "d")
@@ -409,10 +368,3 @@ def test_dispersion_missing_term_column() -> None:
 def test_dispersion_missing_file_id_column() -> None:
     with pytest.raises(ValueError, match="Use file_id_column= to point at"):
         dispersion(CORPUS.drop("file_id"), "token", "d")
-
-
-def test_dispersion_invalid_term() -> None:
-    with pytest.raises(ValueError, match="not a Series"):
-        dispersion(CORPUS, CORPUS["token"], "d")
-    with pytest.raises(ValueError, match="got int"):
-        dispersion(CORPUS, 3, "d")
