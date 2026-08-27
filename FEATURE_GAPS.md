@@ -90,19 +90,63 @@ Three things are deliberately out rather than pending:
   before looking at it. Whoever wants one can write `is_in` over their own
   list, which is also the version they can defend.
 
-## 3. Concordance workflow past generating one
+## 3. Concordance workflow -- one page still owed
 
-`SearchResults.concordance()` returns list columns; `concordance.ipynb` then
-reaches for `pl.col('token').list.first()` to sort by L1 and a manual
-`group_by('text_type').len()` to break hits down by metadata. Standard in
-every concordancer and missing here:
+`kwic()` sorts a concordance. It takes a position -- `"L1"`, `"L2"` and so on
+to the left, `"R1"`, `"R2"` to the right, `"node"` for the match itself -- and
+returns the expression that selects the token sitting there, so
+`conc.sort(plc.kwic("L1"), plc.kwic("L2"))` is the classic KWIC sort. The
+signed integers CQP writes those positions as work too: `-1` and `1` either
+side of `0`. Being an expression rather than a sort argument, it groups and
+filters on the same footing -- `conc.group_by(plc.kwic("R1")).len()` is what
+follows the node -- and it composes, so case folding is
+`plc.kwic("L1").str.to_lowercase()` and stays the caller's, exactly as
+normalizing is `expr`'s job in `frequency_list`. A position the context does
+not reach comes out null, and `nulls_last=True` sends those lines to the end
+instead of the top.
 
-- **Sort by context position** (L1/L2/R1...), the classic KWIC sort.
-- **Thinning and random sampling** of hits, reproducibly.
-- **Breakdown of hits across a metadata column.**
-- **Export** to CSV or HTML. Nothing in the docs mentions saving anything.
-- The interactive `ConcordanceWidget` is documented only in
-  `DEVELOPMENT_STATUS.md`, not on the docs site.
+`concordance(as_str=True)` exports. The blocker there was concrete rather than
+architectural: the `List(String)` columns are exactly what makes a concordance
+computable, and exactly what CSV refuses -- `write_csv` on a concordance fails
+outright with `ComputeError: CSV format does not support nested data`.
+`as_str=True` joins each of them -- the match, both contexts, every `$var:`
+binding column -- into one space-separated string, leaving `metadata` scalars
+and any `List(Struct)` column alone. The name is the one `ngrams()` already
+uses for the same switch. Joining is the last step rather than the default,
+because the lists are what `kwic` and `ConcordanceWidget` read; sorting and
+exporting in one breath therefore ends in the line the argument cannot supply:
+
+```python
+conc.sort(plc.kwic("L1")).with_columns(cs.by_dtype(pl.List(pl.String)).list.join(" "))
+```
+
+**Thinning and random sampling** was listed here in error. `sample(k, seed=)`,
+`shuffle(seed=)`, `head` and `tail` were already on `_SearchResultsBase` when
+the survey was written. All four return `Self`, so they chain into the rest of
+the workflow, and `sample` and `shuffle` put the global random state back
+afterwards, so seeding a sample for reproducibility does not quietly reseed
+everything else in the notebook. The entry was simply wrong.
+
+Two things are deliberately out rather than pending:
+
+- **A breakdown of hits across a metadata column.** The raw counts are
+  `conc.group_by("text_type").len()`, which is Polars' and needs no wrapping.
+  The version worth having is normalized against how big each category is:
+  raw hit counts across categories of unequal size mislead in exactly the way
+  the keywords notebook argues $G^2$ misleads. The primitive for that is
+  already here -- `with_spans_as_chunks()` writes the matches back onto the
+  corpus as BIO tags, so a single `group_by` over the tagged corpus counts
+  hits and tokens together and the rate falls out of the same aggregation.
+  That is a notebook cell, not a function.
+- **HTML export.** `great_tables` is already in the `examples` extra and
+  already how the example notebooks render a KWIC table; after `as_str=True`
+  the whole recipe is `conc.style`. A function wrapping a `.style` call would
+  buy a dependency question and nothing else.
+
+What is left is a page. The interactive `ConcordanceWidget` is documented only
+in `DEVELOPMENT_STATUS.md` and appears nowhere on the docs site, which by the
+standard at the top of this file makes it a feature users do not have. It is
+the only thing this section still owes.
 
 ## 4. N-grams and clusters
 
@@ -200,14 +244,18 @@ above, they rank the same.
 ## If only three
 
 1. ~~A real `frequency_list()` (section 2).~~ Done.
-2. Concordance sorting, sampling and export (section 3).
+2. ~~Concordance sorting, sampling and export (section 3).~~ Done.
 3. `from_spacy()` (section 7), the one that most widens who can use the
    library at all.
 
-The first two are what a student opens AntConc for. Frequency and collocation
-are now covered; the concordance is the staple still missing.
+The first two are what a student opens AntConc for, and both are covered now:
+frequency, collocation and the concordance workflow each have their function
+and their page. What is left of the three is `from_spacy()`, which is not a
+staple of the analysis at all but of getting the data in -- the step before
+any of the rest can run.
 
-Note how much of item 2 is writing rather than coding. That is not a discount
-on the work -- it is where the work is. Collocation is the evidence: the
-function was a few hundred lines, and it was not shipped until the notebook
-existed.
+Note how much of item 2 turned out to be writing rather than coding: sampling
+was implemented before it was ever listed as missing, and what section 3 still
+owes is a page, not a function. That is not a discount on the work -- it is
+where the work is. Collocation is the evidence: the function was a few hundred
+lines, and it was not shipped until the notebook existed.

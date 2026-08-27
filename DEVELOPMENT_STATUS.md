@@ -13,11 +13,14 @@ matching engine. Search, concordancing, frequency lists, collocation, keywords,
 dispersion, the statistical measures and the plots are all working and covered
 by tests. Collocation and frequency lists, the two largest documentation holes
 in the last survey, are closed: `collocations()` and `frequency_list()`, a
-reference page each, and notebooks on the docs site. It and `keywords()` both take a measure of your own -- a callable --
-wherever they take a built-in measure's name. Documentation is otherwise
-mkdocs reference pages built from the docstrings, plus the example notebooks
-and a reference page for each of the two query languages; there is no
-narrative guide. The main functional gap is proximity operators in the Simple
+reference page each, and notebooks on the docs site. The concordance workflow
+has caught up with them -- `kwic()` for the classic KWIC sort, `as_str=` for a
+concordance `write_csv` will take -- and owes only a page for its interactive
+widget. `collocations()` and `keywords()` both take a measure of your own -- a
+callable -- wherever they take a built-in measure's name. Documentation is
+otherwise mkdocs reference pages built from the docstrings, plus the example
+notebooks and a reference page for each of the two query languages; there is
+no narrative guide. The main functional gap is proximity operators in the Simple
 query language; the main process gaps are the absence of CI and of any Rust
 unit tests.
 
@@ -27,9 +30,9 @@ unit tests.
 
 | | |
 |---|---|
-| Python source | ~6,800 lines, 20 modules |
+| Python source | ~6,950 lines, 20 modules |
 | Rust source | ~1,100 lines, 6 files |
-| Tests | ~5,450 lines, 1,059 tests in 17 files |
+| Tests | ~5,600 lines, 1,094 tests in 17 files |
 | Docs | 13 pages plus 6 example notebooks (mkdocs-material / mkdocstrings) |
 | Examples | 8 notebooks, 3 scripts |
 
@@ -48,7 +51,12 @@ unit tests.
 2. **Concordancing** — KWIC generation in Rust, `SearchResults.concordance()`,
    a column per bound variable, interactive `ConcordanceWidget` (anywidget)
    with pagination and sorting. Context clips at file boundaries when the
-   search named a `file_id_column`.
+   search named a `file_id_column`. `kwic()` returns the expression for a
+   context position -- `"L1"`, `"node"`, `"R2"`, or the signed integer CQP
+   writes it as -- so the classic KWIC sort is `conc.sort(kwic("L1"),
+   kwic("L2"))`, and the same expression groups and filters; `as_str=True`
+   joins the list columns into strings, the form `write_csv` and
+   `great_tables` accept.
 3. **Frequency lists** — `frequency_list()` returns one row per type with
    its count, its rate per `basis` words, and the number of files it occurs
    in. Normalizing and thresholding are the caller's: a case fold in `expr`,
@@ -176,7 +184,11 @@ them produced only noise.
 See [FEATURE_GAPS.md](FEATURE_GAPS.md) for what the toolkit is still missing
 against what a linguist expects. Collocation and frequency lists, the big ones
 at the last two surveys, are finished end to end -- function, reference page,
-notebook. Next are concordance sorting and export, and `from_spacy()`.
+notebook. Concordance sorting and export have joined them on the first two:
+`kwic()` and `as_str=` are written and on `docs/search.md`, with the notebook
+that shows them off being revised alongside. What is left there is a page for
+the `ConcordanceWidget`, which is described here and nowhere on the docs site.
+Then `from_spacy()`.
 
 ---
 

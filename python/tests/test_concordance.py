@@ -426,6 +426,152 @@ class TestCollocates:
         assert colloc["collocate"].to_list() == ["the"]
 
 
+class TestKwic:
+    """One position of a concordance line, read back as a string"""
+
+    @pytest.fixture
+    def conc(self, results):
+        return results.concordance("token", window=2)
+
+    @pytest.mark.parametrize(
+        "text,number,expected",
+        [
+            ("L1", -1, ["cat", "dog"]),
+            ("L2", -2, ["the", "the"]),
+            ("R1", 1, ["on", "on"]),
+            ("R2", 2, ["the", "the"]),
+            ("node", 0, ["sat", "sat"]),
+        ],
+    )
+    def test_position(self, conc, text, number, expected):
+        """The CQP integer says the same thing as the name."""
+        assert conc.select(plc.kwic(text)).to_series().to_list() == expected
+        assert conc.select(plc.kwic(number)).to_series().to_list() == expected
+
+    @pytest.mark.parametrize(
+        "position,expected",
+        [("l1", ["cat", "dog"]), ("r1", ["on", "on"]), ("NoDe", ["sat", "sat"])],
+    )
+    def test_case_is_ignored(self, conc, position, expected):
+        assert conc.select(plc.kwic(position)).to_series().to_list() == expected
+
+    def test_beyond_the_window_is_null(self, results):
+        """The window took one word; the second is not there to read."""
+        conc = results.concordance("token", window=1)
+
+        assert conc.select(plc.kwic("L2")).to_series().to_list() == [None, None]
+
+    def test_beyond_the_corpus_edge_is_null(self):
+        df = corpus(token="the cat sat")
+        edge = search_results(df, "", [Match(Span(0, 1), {})])
+        conc = edge.concordance("token", window=2)
+
+        assert conc.select(plc.kwic("L1"), plc.kwic("R1")).row(0) == (None, "cat")
+
+    def test_node_joins_a_multi_token_match(self):
+        df = corpus(token=TOKENS)
+        two = search_results(df, "", [Match(Span(2, 4), {})])
+        conc = two.concordance("token", window=1)
+
+        assert conc.select(plc.kwic("node")).item() == "sat on"
+
+    def test_column_names_the_trio_to_read(self):
+        df = corpus(token="the cat sat", pos="DT NN VB")
+        tagged = search_results(df, "", [Match(Span(2, 3), {})])
+        conc = tagged.concordance(["token", "pos"], window=1)
+
+        assert conc.select(plc.kwic("L1", column="pos")).item() == "NN"
+        assert conc.select(plc.kwic("node", column="pos")).item() == "VB"
+
+    @pytest.mark.parametrize(
+        "position", ["L0", "R0", "X1", "", "L", "1", 1.5, None, ["L1"]]
+    )
+    def test_bad_position(self, position):
+        with pytest.raises(ValueError, match="position must be 'L1', 'L2'"):
+            plc.kwic(position)
+
+    def test_zero_is_not_a_position(self):
+        with pytest.raises(ValueError, match="Positions count from 1"):
+            plc.kwic("L0")
+
+    def test_sorting_by_position(self, conc):
+        """What the whole thing is for: the classic KWIC sort."""
+        assert conc.sort(plc.kwic("L1"))["token_left_context"].to_list() == [
+            ["the", "cat"],
+            ["the", "dog"],
+        ]
+
+
+class TestAsStr:
+    """The list columns joined into one string apiece"""
+
+    def test_lists_by_default(self, results):
+        conc = results.concordance("token", window=2)
+
+        assert conc.dtypes == [pl.List(pl.String)] * 3
+        assert conc.equals(results.concordance("token", window=2, as_str=False))
+
+    def test_match_and_context_are_joined(self, results):
+        conc = results.concordance("token", window=2, as_str=True)
+
+        assert conc.dtypes == [pl.String] * 3
+        assert conc["token_left_context"].to_list() == ["the cat", "the dog"]
+        assert conc["token"].to_list() == ["sat", "sat"]
+        assert conc["token_right_context"].to_list() == ["on the", "on the"]
+
+    def test_empty_context_joins_to_an_empty_string(self):
+        df = corpus(token="the cat sat")
+        edge = search_results(df, "", [Match(Span(0, 1), {})])
+        conc = edge.concordance("token", window=2, as_str=True)
+
+        assert conc["token_left_context"].item() == ""
+
+    def test_bindings_are_joined(self):
+        df = corpus(token="the big cat sat .", pos="DT JJ NN VB .")
+        bound = plc.search_cqp(
+            df, '[pos="DT"] $adj: [pos="JJ"] $noun: [pos="NN"]', file_id_column=None
+        )
+        conc = bound.concordance("token", as_str=True)
+
+        assert conc["token"].to_list() == ["the big cat"]
+        assert conc["token_adj"].to_list() == ["big"]
+
+    def test_every_column_is_joined(self):
+        df = corpus(token="the cat sat", pos="DT NN VB")
+        tagged = search_results(df, "", [Match(Span(1, 2), {})])
+        conc = tagged.concordance(["token", "pos"], window=1, as_str=True)
+
+        assert set(conc.dtypes) == {pl.String}
+        assert conc["pos_left_context"].item() == "DT"
+        assert conc["pos_right_context"].item() == "VB"
+
+    def test_metadata_is_untouched(self):
+        df = pl.DataFrame({"token": ["a", "b", "c"], "file_id": ["d1", "d1", "d1"]})
+        meta = search_results(df, "", [Match(Span(1, 2), {})])
+        conc = meta.concordance("token", window=1, metadata="file_id", as_str=True)
+
+        assert conc["file_id"].to_list() == ["d1"]
+
+    def test_a_list_of_structs_is_left_alone(self):
+        """A struct of token and tag has no sensible join, so it stays a list."""
+        df = corpus(token="the cat sat", pos="DT NN VB")
+        tagged = search_results(df, "", [Match(Span(1, 2), {})])
+        conc = tagged.concordance(
+            pl.struct("token", "pos").alias("tp"), window=1, as_str=True
+        )
+
+        assert conc["tp"].dtype == pl.List(
+            pl.Struct({"token": pl.String, "pos": pl.String})
+        )
+        assert conc["tp"].to_list() == [[{"token": "cat", "pos": "NN"}]]
+
+    def test_no_matches_keeps_the_string_columns(self, results):
+        conc = results.head(0).concordance("token", window=2, as_str=True)
+
+        assert conc.height == 0
+        assert conc.dtypes == [pl.String] * 3
+
+
 class TestFunctionalInterface:
     """The free functions and the methods are the same call"""
 
@@ -434,6 +580,13 @@ class TestFunctionalInterface:
 
         assert concordance(results, "token", window=2).equals(
             results.concordance("token", window=2)
+        )
+
+    def test_concordance_as_str(self, results):
+        from polars_corpus import concordance
+
+        assert concordance(results, "token", window=2, as_str=True).equals(
+            results.concordance("token", window=2, as_str=True)
         )
 
     def test_collocates(self, results):

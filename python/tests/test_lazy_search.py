@@ -53,6 +53,16 @@ def test_concordance_matches_eager(query, chunk_tokens):
 
 
 @pytest.mark.parametrize("chunk_tokens", CHUNK_SIZES)
+def test_as_str_concordance_matches_eager(chunk_tokens):
+    """Joining happens after the chunks are stitched back together."""
+    eager, lazy = eager_and_lazy('[token="fox"]', chunk_tokens)
+    conc = lazy.concordance("token", window=3, as_str=True)
+
+    assert conc["token"].dtype == pl.String
+    assert conc.equals(eager.concordance("token", window=3, as_str=True))
+
+
+@pytest.mark.parametrize("chunk_tokens", CHUNK_SIZES)
 def test_collocates_match_eager(chunk_tokens):
     eager, lazy = eager_and_lazy('[token="fox"]', chunk_tokens)
 

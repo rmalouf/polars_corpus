@@ -6,6 +6,7 @@ from difflib import get_close_matches
 from typing import TYPE_CHECKING, Optional, Self
 
 import polars as pl
+import polars.selectors as cs
 from polars._typing import IntoExprColumn
 
 from ._internal import Match, Span, py_concordance, py_kwic, spans_to_chunks
@@ -14,7 +15,7 @@ from .utils import _check_count, as_eager, check_columns, output_name
 if TYPE_CHECKING:
     from sentence_transformers import SentenceTransformer
 
-__all__ = ["SearchResults", "LazySearchResults", "concordance", "collocates"]
+__all__ = ["SearchResults", "LazySearchResults", "concordance", "collocates", "kwic"]
 
 
 def _select(
@@ -210,6 +211,7 @@ class _SearchResultsBase:
         chunk_column: Optional[str] = None,
         metadata: Optional[str | list[str]] = None,
         bindings: bool | str | list[str] = True,
+        as_str: bool = False,
     ) -> pl.DataFrame:
         """
         Lay the matches out as a KWIC (keyword in context) concordance.
@@ -246,6 +248,11 @@ class _SearchResultsBase:
             own. True takes all of them, which does nothing if the query
             captured none. False takes none. A name, or a list of names, takes
             just those. See `variables` for what a query captured.
+        as_str : bool, default False
+            Join each list of words into one space-separated string, so that
+            the match, its context and each binding come back as a String
+            column. A column holding anything but a list of strings is left as
+            it is, so a struct of token and tag stays a list.
 
         Returns
         -------
@@ -264,6 +271,9 @@ class _SearchResultsBase:
             Each name in `metadata` adds one more column, holding a single
             value rather than a list.
 
+            With `as_str=True` each of those list columns holds one
+            space-separated string instead.
+
         Raises
         ------
         ValueError
@@ -271,6 +281,10 @@ class _SearchResultsBase:
             in `metadata` or `chunk_column`, or `chunk_column` does not hold
             strings; or if `bindings` names something the query did not
             capture.
+
+        See Also
+        --------
+        kwic : Read one position of these lines, to sort or group them by it.
 
         Notes
         -----
@@ -282,6 +296,19 @@ class _SearchResultsBase:
         A binding column holds an empty list where the variable matched no
         token, as an optional one can, and a null where the match went down a
         branch of the query that never bound it at all.
+
+        The list form is what `kwic` and the `view` widget read, so joining is
+        the last step. Sorting needs the lists and writing a file needs the
+        strings, so a sort followed by an export ends in a join `as_str` comes
+        too early to supply:
+
+        ```python
+        import polars.selectors as cs
+
+        conc.sort(plc.kwic("L1")).with_columns(
+            cs.by_dtype(pl.List(pl.String)).list.join(" ")
+        )
+        ```
 
         Examples
         --------
@@ -297,6 +324,9 @@ class _SearchResultsBase:
         >>> results = plc.search(corpus, "$adj: _AJ0 $noun: _NN1")
         >>> results.concordance("token", window=5)
         >>> results.concordance("token", bindings="adj")  # Just the one
+
+        >>> # One string per column, ready to write out:
+        >>> results.concordance("token", window=5, as_str=True).write_csv("hits.csv")
         """
         if bindings is True:
             names = list(self.variables)
@@ -321,7 +351,12 @@ class _SearchResultsBase:
         else:
             window = _check_count(window, "window", " Use window=0 for no context.")
 
-        return self._concordance(expr, window, chunk_column, metadata, names)
+        conc = self._concordance(expr, window, chunk_column, metadata, names)
+        if as_str:
+            # Only a list of words has a join; a list of structs, as a
+            # concordance of token and tag holds, passes through untouched.
+            conc = conc.with_columns(cs.by_dtype(pl.List(pl.String)).list.join(" "))
+        return conc
 
     def _collocate_counts(
         self,
@@ -1138,6 +1173,7 @@ def concordance(
     chunk_column: Optional[str] = None,
     metadata: Optional[str | list[str]] = None,
     bindings: bool | str | list[str] = True,
+    as_str: bool = False,
 ) -> pl.DataFrame:
     """
     Lay the matches out as a KWIC (keyword in context) concordance.
@@ -1164,23 +1200,31 @@ def concordance(
         Which of the query's `$name:` captures to give a column of their own.
         True takes all of them, False none, and a name or list of names takes
         just those.
+    as_str : bool, default False
+        Join each list of words into one space-separated string. A column
+        holding anything but a list of strings is left as it is.
 
     Returns
     -------
     pl.DataFrame
         One row per match, in the order the results hold them, laid out as
-        `SearchResults.concordance` describes.
+        `SearchResults.concordance` describes. With `as_str=True` each of its
+        list columns holds one space-separated string instead.
 
     See Also
     --------
     SearchResults.concordance : Method interface for the same functionality.
+    kwic : Read one position of these lines, to sort or group them by it.
 
     Examples
     --------
     >>> conc = concordance(results, "token", window=5)
     >>> conc = concordance(results, "token", chunk_column="sentence_tag")
+    >>> concordance(results, "token", window=5, as_str=True).write_csv("hits.csv")
     """
-    return search_results.concordance(expr, window, chunk_column, metadata, bindings)
+    return search_results.concordance(
+        expr, window, chunk_column, metadata, bindings, as_str
+    )
 
 
 def collocates(
@@ -1233,3 +1277,92 @@ def collocates(
     >>> collocs.with_columns(ll=pl.col("freqs").corpus.loglik())
     """
     return search_results.collocates(expr, window, chunk_column, min_freq, freqs_name)
+
+
+def kwic(position: str | int, column: str = "token") -> pl.Expr:
+    """
+    Read the word at one position of a concordance line.
+
+    `"L1"` is the word immediately before the match, `"L2"` the one before
+    that, `"R1"` the word immediately after it, and `"node"` the match itself.
+    Sorting and grouping a concordance is done by these positions, so this
+    goes wherever a column would: `sort`, `group_by`, `filter`, `select`.
+
+    Parameters
+    ----------
+    position : str or int
+        Position to read: `"L1"`, `"L2"`, ... counting leftwards from the
+        match, `"R1"`, `"R2"`, ... counting rightwards, or `"node"` for the
+        match itself. Case does not matter, so `"l1"` works. An integer says
+        the same thing the CQP way, negative to the left and positive to the
+        right: -1 is `"L1"`, 2 is `"R2"`, and 0 is the node.
+    column : str, default "token"
+        Column of the concordance holding the matched words, i.e. the column
+        `concordance` was asked for. The context is read from
+        `{column}_left_context` and `{column}_right_context`.
+
+    Returns
+    -------
+    pl.Expr
+        Expression giving the word at that position as a string. A match of
+        several tokens comes back as its words joined by spaces, so that it
+        sorts as one string.
+
+    Raises
+    ------
+    ValueError
+        If `position` is not "L" or "R" followed by a number of 1 or more,
+        "node", or the integer form of one of those.
+
+    See Also
+    --------
+    SearchResults.concordance : The lines this reads a position out of.
+
+    Notes
+    -----
+    A position the context does not reach comes out null: the window is
+    shorter than the position asks for, or the context stopped at a file
+    boundary. Pass `nulls_last=True` to `sort` to gather those lines at the
+    end rather than the start.
+
+    Sorting is case-sensitive, so "The" sorts apart from "the". Fold the case
+    where that is not wanted: `plc.kwic("L1").str.to_lowercase()`.
+
+    `kwic` reads the list columns a concordance holds, so it is used before
+    `as_str=True`, not after.
+
+    Examples
+    --------
+    >>> conc = results.concordance("token", window=5)
+    >>> conc.sort(plc.kwic("L1"), plc.kwic("L2"))  # The classic KWIC sort
+    >>> conc.group_by(plc.kwic("R1")).len()  # What follows the node
+    >>> conc.sort(plc.kwic("L1").str.to_lowercase(), nulls_last=True)
+    """
+    side, n = "", 0
+    if isinstance(position, int):
+        if position == 0:
+            side = "node"
+        else:
+            side, n = "R" if position > 0 else "L", abs(position)
+    elif isinstance(position, str):
+        text = position.strip().upper()
+        if text == "NODE":
+            side = "node"
+        elif text[:1] in ("L", "R") and text[1:].isdecimal():
+            side, n = text[0], int(text[1:])
+
+    if side == "node":
+        return pl.col(column).list.join(" ")
+    if n >= 1:
+        if side == "L":
+            return pl.col(f"{column}_left_context").list.get(-n, null_on_oob=True)
+        if side == "R":
+            return pl.col(f"{column}_right_context").list.get(n - 1, null_on_oob=True)
+    hint = (
+        " Positions count from 1, so 'L1' is the word before the match." if side else ""
+    )
+    raise ValueError(
+        f"position must be 'L1', 'L2', ... for a word before the match, "
+        f"'R1', 'R2', ... for one after it, or 'node' for the match itself; "
+        f"got {position!r}.{hint}"
+    )

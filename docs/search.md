@@ -9,6 +9,5 @@ Examples: [Concordances](notebooks/concordance.ipynb)
 ::: polars_corpus.search.SearchResults
 ---
 ::: polars_corpus.search.LazySearchResults
-
-
-
+---
+::: polars_corpus.search.kwic
