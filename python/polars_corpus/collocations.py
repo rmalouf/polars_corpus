@@ -24,29 +24,17 @@ __all__ = [
     "collocations",
 ]
 
-METHODS = (
-    "freq",
-    "pmi",
-    "mi3",
-    "logdice",
-    "ll",
-    "chisq",
-    "tscore",
-    "zscore",
-    "minsens",
-)
-
-# The column each measure is reported in.
-COLUMNS = {
-    "freq": "freq",
-    "pmi": "PMI",
-    "mi3": "MI3",
-    "logdice": "LogDice",
-    "ll": "LogLik",
-    "chisq": "ChiSq",
-    "tscore": "TScore",
-    "zscore": "ZScore",
-    "minsens": "MinSens",
+# The measures on offer, each aliased with the column it is reported in.
+MEASURES = {
+    "freq": pl.col("f12").alias("freq"),
+    "pmi": pmi(*FREQS).alias("PMI"),
+    "mi3": mi3(*FREQS).alias("MI3"),
+    "logdice": logdice(*FREQS).alias("LogDice"),
+    "ll": loglik(*FREQS).alias("LogLik"),
+    "chisq": chisq(*FREQS).alias("ChiSq"),
+    "tscore": tscore(*FREQS).alias("TScore"),
+    "zscore": zscore(*FREQS).alias("ZScore"),
+    "minsens": minsens(*FREQS).alias("MinSens"),
 }
 
 
@@ -172,7 +160,7 @@ def collocations(
     ...     return ((f12 / f1) / ((f2 - f12) / (n - f1))).log(2)
     >>> plc.collocations(results, "lemma", ["ll", log_ratio])
     """
-    methods = check_measures(method, METHODS)
+    methods = check_measures(method, tuple(MEASURES))
     span = _window_span(window, chunk_column)
     _check_count(min_freq, "min_freq", " Use min_freq=0 to keep them all.")
     _check_count(min_range, "min_range")
@@ -209,21 +197,10 @@ def collocations(
     if min_range:
         result = result.filter(pl.col("range") >= min_range)
 
-    measures = {
-        "freq": pl.col("f12").alias("freq"),
-        "pmi": pmi(*FREQS).alias("PMI"),
-        "mi3": mi3(*FREQS).alias("MI3"),
-        "logdice": logdice(*FREQS).alias("LogDice"),
-        "ll": loglik(*FREQS).alias("LogLik"),
-        "chisq": chisq(*FREQS).alias("ChiSq"),
-        "tscore": tscore(*FREQS).alias("TScore"),
-        "zscore": zscore(*FREQS).alias("ZScore"),
-        "minsens": minsens(*FREQS).alias("MinSens"),
-    }
-    # The built-ins are aliased above and a measure of the caller's own is
-    # aliased by `_apply_measure`, so each expression carries its own column name.
+    # The built-ins are aliased in `MEASURES` and a measure of the caller's own
+    # is aliased by `_apply_measure`, so each expression carries its own name.
     exprs = [
-        measures[m] if isinstance(m, str) else _apply_measure(m, *FREQS)
+        MEASURES[m] if isinstance(m, str) else _apply_measure(m, *FREQS)
         for m in methods
     ]
     names = [expr.meta.output_name() for expr in exprs]

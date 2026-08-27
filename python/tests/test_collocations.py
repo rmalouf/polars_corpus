@@ -13,7 +13,7 @@ from polars_corpus.assoc import (
     tscore,
     zscore,
 )
-from polars_corpus.collocations import COLUMNS
+from polars_corpus.collocations import MEASURES as BUILTINS
 
 # Two files, with "fox" once in each. Positions:
 #
@@ -77,7 +77,10 @@ def test_counts() -> None:
     assert sum(f12 for f12, *_ in freqs.values()) == 7
 
 
-@pytest.mark.parametrize("method,column", COLUMNS.items())
+@pytest.mark.parametrize(
+    "method,column",
+    [(m, expr.meta.output_name()) for m, expr in BUILTINS.items()],
+)
 def test_method_columns(method: str, column: str) -> None:
     result = collocations(fox(), "token", method, window=2, min_freq=1)
 
@@ -255,7 +258,7 @@ def test_builtin_function_matches_its_name(method: str, function) -> None:
     # Keyed by collocate: equal scores tie, and ties do not sort predictably.
     scored = dict(zip(by_function["collocate"], by_function[function.__name__]))
     assert scored == pytest.approx(
-        dict(zip(by_name["collocate"], by_name[COLUMNS[method]]))
+        dict(zip(by_name["collocate"], by_name[BUILTINS[method].meta.output_name()]))
     )
 
 
