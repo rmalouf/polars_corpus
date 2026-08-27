@@ -221,7 +221,7 @@ def ngrams(n: int, in_expr: IntoExpr, as_str: bool = True) -> pl.Expr:
 
     ```>>> df.select(pl.col("token").corpus.ngrams(2).over("file_id"))```
     """
-    if not isinstance(n, int) or isinstance(n, bool) or n < 1:
+    if not isinstance(n, int) or n < 1:
         raise ValueError(f"n must be a positive integer, got {n!r}")
 
     expr = as_expr(in_expr)

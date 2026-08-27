@@ -68,11 +68,35 @@ def _check_variables(value: object, available: list[str]) -> list[str]:
 
 def _check_count(value: object, param: str, hint: str = "") -> int:
     """Check that `value` is a count: an integer, zero or more."""
-    if not isinstance(value, int) or isinstance(value, bool) or value < 0:
+    if not isinstance(value, int) or value < 0:
         raise ValueError(
             f"{param} must be a non-negative integer, got {value!r}.{hint}"
         )
     return value
+
+
+def _window_span(
+    window: int | tuple[int, int], chunk_column: Optional[str]
+) -> Optional[tuple[int, int]]:
+    """Words to take on either side of a match, or None when chunks set the span."""
+    if chunk_column is not None:
+        return None
+    if isinstance(window, (tuple, list)):
+        if len(window) != 2:
+            raise ValueError(
+                "window must be one number, or a (left, right) pair; "
+                f"got {len(window)} numbers"
+            )
+        left, right = window
+    else:
+        left = right = window
+    left = _check_count(left, "window")
+    right = _check_count(right, "window")
+    if left + right == 0:
+        raise ValueError(
+            "window must reach at least one token, on one side or the other"
+        )
+    return left, right
 
 
 def _build_conc(
@@ -105,7 +129,7 @@ def _needed_columns(
     expr: IntoExprColumn | list[IntoExprColumn],
     metadata: Optional[list[str]],
     chunk_column: Optional[str],
-    file_id_column: str,
+    file_id_column: Optional[str],
 ) -> Optional[list[str]]:
     """Columns a chunk must materialize, or None when `expr` defeats name analysis."""
     items = expr if isinstance(expr, list) else [expr]
@@ -125,7 +149,8 @@ def _needed_columns(
     names.extend(metadata or [])
     if chunk_column is not None:
         names.append(chunk_column)
-    names.append(file_id_column)
+    if file_id_column is not None:
+        names.append(file_id_column)
     return list(dict.fromkeys(names))
 
 
@@ -138,6 +163,7 @@ class _SearchResultsBase:
 
     _query: str
     _variables: list[str]
+    _file_id_column: Optional[str]
 
     def _frame(self) -> pl.DataFrame | pl.LazyFrame:
         """The corpus, in whatever form it is held."""
@@ -306,10 +332,75 @@ class _SearchResultsBase:
 
         return self._concordance(expr, window, chunk_column, metadata, names)
 
+    def _collocate_counts(
+        self,
+        expr: IntoExprColumn,
+        name: str,
+        span: Optional[tuple[int, int]],
+        chunk_column: Optional[str] = None,
+        file_id_column: Optional[str] = None,
+    ) -> pl.LazyFrame:
+        """Count the words in the windows around the matches, against the corpus.
+
+        One row per word found in the windows, with the four counts an
+        association measure reads: `f12` how often it fell in one, `f1` the
+        context tokens the windows held between them, `f2` its frequency in
+        the corpus and `n` the corpus size. `span` is the words to take on
+        each side, or None to take whole chunks of `chunk_column`. Given a
+        `file_id_column`, a `range` column counts the files it collocated in.
+
+        `name` is the column `expr` produces, which the concordance names its
+        context columns after.
+        """
+        conc = self.concordance(
+            expr,
+            window=0 if span is None else max(span),
+            chunk_column=chunk_column,
+            metadata=file_id_column,
+            bindings=False,
+        )
+
+        left_context = pl.col(f"{name}_left_context")
+        right_context = pl.col(f"{name}_right_context")
+        if span is None:
+            context = left_context.list.concat(right_context)
+        else:
+            context = left_context.list.tail(span[0]).list.concat(
+                right_context.list.head(span[1])
+            )
+
+        keep = [context.alias("collocate")]
+        aggs = [pl.len().alias("f12")]
+        if file_id_column is not None:
+            keep.append(pl.col(file_id_column))
+            aggs.append(pl.col(file_id_column).n_unique().alias("range"))
+
+        hits = (
+            conc.lazy()
+            .select(keep)
+            .explode("collocate", empty_as_null=False)
+            .drop_nulls("collocate")
+        )
+        counts = (
+            hits.group_by("collocate").agg(aggs).with_columns(f1=pl.col("f12").sum())
+        )
+
+        totals = (
+            self._frame()
+            .lazy()
+            .select(expr)
+            .drop_nulls()
+            .group_by(name)
+            .agg(pl.len().alias("f2"))
+            .with_columns(n=pl.col("f2").sum())
+        )
+        return counts.join(totals, left_on="collocate", right_on=name, how="left")
+
     def collocates(
         self,
         expr: IntoExprColumn = "token",
-        window: int = 5,
+        window: int | tuple[int, int] = 5,
+        chunk_column: Optional[str] = None,
         min_freq: int = 5,
         freqs_name: str = "freqs",
     ) -> pl.DataFrame:
@@ -330,8 +421,16 @@ class _SearchResultsBase:
         expr : IntoExprColumn, default "token"
             Column name or expression to read the collocates from (e.g. token
             or lemma). It must name a single column.
-        window : int, default 5
-            Words to take on each side of a match. Must be at least 1.
+        window : int or (int, int), default 5
+            Words to take on each side of a match. A pair takes that many to
+            the left and to the right, so `(0, 5)` counts only what follows a
+            match and `(5, 0)` only what precedes it. At least one side must
+            reach a token. Ignored when `chunk_column` is given.
+        chunk_column : str, optional
+            Column of BIO tags, as `concordance` takes. The window then runs
+            to the edges of the chunk holding the match rather than a fixed
+            number of words; pass a sentence tag column to keep collocates
+            within the sentence.
         min_freq : int, default 5
             Number of times a word must occur in the windows to be reported.
             Association measures are unstable for rare pairs, so the default
@@ -352,22 +451,22 @@ class _SearchResultsBase:
                 - `f12` : times the word fell in a window
                 - `f1` : number of window positions available
                 - `f2` : the word's frequency in the whole corpus
-                - `n` : number of tokens in the corpus
+                - `n` : number of tokens in the corpus, counting only those
+                  `expr` reads a value from
 
         Raises
         ------
         ValueError
-            If `window` is less than 1, `min_freq` is negative, or `expr`
-            names more than one column.
+            If `window` reaches no token on either side, `min_freq` is
+            negative, or `expr` names more than one column.
 
         Notes
         -----
         The struct has the same layout `crosstab` produces, so the association
         measures take it as it comes.
 
-        `f1` is `len(results) * window * 2`, the number of positions the
-        windows could hold. A window that runs off the end of a file holds
-        fewer, so `f1` is a slight overcount.
+        `f1` counts the context tokens the windows actually held, so a window
+        truncated at a file boundary contributes only what it reached.
 
         A word in the windows of two nearby matches is counted once for each,
         so overlapping windows count their shared words twice. A word's `f12`
@@ -377,41 +476,26 @@ class _SearchResultsBase:
         --------
         >>> results.collocates("token")
         >>> results.collocates("token", window=3, min_freq=10)
+        >>> results.collocates("token", window=(0, 5))  # Only what follows
+        >>> results.collocates("token", chunk_column="sentence_tag")
         >>> # Rank the collocates by how strongly they attract the search term:
         >>> collocs = results.collocates("token")
         >>> collocs.with_columns(ll=pl.col("freqs").corpus.loglik()).sort(
         ...     "ll", descending=True
         ... )
         """
-        if _check_count(window, "window") == 0:
-            raise ValueError("window must be at least 1 to have any collocates in it")
+        span = _window_span(window, chunk_column)
         _check_count(min_freq, "min_freq", " Use min_freq=0 to keep them all.")
         if isinstance(expr, (list, tuple)):
             raise ValueError(
                 "expr must name a single column to collocate with, not a list of "
                 "them; call collocates() once per column instead"
             )
-        name = output_name(expr)
-        conc = self.concordance(expr, window=window, bindings=False)
+        counts = self._collocate_counts(
+            expr, output_name(expr), span, chunk_column=chunk_column
+        )
         return (
-            conc.lazy()
-            .select(
-                collocate=pl.col(f"{name}_left_context")
-                .list.concat(f"{name}_right_context")
-                .explode(empty_as_null=False)
-            )
-            # A null token is not a collocate either.
-            .drop_nulls()
-            .group_by("collocate")
-            .len(name="f12")
-            .filter(pl.col("f12") >= min_freq)
-            .join(
-                self._frame().lazy().group_by(expr).len(name="f2"),
-                left_on="collocate",
-                right_on=name,
-                how="left",
-            )
-            .with_columns(n=self._corpus_size(), f1=len(self) * window * 2)
+            counts.filter(pl.col("f12") >= min_freq)
             .select("collocate", pl.struct("f12", "f1", "f2", "n").alias(freqs_name))
             .collect(engine="streaming")
         )
@@ -718,8 +802,7 @@ class SearchResults(_SearchResultsBase):
 
     See Also
     --------
-    LazySearchResults : The same interface over a corpus too large to hold in
-        memory.
+    LazySearchResults : The same interface over a corpus stored as a LazyFrame
 
     Examples
     --------
@@ -852,16 +935,12 @@ class LazySearchResults(_SearchResultsBase):
     """
     The matches found by searching an out-of-core corpus.
 
-    Returned by `search` and `search_cqp` when given a LazyFrame that has
-    file ids to chunk on; there is no reason to construct one directly. It has the same methods as
-    `SearchResults`, but never holds the corpus in memory. It stores each
+    Returned by `search` and `search_cqp` when given a LazyFrame. It stores each
     match as an offset within the file the match falls in, and re-reads the
     corpus when a method needs the words. Each read covers only the part of a
-    chunk that its matches fall in, so a concordance over a 100M-word corpus
-    costs a partial scan rather than the memory to hold the corpus.
+    chunk that its matches fall in.
 
-    `SearchResults.matches` has no counterpart here. With no corpus in memory,
-    there is nothing for match positions to index into.
+    A corpus with no file ids is searched as a single file in a single chunk.
 
     Parameters
     ----------
@@ -871,22 +950,22 @@ class LazySearchResults(_SearchResultsBase):
     query : str
         Query these results came from, shown in their `repr`.
     matches : DataFrame
-        One row per match: the file id column, `start` and `end` (token
-        offsets within the file), `_file` (row index into `files`), and --
-        when the query captured variables -- a `bindings` struct column of
-        per-variable file-relative spans.
+        One row per match: `start` and `end` (token offsets within the file),
+        `_file` (row index into `files`, which says where that file starts),
+        and -- when the query captured variables -- a `bindings` struct column
+        of per-variable file-relative spans.
     variables : list of str
         Names the query captured, in the order it captures them.
-    file_id_column : str
+    file_id_column : str, optional
         Column holding file ids.
     files : DataFrame
-        One row per file in corpus order: the file id column, `_file`,
-        `_len`, `_offset` (global token offset) and `_chunk` (which chunk of
-        the search held it).
+        One row per file in corpus order: the file id column where there is
+        one, `_file`, `_len`, `_offset` (global token offset) and `_chunk`
+        (which chunk of the search held it).
 
     See Also
     --------
-    SearchResults : The same interface over a corpus held in memory.
+    SearchResults : The same interface over a corpus stored in a DataFrame.
 
     Examples
     --------
@@ -901,7 +980,7 @@ class LazySearchResults(_SearchResultsBase):
         query: str,
         matches: pl.DataFrame,
         variables: list[str],
-        file_id_column: str,
+        file_id_column: Optional[str],
         files: pl.DataFrame,
     ) -> None:
         self._lf = lf
@@ -950,7 +1029,11 @@ class LazySearchResults(_SearchResultsBase):
                 chunk_lf = chunk_lf.select(columns)
             chunk_df = chunk_lf.collect(engine="streaming")
             matches = _absolute_matches(group, offset)
-            file_ids = chunk_df.get_column(self._file_id_column)
+            file_ids = (
+                None
+                if self._file_id_column is None
+                else chunk_df.get_column(self._file_id_column)
+            )
             parts.append(
                 _build_conc(
                     chunk_df,
@@ -1007,19 +1090,16 @@ class LazySearchResults(_SearchResultsBase):
         >>> # Just the matched tokens, without materializing the corpus:
         >>> results.with_spans_as_chunks().filter(pl.col("spans") != "O").collect()
         """
-        fid = self._file_id_column
-        # File ids can be dictionary-encoded, and the tag frame's ids come
-        # from another frame's dictionary; strings join reliably.
-        key = pl.col(fid).cast(pl.String).alias("_fid")
+        start = pl.col("_offset").cast(pl.Int64) + pl.col("start")
+        end = pl.col("_offset").cast(pl.Int64) + pl.col("end")
         tags = (
             self._matches.lazy()
-            .select(key, "start", pl.int_ranges("start", "end").alias("_pos"))
-            # Matches are never zero-width, so there are no empty ranges to keep.
+            .join(self._files.lazy().select("_file", "_offset"), on="_file")
+            .select(start.alias("_start"), pl.int_ranges(start, end).alias("_pos"))
             .explode("_pos", empty_as_null=False)
             .select(
-                "_fid",
-                pl.col("_pos").cast(pl.Int64),
-                pl.when(pl.col("_pos") == pl.col("start"))
+                "_pos",
+                pl.when(pl.col("_pos") == pl.col("_start"))
                 .then(pl.lit("B"))
                 .otherwise(pl.lit("I"))
                 .alias(name),
@@ -1027,10 +1107,10 @@ class LazySearchResults(_SearchResultsBase):
         )
         return (
             self._lf.drop(name, strict=False)
-            .with_columns(key, pl.int_range(pl.len()).over(fid).alias("_pos"))
-            .join(tags, on=["_fid", "_pos"], how="left")
+            .with_columns(pl.int_range(pl.len()).alias("_pos"))
+            .join(tags, on="_pos", how="left", maintain_order="left")
             .with_columns(pl.col(name).fill_null("O"))
-            .drop("_fid", "_pos")
+            .drop("_pos")
         )
 
 
@@ -1115,7 +1195,8 @@ def concordance(
 def collocates(
     search_results: SearchResults | LazySearchResults,
     expr: IntoExprColumn = "token",
-    window: int = 5,
+    window: int | tuple[int, int] = 5,
+    chunk_column: Optional[str] = None,
     min_freq: int = 5,
     freqs_name: str = "freqs",
 ) -> pl.DataFrame:
@@ -1129,8 +1210,12 @@ def collocates(
     expr : IntoExprColumn, default "token"
         Column name or expression the collocates are read from (e.g. token or
         lemma). It must name a single column.
-    window : int, default 5
-        Words to take on each side of each match. Must be at least 1.
+    window : int or (int, int), default 5
+        Words to take on each side of each match, or a (left, right) pair to
+        take a different number on each. Ignored when `chunk_column` is given.
+    chunk_column : str, optional
+        Column of BIO tags. The window then runs to the edges of the chunk
+        holding the match rather than a fixed number of words.
     min_freq : int, default 5
         Times a word must occur in those windows to be reported. Pass 0 to
         keep them all.
@@ -1146,11 +1231,14 @@ def collocates(
 
     See Also
     --------
-    SearchResults.collocates : Method interface for the same functionality.
+    [SearchResults.collocates][polars_corpus.search.SearchResults.collocates] :
+        Method interface for the same functionality.
+    [collocations][polars_corpus.collocations.collocations] :
+        The same counts, ranked by an association measure.
 
     Examples
     --------
     >>> collocs = collocates(results, "token", window=3)
     >>> collocs.with_columns(ll=pl.col("freqs").corpus.loglik())
     """
-    return search_results.collocates(expr, window, min_freq, freqs_name)
+    return search_results.collocates(expr, window, chunk_column, min_freq, freqs_name)

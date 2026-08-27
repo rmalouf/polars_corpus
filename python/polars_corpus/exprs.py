@@ -4,7 +4,18 @@ from typing import Any, Optional
 
 import polars as pl
 
-from .assoc import chisq, crosstab, loglik, minsens, pmi, smp
+from .assoc import (
+    chisq,
+    crosstab,
+    logdice,
+    loglik,
+    mi3,
+    minsens,
+    pmi,
+    smp,
+    tscore,
+    zscore,
+)
 from .chunk import chunk_id, with_chunk_index
 from .lexical import (
     count_hapaxes,
@@ -99,6 +110,42 @@ class CorpusExpr:
     def pmi(self) -> pl.Expr:
         """Compute pointwise mutual information from a freqs struct column."""
         return pmi(
+            self._expr.struct.field("f12"),
+            self._expr.struct.field("f1"),
+            self._expr.struct.field("f2"),
+            self._expr.struct.field("n"),
+        )
+
+    def mi3(self) -> pl.Expr:
+        """Compute the MI3 association measure from a freqs struct column."""
+        return mi3(
+            self._expr.struct.field("f12"),
+            self._expr.struct.field("f1"),
+            self._expr.struct.field("f2"),
+            self._expr.struct.field("n"),
+        )
+
+    def logdice(self) -> pl.Expr:
+        """Compute log-Dice from a freqs struct column."""
+        return logdice(
+            self._expr.struct.field("f12"),
+            self._expr.struct.field("f1"),
+            self._expr.struct.field("f2"),
+            self._expr.struct.field("n"),
+        )
+
+    def tscore(self) -> pl.Expr:
+        """Compute the t-score from a freqs struct column."""
+        return tscore(
+            self._expr.struct.field("f12"),
+            self._expr.struct.field("f1"),
+            self._expr.struct.field("f2"),
+            self._expr.struct.field("n"),
+        )
+
+    def zscore(self) -> pl.Expr:
+        """Compute the z-score from a freqs struct column."""
+        return zscore(
             self._expr.struct.field("f12"),
             self._expr.struct.field("f1"),
             self._expr.struct.field("f2"),

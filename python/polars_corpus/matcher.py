@@ -98,9 +98,16 @@ def _collect_masks(
 
 
 def _partition_files(
-    lf: pl.LazyFrame, file_id_column: str, chunk_tokens: int
+    lf: pl.LazyFrame, file_id_column: Optional[str], chunk_tokens: int
 ) -> pl.LazyFrame:
     """Group corpus files into chunks."""
+    if file_id_column is None:
+        return lf.select(
+            _file=pl.lit(0, dtype=pl.UInt32),
+            _len=pl.len().cast(pl.UInt32),
+            _offset=pl.lit(0, dtype=pl.UInt32),
+            _chunk=pl.lit(0, dtype=pl.UInt32),
+        )
     return (
         lf.group_by(file_id_column, maintain_order=True)
         .agg(pl.len().alias("_len"))
@@ -129,7 +136,6 @@ def _check_contiguous(
 def _relative_matches(
     matches: list[Match],
     chunk_files: pl.DataFrame,
-    file_id_column: str,
     variables: list[str],
 ) -> pl.DataFrame:
     """One row per match, with spans rebased to offsets within their file."""
@@ -140,7 +146,6 @@ def _relative_matches(
     bases = [file_starts[i] for i in file_index]
 
     data = {
-        file_id_column: chunk_files[file_id_column].gather(file_index),
         "_file": chunk_files["_file"].gather(file_index),
         "start": pl.Series(
             [m.span.start - base for m, base in zip(matches, bases)], dtype=pl.UInt32
@@ -195,15 +200,11 @@ def _search_lazy(
     lf: pl.LazyFrame,
     cqp_query: str,
     query: str,
-    file_id_column: str,
+    file_id_column: Optional[str],
     chunk_tokens: int,
 ) -> Optional[LazySearchResults]:
     """Search a lazy corpus one chunk of whole files at a time."""
-    if (
-        not isinstance(chunk_tokens, int)
-        or isinstance(chunk_tokens, bool)
-        or chunk_tokens < 1
-    ):
+    if not isinstance(chunk_tokens, int) or chunk_tokens < 1:
         raise ValueError(
             f"chunk_tokens must be a positive integer, got {chunk_tokens!r}"
         )
@@ -217,17 +218,21 @@ def _search_lazy(
     for _, chunk_files in files.group_by("_chunk", maintain_order=True):
         offset = int(chunk_files["_offset"][0])
         length = int(chunk_files["_len"].sum())
+        if length == 0:
+            # An empty corpus is one empty chunk. It has nothing to match, and
+            # a query's constraints may not even resolve against columns that
+            # never got a dtype.
+            continue
         masks, file_ids = _collect_masks(
             lf.slice(offset, length), opcodes, file_id_column
         )
-        # to keep pyrefly happy
-        assert file_ids is not None
-        _check_contiguous(file_ids, chunk_files, file_id_column)
+        if file_id_column is not None:
+            # to keep pyrefly happy
+            assert file_ids is not None
+            _check_contiguous(file_ids, chunk_files, file_id_column)
         matches = OpcodeMatcher(opcodes, masks, file_ids).matchall()
         if matches:
-            parts.append(
-                _relative_matches(matches, chunk_files, file_id_column, variables)
-            )
+            parts.append(_relative_matches(matches, chunk_files, variables))
     if not parts:
         return None
     return LazySearchResults(
@@ -244,15 +249,12 @@ def _search(
 ) -> Optional[SearchResults | LazySearchResults]:
     """Search `df` for the compiled `cqp_query`, reporting it as `query`."""
     if isinstance(df, pl.LazyFrame):
-        if file_id_column is not None and file_id_column in df.collect_schema():
-            return _search_lazy(df, cqp_query, query, file_id_column, chunk_tokens)
-        if file_id_column not in (None, DEFAULT_FILE_ID):
-            # Only the default name is soft, and a wrong one is worth saying
-            # before the corpus is read rather than after.
-            check_columns(df, [file_id_column], param="file_id_column")
-        # No file ids to cut chunks on, so read the corpus in and search it
-        # whole, the way an eager one is.
-        df = df.collect(engine="streaming")
+        if file_id_column is not None and file_id_column not in df.collect_schema():
+            # Only the default name is defeasible
+            if file_id_column != DEFAULT_FILE_ID:
+                check_columns(df, [file_id_column], param="file_id_column")
+            file_id_column = None
+        return _search_lazy(df, cqp_query, query, file_id_column, chunk_tokens)
     return _search_eager(df, cqp_query, query, file_id_column)
 
 
@@ -276,19 +278,17 @@ def search_cqp(
         Column holding file ids, which mark where one text ends and the next
         begins. No match crosses a change in its value. Pass `None` to search
         the corpus as one continuous run of tokens. A LazyFrame is searched a
-        chunk of files at a time, so one searched without file ids is read
-        into memory and searched whole.
+        chunk of files at a time; without file ids to cut it on it is searched as
+        a single chunk.
     chunk_tokens : int, default 10_000_000
         Tokens to aim for per chunk when searching a LazyFrame by file. Lower
         it to use less memory, raise it for fewer passes over the corpus.
-        Ignored for any other corpus.
 
     Returns
     -------
     SearchResults or LazySearchResults or None
-        The matches, or None if the query matched nothing. A LazyFrame with
-        file ids gives `LazySearchResults`, which never holds the corpus in
-        memory; any other corpus gives `SearchResults`.
+        The matches, or None if the query matched nothing. A LazyFrame gives
+        `LazySearchResults` and a DataFrame gives `SearchResults`.
 
     Raises
     ------
@@ -351,19 +351,19 @@ def search(
         Column holding file ids, which mark where one text ends and the next
         begins. No match crosses a change in its value. Pass `None` to search
         the corpus as one continuous run of tokens. A LazyFrame is searched a
-        chunk of files at a time, so one searched without file ids is read
-        into memory and searched whole.
+        chunk of files at a time; without file ids to cut on it is searched as
+        a single chunk.
     chunk_tokens : int, default 10_000_000
         Tokens to aim for per chunk when searching a LazyFrame by file. Lower
         it to use less memory, raise it for fewer passes over the corpus.
-        Ignored for any other corpus.
+        Ignored for any other corpus, and for a LazyFrame with no file ids to
+        cut chunks on.
 
     Returns
     -------
     SearchResults or LazySearchResults or None
-        The matches, or None if the query matched nothing. A LazyFrame with
-        file ids gives `LazySearchResults`, which never holds the corpus in
-        memory; any other corpus gives `SearchResults`.
+        The matches, or None if the query matched nothing. A LazyFrame gives
+        `LazySearchResults` and a DataFrame gives `SearchResults`.
 
     Raises
     ------

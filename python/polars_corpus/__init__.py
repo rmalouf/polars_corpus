@@ -4,6 +4,7 @@ import importlib.metadata
 
 from .assoc import *  # noqa: F403
 from .chunk import *  # noqa: F403
+from .collocations import *  # noqa: F403
 from .convert import *  # noqa: F403
 from .corpus_io import *  # noqa: F403
 from .cqp_parser import *  # noqa: F403

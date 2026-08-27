@@ -18,6 +18,10 @@ from .utils import (
 __all__ = [
     "crosstab",
     "pmi",
+    "mi3",
+    "logdice",
+    "tscore",
+    "zscore",
     "minsens",
     "smp",
     "chisq",
@@ -159,6 +163,217 @@ def pmi(f12: IntoExpr, f1: IntoExpr, f2: IntoExpr, n: IntoExpr) -> pl.Expr:
     """
     f12, f1, f2, n = _as_freqs(f12, f1, f2, n)
     return ((f12 * n) / (f1 * f2)).log()
+
+
+def mi3(f12: IntoExpr, f1: IntoExpr, f2: IntoExpr, n: IntoExpr) -> pl.Expr:
+    """
+    Compute the MI3 association measure for contingency table data.
+
+    Cubes the joint frequency before comparing it to what independence
+    predicts, which pulls the ranking away from the rare pairs that dominate
+    `pmi` and towards pairs that are both frequent and strongly associated.
+
+    Parameters
+    ----------
+    f12 : IntoExpr
+        Joint frequencies of variable pairs. Can be a column name (str) or
+        Polars expression.
+    f1 : IntoExpr
+        Marginal frequencies of first variable. Can be a column name (str) or
+        Polars expression.
+    f2 : IntoExpr
+        Marginal frequencies of second variable. Can be a column name (str) or
+        Polars expression.
+    n : IntoExpr
+        Grand total (total number of observations). Can be a column name (str) or
+        Polars expression.
+
+    Returns
+    -------
+    pl.Expr
+        A Polars expression that computes the MI3 values for each variable pair.
+
+    Notes
+    -----
+    MI3 is calculated as:
+
+    $$
+    \\text{MI3}(x,y) = \\log\\frac{f_{12}^3}{e_{12}}
+                     = \\log\\frac{f_{12}^3\\,n}{f_1\\,f_2}
+    $$
+
+    where $e_{12} = f_1\\,f_2 / n$ is the joint frequency expected under
+    independence. Like `pmi`, this uses natural logarithms, so the two are on
+    the same scale and differ by exactly $2 \\log f_{12}$.
+
+    References
+    ----------
+    - Daille, B. 1994. *Approche mixte pour l’extraction automatique de
+      terminologie: statistiques lexicales et filtres linguistiques.* Ph.D. thesis,
+      Université Paris 7.
+    """
+    f12, f1, f2, n = _as_freqs(f12, f1, f2, n)
+    return (f12.pow(3) * n / (f1 * f2)).log()
+
+
+def logdice(f12: IntoExpr, f1: IntoExpr, f2: IntoExpr, n: IntoExpr) -> pl.Expr:
+    """
+    Compute the log-Dice association measure for contingency table data.
+
+    A logarithmic form of the Dice coefficient, which weighs the joint
+    frequency against the two marginals rather than against the corpus size. This
+    is the default collocation score in Sketch Engine and #LancsBox.
+
+    Parameters
+    ----------
+    f12 : IntoExpr
+        Joint frequencies of variable pairs. Can be a column name (str) or
+        Polars expression.
+    f1 : IntoExpr
+        Marginal frequencies of first variable. Can be a column name (str) or
+        Polars expression.
+    f2 : IntoExpr
+        Marginal frequencies of second variable. Can be a column name (str) or
+        Polars expression.
+    n : IntoExpr
+        Grand total (total number of observations). Accepted for a uniform
+        signature with the other measures, but not used.
+
+    Returns
+    -------
+    pl.Expr
+        A Polars expression that computes the log-Dice values for each
+        variable pair.
+
+    Notes
+    -----
+    Log-Dice is calculated as:
+
+    $$
+    \\text{logDice}(x,y) = 14 + \\log_2\\frac{2\\,f_{12}}{f_1 + f_2}
+    $$
+
+    The base-2 logarithm and the constant 14 go together: they place the
+    maximum at 14, where every occurrence of one word is an occurrence of the
+    pair, and each further point down the scale halves the Dice coefficient.
+    Values below 0 are conventionally treated as no association.
+
+    References
+    ----------
+    - Rychlý, P. 2008. A lexicographer-friendly association score. In
+      *Proceedings of Recent Advances in Slavonic Natural Language Processing
+      (RASLAN)*, 6-9. Brno: Masaryk University.
+    """
+    f12, f1, f2, _ = _as_freqs(f12, f1, f2, n)
+    return 14 + (2 * f12 / (f1 + f2)).log(2)
+
+
+def tscore(f12: IntoExpr, f1: IntoExpr, f2: IntoExpr, n: IntoExpr) -> pl.Expr:
+    """
+    Compute the t-score association measure for contingency table data.
+
+    Scales the gap between the observed joint frequency and the one expected
+    under independence by the square root of the observed frequency. Dividing
+    by the observed rather than the expected count holds rare pairs down, so
+    the ranking favors frequent, dependable pairings -- the complement to what
+    `pmi` reports.
+
+    Parameters
+    ----------
+    f12 : IntoExpr
+        Joint frequencies of variable pairs. Can be a column name (str) or
+        Polars expression.
+    f1 : IntoExpr
+        Marginal frequencies of first variable. Can be a column name (str) or
+        Polars expression.
+    f2 : IntoExpr
+        Marginal frequencies of second variable. Can be a column name (str) or
+        Polars expression.
+    n : IntoExpr
+        Grand total (total number of observations). Can be a column name (str) or
+        Polars expression.
+
+    Returns
+    -------
+    pl.Expr
+        A Polars expression that computes the t-score values for each variable
+        pair.
+
+    Notes
+    -----
+    The t-score is calculated as:
+
+    $$
+    t(x,y) = \\frac{f_{12} - e_{12}}{\\sqrt{f_{12}}}
+    $$
+
+    where $e_{12} = f_1\\,f_2 / n$ is the joint frequency expected under
+    independence. It is not a t statistic in the distributional sense -- the
+    normality it would need does not hold for word counts -- and is best read
+    as a ranking, not a test.
+
+    References
+    ----------
+    - Church, K. W., W. Gale, P. Hanks, and D. Hindle. 1991. Using statistics
+      in lexical analysis. In U. Zernik (ed.), *Lexical Acquisition: Exploiting
+      On-Line Resources to Build a Lexicon*, 115-164. Hillsdale: Erlbaum.
+    """
+    f12, f1, f2, n = _as_freqs(f12, f1, f2, n)
+    return (f12 - f1 * f2 / n) / f12.sqrt()
+
+
+def zscore(f12: IntoExpr, f1: IntoExpr, f2: IntoExpr, n: IntoExpr) -> pl.Expr:
+    """
+    Compute the z-score association measure for contingency table data.
+
+    Scales the gap between the observed joint frequency and the one expected
+    under independence by the square root of the expected frequency. Dividing
+    by the expected count makes it more forgiving of rare pairs than `tscore`,
+    and less so than `pmi`.
+
+    Parameters
+    ----------
+    f12 : IntoExpr
+        Joint frequencies of variable pairs. Can be a column name (str) or
+        Polars expression.
+    f1 : IntoExpr
+        Marginal frequencies of first variable. Can be a column name (str) or
+        Polars expression.
+    f2 : IntoExpr
+        Marginal frequencies of second variable. Can be a column name (str) or
+        Polars expression.
+    n : IntoExpr
+        Grand total (total number of observations). Can be a column name (str) or
+        Polars expression.
+
+    Returns
+    -------
+    pl.Expr
+        A Polars expression that computes the z-score values for each variable
+        pair.
+
+    Notes
+    -----
+    The z-score is calculated as:
+
+    $$
+    z(x,y) = \\frac{f_{12} - e_{12}}{\\sqrt{e_{12}}}
+    $$
+
+    where $e_{12} = f_1\\,f_2 / n$ is the joint frequency expected under
+    independence. This is the Poisson form, which takes the variance of the
+    count to be its mean.
+
+    References
+    ----------
+    - Berry-Rogghe, G. L. M. 1973. The computation of collocations and their
+      relevance in lexical studies. In A. J. Aitken, R. W. Bailey, and
+      N. Hamilton-Smith (eds.), *The Computer and Literary Studies*, 103-112.
+      Edinburgh University Press.
+    """
+    f12, f1, f2, n = _as_freqs(f12, f1, f2, n)
+    expected = f1 * f2 / n
+    return (f12 - expected) / expected.sqrt()
 
 
 def chisq(

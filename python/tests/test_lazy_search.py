@@ -3,7 +3,7 @@
 import polars as pl
 import polars_corpus as plc
 import pytest
-from polars_corpus import LazySearchResults, SearchResults, scan_text_corpus
+from polars_corpus import LazySearchResults, scan_text_corpus
 from polars_corpus.matcher import search, search_cqp
 
 from .helpers import corpus
@@ -72,6 +72,25 @@ def test_spans_as_chunks_match_eager(chunk_tokens):
     assert tagged.collect().equals(eager.with_spans_as_chunks())
 
 
+def test_spans_as_chunks_keeps_corpus_order():
+    """The tags have to land on the tokens they were read off.
+
+    Tagging joins the matches back onto the corpus by position, and a join is
+    free to return its rows in any order. A small frame comes back in order
+    whatever it does, so this needs a corpus big enough to be split up: at
+    200_000 tokens an unordered join already scrambles it.
+    """
+    n = 500_000
+    tokens = ["fox" if i % 1000 == 500 else "the" for i in range(n)]
+    corpus = pl.DataFrame(
+        {"token": tokens, "file_id": [f"d{i // 5000}" for i in range(n)]}
+    )
+    tagged = plc.search(corpus.lazy(), "fox").with_spans_as_chunks().collect()
+
+    assert tagged["token"].to_list() == tokens
+    assert (tagged["spans"] != "O").sum() == n // 1000
+
+
 @pytest.mark.parametrize(
     "dtype", [pl.String, pl.Categorical, pl.Enum(["d1", "d2", "d3", "d4"]), pl.UInt32]
 )
@@ -101,7 +120,9 @@ def test_match_frame_spans_are_file_relative():
     _, lazy = eager_and_lazy('[token="brown"] [token="fox"]', 1)
 
     matches = lazy._matches
-    assert matches["file_id"].to_list() == ["d3", "d1"]
+    # The id itself is not carried: `_file` indexes the files frame, and that
+    # is what says where the offsets count from.
+    assert lazy._files["file_id"].gather(matches["_file"]).to_list() == ["d3", "d1"]
     # d3's match sits at its file's start + 2; d1's at its own start.
     assert matches["start"].to_list() == [2, 0]
     assert matches["end"].to_list() == [4, 2]
@@ -135,7 +156,8 @@ class TestSlicing:
         shuffled = lazy.shuffle(seed=42)
         conc = shuffled.concordance("token", metadata="file_id")
 
-        assert conc["file_id"].to_list() == shuffled._matches["file_id"].to_list()
+        expected = shuffled._files["file_id"].gather(shuffled._matches["_file"])
+        assert conc["file_id"].to_list() == expected.to_list()
 
     @pytest.mark.parametrize(
         "method,args", [("sample", (3,)), ("shuffle", ())], ids=["sample", "shuffle"]
@@ -223,15 +245,55 @@ def test_null_file_id_forms_its_own_file():
         pytest.param(FILES.drop("file_id"), "file_id", id="no-ids-to-find"),
     ],
 )
-def test_lazy_without_file_ids_is_searched_whole(df, file_id_column):
-    """Nothing to chunk on, so the corpus is read in and searched in memory."""
+def test_lazy_without_file_ids_is_searched_as_one_chunk(df, file_id_column):
+    """Nothing to chunk on, so the corpus is one chunk -- but still out of core."""
     query = '[token="brown"] [token="fox"]'
     lazy = search_cqp(df.lazy(), query, file_id_column)
 
-    assert isinstance(lazy, SearchResults)
+    assert isinstance(lazy, LazySearchResults)
     assert lazy.concordance("token", window=3).equals(
         search_cqp(df, query, file_id_column).concordance("token", window=3)
     )
+
+
+@pytest.mark.parametrize(
+    "df,file_id_column",
+    [
+        pytest.param(FILES, None, id="ids-ignored"),
+        pytest.param(FILES.drop("file_id"), "file_id", id="no-ids-to-find"),
+    ],
+)
+def test_lazy_without_file_ids_tags_spans(df, file_id_column):
+    """One file spanning the corpus, so a match's offsets are its positions."""
+    query = '[token="brown"] [token="fox"]'
+    lazy = search_cqp(df.lazy(), query, file_id_column)
+
+    assert (
+        lazy.with_spans_as_chunks()
+        .collect()
+        .equals(search_cqp(df, query, file_id_column).with_spans_as_chunks())
+    )
+
+
+def test_lazy_without_file_ids_collocates():
+    """The counts have no file ids to report a range over, and say so."""
+    lazy = search_cqp(FILES.drop("file_id").lazy(), '[token="fox"]')
+    eager = search_cqp(FILES.drop("file_id"), '[token="fox"]')
+
+    result = plc.collocations(lazy, "token", "freq", window=2, min_freq=1)
+    assert result.columns == ["collocate", "freqs", "freq"]
+    assert result.sort("collocate").equals(
+        plc.collocations(eager, "token", "freq", window=2, min_freq=1).sort("collocate")
+    )
+
+
+def test_lazy_without_file_ids_ignores_chunk_tokens():
+    """There is no safe place to cut, so the corpus stays one chunk."""
+    query = '[token="fox"] [token="brown"]'
+    # A cut every two tokens would fall straight through this match.
+    results = search_cqp(FILES.lazy(), query, file_id_column=None, chunk_tokens=2)
+
+    assert len(results) == 1
 
 
 def test_lazy_without_file_ids_matches_across_them():

@@ -3,7 +3,19 @@ import math
 import polars as pl
 import pytest
 from polars.testing import assert_frame_equal
-from polars_corpus import chisq, crosstab, loglik, minsens, pmi, smp, welchs_t
+from polars_corpus import (
+    chisq,
+    crosstab,
+    logdice,
+    loglik,
+    mi3,
+    minsens,
+    pmi,
+    smp,
+    tscore,
+    welchs_t,
+    zscore,
+)
 from polars_corpus.assoc import welchs_t_from_stats
 from polars_corpus.utils import output_name
 
@@ -185,6 +197,56 @@ def test_loglik(dtype: pl.DataType) -> None:
     assert result.filter(pl.col("f12") == 20)["LL"].item() == pytest.approx(expected)
 
 
+# The collocation measures, each beside the formula it is meant to compute.
+COLLOCATION_MEASURES = {
+    "mi3": (
+        mi3("f12", "f1", "f2", "n"),
+        lambda f12, f1, f2, n: math.log(f12**3 * n / (f1 * f2)),
+    ),
+    "logdice": (
+        logdice("f12", "f1", "f2", "n"),
+        lambda f12, f1, f2, n: 14 + math.log2(2 * f12 / (f1 + f2)),
+    ),
+    "tscore": (
+        tscore("f12", "f1", "f2", "n"),
+        lambda f12, f1, f2, n: (f12 - f1 * f2 / n) / math.sqrt(f12),
+    ),
+    "zscore": (
+        zscore("f12", "f1", "f2", "n"),
+        lambda f12, f1, f2, n: (f12 - f1 * f2 / n) / math.sqrt(f1 * f2 / n),
+    ),
+}
+
+
+@pytest.mark.parametrize("dtype", [pl.Int64, pl.UInt32])
+@pytest.mark.parametrize(
+    "measure, reference", COLLOCATION_MEASURES.values(), ids=COLLOCATION_MEASURES
+)
+def test_collocation_measures(measure: pl.Expr, reference, dtype: pl.DataType) -> None:
+    # f12=0 has no logarithm and no t-score, so leave it to the null tests.
+    table = pl.DataFrame(CONTINGENCY).filter(pl.col("f12") > 0).cast(dtype)
+    result = table.with_columns(value=measure)
+
+    expected = [reference(**row) for row in table.iter_rows(named=True)]
+    assert result["value"].to_list() == pytest.approx(expected)
+
+
+def test_mi3_sits_above_pmi() -> None:
+    # MI3 is PMI plus 2 log f12, on the same natural-log scale.
+    table = pl.DataFrame(CONTINGENCY).filter(pl.col("f12") > 0)
+    result = table.select(
+        gap=mi3("f12", "f1", "f2", "n") - pmi("f12", "f1", "f2", "n"),
+        expected=2 * pl.col("f12").log(),
+    )
+    assert result["gap"].to_list() == pytest.approx(result["expected"].to_list())
+
+
+def test_logdice_tops_out_at_fourteen() -> None:
+    # Every occurrence of each word is an occurrence of the pair.
+    table = pl.DataFrame({"f12": [8], "f1": [8], "f2": [8], "n": [100]})
+    assert table.select(logdice("f12", "f1", "f2", "n")).item() == pytest.approx(14.0)
+
+
 def test_smp() -> None:
     # word 1: f12=2, f1=3 -> reference freq = f1-f12 = 1; (2+1)/(1+1) = 1.5
     # word 2: f12=0, f1=5 -> reference freq = 5; (0+1)/(5+1) = 1/6
@@ -233,6 +295,10 @@ def test_struct_assoc_measures() -> None:
         pl.col("freqs").corpus.minsens().alias("minsens"),
         pl.col("freqs").corpus.smp(1.0).alias("smp"),
         pl.col("freqs").corpus.chisq().alias("chisq"),
+        pl.col("freqs").corpus.mi3().alias("mi3"),
+        pl.col("freqs").corpus.logdice().alias("logdice"),
+        pl.col("freqs").corpus.tscore().alias("tscore"),
+        pl.col("freqs").corpus.zscore().alias("zscore"),
     )
 
     # Verify row C, y=1: f12=2, f1=3, f2=4, n=7
@@ -254,6 +320,9 @@ def test_struct_assoc_measures() -> None:
     # chisq matches the generic sum-of-(O-E)^2/E reference
     assert row["chisq"].item() == pytest.approx(_chisq_ref(f12, f1, f2, n))
 
+    for name, (_, reference) in COLLOCATION_MEASURES.items():
+        assert row[name].item() == pytest.approx(reference(f12, f1, f2, n))
+
 
 # A well-behaved table, and each measure with the margins it actually reads: a
 # null in one it ignores is no more its business than a column it never saw.
@@ -264,6 +333,12 @@ MEASURES = {
     "loglik": (loglik("f12", "f1", "f2", "n"), ("f12", "f1", "f2", "n")),
     "minsens": (minsens("f12", "f1", "f2", "n"), ("f12", "f1", "f2")),
     "smp": (smp("f12", "f1", "f2", "n", 1.0), ("f12", "f1")),
+    "mi3": (mi3("f12", "f1", "f2", "n"), ("f12", "f1", "f2", "n")),
+    # log-Dice weighs the joint frequency against the margins alone, so the
+    # corpus size never reaches it.
+    "logdice": (logdice("f12", "f1", "f2", "n"), ("f12", "f1", "f2")),
+    "tscore": (tscore("f12", "f1", "f2", "n"), ("f12", "f1", "f2", "n")),
+    "zscore": (zscore("f12", "f1", "f2", "n"), ("f12", "f1", "f2", "n")),
 }
 
 

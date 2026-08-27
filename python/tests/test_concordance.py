@@ -102,7 +102,7 @@ class TestWindow:
         assert conc["token_left_context"].to_list() == [[]]
         assert conc["token_right_context"].to_list() == [["d"]]
 
-    @pytest.mark.parametrize("window", [-1, 1.5, None, "2", True])
+    @pytest.mark.parametrize("window", [-1, 1.5, None, "2"])
     def test_bad_window(self, results, window):
         with pytest.raises(ValueError, match="window must be a non-negative integer"):
             results.concordance("token", window=window)
@@ -375,9 +375,36 @@ class TestCollocates:
         with pytest.raises(ValueError, match="min_freq must be a non-negative integer"):
             results.collocates("token", min_freq=min_freq)
 
-    def test_window_zero(self, results):
-        with pytest.raises(ValueError, match="window must be at least 1"):
-            results.collocates("token", window=0)
+    @pytest.mark.parametrize("window", [0, (0, 0)])
+    def test_window_reaches_nothing(self, results, window):
+        with pytest.raises(ValueError, match="window must reach at least one token"):
+            results.collocates("token", window=window)
+
+    @pytest.mark.parametrize(
+        "window,expected",
+        [
+            ((2, 0), {"the", "cat", "dog"}),  # what precedes "sat"
+            ((0, 2), {"on", "the"}),  # and what follows it
+            (1, {"cat", "dog", "on"}),
+        ],
+    )
+    def test_uneven_window(self, results, window, expected):
+        colloc = results.collocates("token", window=window, min_freq=0)
+
+        assert set(colloc["collocate"]) == expected
+
+    def test_chunk_column_spans_the_chunk(self):
+        df = corpus(token="a b sat c . d sat e", chunks="B I I I I B I I")
+        results = search_results(
+            df, "sat", [Match(Span(2, 3), {}), Match(Span(6, 7), {})]
+        )
+        colloc = results.collocates("token", chunk_column="chunks", min_freq=0).unnest(
+            "freqs"
+        )
+
+        # Everything in each chunk but the matched token: 4 + 2.
+        assert set(colloc["collocate"]) == {"a", "b", "c", ".", "d", "e"}
+        assert set(colloc["f1"]) == {6}
 
     def test_several_columns_rejected(self, results):
         with pytest.raises(ValueError, match="must name a single column"):

@@ -76,6 +76,7 @@ nav:
       - Reading corpora: io.md
       - Search: search.md
       - Association metrics: assoc.md
+      - Collocation: collocations.md
       - Lexical metrics: lexical.md
       - Lexical dispersion: dispersion.md
       - Keyword analysis: keywords.md

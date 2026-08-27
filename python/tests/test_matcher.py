@@ -1,7 +1,7 @@
 import polars as pl
 import pytest
 from lark.exceptions import LarkError
-from polars_corpus import SearchResults
+from polars_corpus import LazySearchResults
 from polars_corpus.matcher import Span, search, search_cqp
 
 from .helpers import corpus, spans
@@ -144,11 +144,15 @@ def test_invalid_regex(sample_corpus):
 
 @pytest.mark.parametrize("fn,query", [(search, "fox"), (search_cqp, '[token="fox"]')])
 def test_lazy_corpus_without_file_ids(fn, query):
-    """A LazyFrame with no file ids to chunk on is searched whole, in memory."""
+    """A LazyFrame with no file ids to chunk on is searched as a single chunk."""
     results = fn(corpus(token="the quick brown fox").lazy(), query)
 
-    assert isinstance(results, SearchResults)
-    assert spans(results) == [(3, 4)]
+    assert isinstance(results, LazySearchResults)
+    # No `matches` to read spans off without a corpus in memory, and with one
+    # file spanning everything the concordance says the same thing.
+    assert results.concordance("token", window=1)["token_left_context"].to_list() == [
+        ["brown"]
+    ]
 
 
 class TestSpan:
