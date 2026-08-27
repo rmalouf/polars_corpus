@@ -1,6 +1,6 @@
 # Development Status - polars-corpus
 
-**Last updated:** 2026-08-25
+**Last updated:** 2026-08-26
 **Version:** 0.2.0-pre
 **Status:** Pre-release; core is stable, not yet published to PyPI
 
@@ -11,11 +11,13 @@
 A corpus linguistics toolkit for Polars, split between a Python API and a Rust
 matching engine. Search, concordancing, collocation, keywords, dispersion, the
 statistical measures and the plots are all working and covered by tests.
-Documentation is mkdocs reference pages built from the docstrings, plus the
-example notebooks and a reference page for each of the two query languages;
-there is no narrative guide. The main functional gap is proximity operators in
-the Simple query language; the main process gaps are the absence of CI and of
-any Rust unit tests.
+Collocation, the largest documentation hole in the last survey, now has a
+`collocations()` function and a reference page. Documentation is otherwise
+mkdocs reference pages built from the docstrings, plus the example notebooks
+and a reference page for each of the two query languages; there is no
+narrative guide. The main functional gap is proximity operators in the Simple
+query language; the main process gaps are the absence of CI and of any Rust
+unit tests.
 
 ---
 
@@ -23,11 +25,11 @@ any Rust unit tests.
 
 | | |
 |---|---|
-| Python source | ~6,000 lines, 18 modules |
+| Python source | ~6,500 lines, 19 modules |
 | Rust source | ~1,100 lines, 6 files |
-| Tests | ~4,500 lines, 913 tests in 15 files |
-| Docs | 11 pages plus 5 example notebooks (mkdocs-material / mkdocstrings) |
-| Examples | 9 notebooks, 3 scripts |
+| Tests | ~5,000 lines, 980 tests in 16 files |
+| Docs | 12 pages plus 5 example notebooks (mkdocs-material / mkdocstrings) |
+| Examples | 8 notebooks, 3 scripts |
 
 ---
 
@@ -39,16 +41,22 @@ any Rust unit tests.
    variable bindings (`$x: ...`) in both. A LazyFrame corpus is searched out
    of core, one chunk of whole files at a time (`chunk_tokens` sets the
    budget), returning `LazySearchResults` with file-relative match spans; the
-   corpus never has to fit in memory.
+   corpus never has to fit in memory. A LazyFrame always takes that path,
+   as a single chunk when it carries no file id column to cut on.
 2. **Concordancing** — KWIC generation in Rust, `SearchResults.concordance()`,
    a column per bound variable, interactive `ConcordanceWidget` (anywidget)
    with pagination and sorting. Context clips at file boundaries when the
    search named a `file_id_column`.
-3. **Collocation and keywords** — `collocates()`, `keywords()`, `crosstab()`
-   bundling frequencies into a `freqs` struct consumed by the association
-   measures.
-4. **Association measures** — PMI, log-likelihood, minimum sensitivity,
-   Kilgarriff's simple maths, chi-squared, Welch's t-test.
+3. **Collocation and keywords** — `collocations()` ranks the words around a
+   search's matches by one or more association measures; `collocates()`
+   returns the window counts it is built on, and `keywords()` and `crosstab()`
+   bundle frequencies into the same `freqs` struct the measures consume.
+   Windows are symmetric or asymmetric (`window=(5, 0)`), or run to the edges
+   of the chunk holding the match when given a `chunk_column`, which is how a
+   span stops at a sentence boundary.
+4. **Association measures** — PMI, MI3, log-dice, t-score, z-score,
+   log-likelihood, chi-squared, minimum sensitivity, Kilgarriff's simple
+   maths, Welch's t-test.
 5. **Lexical diversity** — TTR, MSTTR, Yule's K, MTLD.
 6. **Lexical dispersion** — `dispersion()` with range, range%, sd, cv, cv%,
    Juilland's D, Burch's DA, Gries's DP; several measures per call.
@@ -56,7 +64,8 @@ any Rust unit tests.
 8. **Chunking** — BIO tags to chunk IDs via `chunk_id()` / `with_chunk_index()`.
 9. **Polars integration** — `.corpus` namespace on Expr, DataFrame, LazyFrame.
 10. **Visualization** — `barcode_plot()`, `dispersion_plot()`, `keyword_plot()`,
-    on seaborn and matplotlib from the `examples` extra.
+    on matplotlib from the `examples` extra. (The notebooks still import
+    seaborn; the library itself no longer does.)
 
 ### Incomplete
 
@@ -146,8 +155,10 @@ them produced only noise.
 **Coverage**
 
 See [FEATURE_GAPS.md](FEATURE_GAPS.md) for what the toolkit is still missing
-against what a linguist expects: collocation is the big one, then a
-`frequency_list()` function, concordance sorting and export, and `from_spacy()`.
+against what a linguist expects. Collocation, the big one at the last survey,
+is now written; what is left there is a notebook to go with the reference
+page. Next are a `frequency_list()` function, concordance sorting and export,
+and `from_spacy()`.
 
 ---
 
@@ -204,3 +215,9 @@ why.
 - Tests assert on actual matched spans rather than match counts.
 - Association measures take a `freqs` struct column, so frequency column names
   are named once in `crosstab()` rather than repeated at every call site.
+- `collocates()` and `collocations()` share one counting pass,
+  `_SearchResultsBase._collocate_counts`: the first returns the counts, the
+  second joins the corpus frequencies and scores them. `f1` counts the context
+  tokens the windows actually held rather than the positions they could have
+  held, so a window truncated at a file or chunk boundary contributes only
+  what it reached.

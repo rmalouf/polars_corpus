@@ -1,9 +1,9 @@
 # Feature Gaps - polars-corpus
 
-**Last updated:** 2026-08-25
+**Last updated:** 2026-08-26
 **Scope:** what to add to cover the basic corpus-analysis toolkit
 
-This is a survey of the documentation -- the eleven reference pages, the five
+This is a survey of the documentation -- the twelve reference pages, the five
 example notebooks, `mkdocs.yml`, the README -- against what a linguist expects
 a corpus tool to do.
 
@@ -20,24 +20,27 @@ isn't there yet.
 
 ## 1. Collocation
 
-The largest hole. `collocates()` is listed as working in
-`DEVELOPMENT_STATUS.md` but appears on no docs page, in no nav entry, and in
-no notebook. `docs/assoc.md` documents the association measures as bare
-statistics over a `crosstab()`, and nothing shows the path from a node word to
-a ranked collocate list. After concordancing and frequency, this is the third
-thing anyone does.
+Mostly closed since the last survey. `collocations()` takes a search and
+returns its collocates ranked by one or more association measures, which is
+the path from a node word to a ranked list that nothing showed before;
+`docs/collocations.md` documents it and is on the nav. log-dice and MI3
+landed alongside t-score and z-score, so the two most-reported scores in the
+literature are no longer missing. Windows take an asymmetric `(left, right)`
+pair for L5/R5 spans, and a `chunk_column` runs the window to the edges of
+the chunk holding the match instead, so a sentence tag column gives a span
+that stops at the sentence boundary.
 
-Beyond documenting what exists:
+What is left:
 
-- **log-dice and MI3.** The Sketch Engine and #LancsBox defaults, and the two
-  most-reported collocation scores in the literature. We have PMI,
-  log-likelihood, chi-squared, minimum sensitivity, Kilgarriff's simple maths
-  and Welch's t, but neither of these.
-- **Window control, documented.** L5/R5, asymmetric spans, and a span that
-  stops at a sentence boundary.
-- **Colligation.** Collocates over the `pos` column rather than `token`.
-  Probably already reachable through `expr=`, but no reader will discover it.
-- **Collocation networks.** Already a TODO in `visualizations.py`.
+- **A notebook.** `docs/notebooks/collocation.ipynb` is a working draft --
+  unannotated, not in the nav, and not counted as documentation. Until it is
+  written the reference page carries the whole topic, and every other measure
+  in the library has a notebook making the case for when to reach for it.
+- **Colligation.** Collocates over the `pos` column rather than `token`, or
+  over a struct of both. `expr=` already reaches it -- the draft notebook does
+  exactly this -- but no reader will discover it from the reference page
+  alone. It is a worked example, not a feature.
+- **Collocation networks.** Still a TODO in `visualizations.py`.
 
 Dependency-based collocation (word sketches) is the one major collocation
 feature nothing in the docs reaches. It depends on the corpus carrying
@@ -84,6 +87,8 @@ staple of the phraseology side of the field.
 expects alongside significance are missing: **log ratio** (Hardie 2014),
 **%DIFF**, odds ratio, and Bayes-factor BIC. The keywords notebook already
 makes the argument for why $G^2$ alone misleads, so the ground is prepared.
+`logdice` arrived with the collocation measures and is an effect size, but it
+is not offered as a `keywords()` method.
 
 ## 6. Text-level descriptive measures
 
@@ -139,8 +144,9 @@ One genuine code gap and two pages nobody has written. By the standard
 above, they rank the same.
 
 - **Proximity operators** (`<<3>>`, `<<s>>`) -- the biggest query-language
-  gap, already on the roadmap. The same machinery gives sentence-bounded
-  collocation windows, so it pays twice.
+  gap, already on the roadmap. Sentence-bounded collocation windows now come
+  from `collocations(chunk_column=...)` instead, so this no longer pays
+  twice; it is a query-language gap and nothing else.
 - **No narrative getting-started guide.** The nav entries are commented out in
   `mkdocs.yml`.
 - **`assoc.md`, `lexical.md` and `utils.md` are bare mkdocstrings stubs** --
@@ -151,13 +157,16 @@ above, they rank the same.
 
 ## If only three
 
-1. Document and round out collocation (section 1).
-2. A real `frequency_list()` (section 2).
-3. Concordance sorting, sampling and export (section 3).
+1. A real `frequency_list()` (section 2).
+2. Concordance sorting, sampling and export (section 3).
+3. The collocation notebook (section 1), the last piece of what was the
+   largest hole.
 
-These are what a student opens AntConc for, and the docs show none of them.
-`from_spacy()` (section 7) is the fourth, and the one that most widens who can
-use the library at all.
+These are what a student opens AntConc for, and the docs show only collocation
+so far. `from_spacy()` (section 7) is the fourth, and the one that most widens
+who can use the library at all.
 
-Note how much of items 1 and 3 is writing rather than coding. That is not a
-discount on the work -- it is where the work is.
+Note how much of items 2 and 3 is writing rather than coding. That is not a
+discount on the work -- it is where the work is. Collocation is the evidence:
+the function was a few hundred lines, and it still is not shipped until the
+notebook exists.
