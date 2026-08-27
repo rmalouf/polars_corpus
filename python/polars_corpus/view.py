@@ -2,12 +2,11 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
+import anywidget
 import polars as pl
-
-if TYPE_CHECKING:
-    import anywidget
+import traitlets
 
 __all__ = ["ConcordanceWidget"]
 
@@ -52,8 +51,6 @@ class ConcordanceWidget:
     ------
     ValueError
         If `df` holds no column of matched words, or none named `column`.
-    ImportError
-        If anywidget is not installed.
 
     See Also
     --------
@@ -71,15 +68,6 @@ class ConcordanceWidget:
         column: Optional[str] = None,
         page_size: int = 25,
     ) -> None:
-        try:
-            import anywidget
-            import traitlets
-        except ImportError:
-            raise ImportError(
-                "anywidget is required for ConcordanceWidget. "
-                "Install with: pip install anywidget"
-            )
-
         self.original_df = df
         self.df = df
 
@@ -112,14 +100,13 @@ class ConcordanceWidget:
         self.has_context = self.left_col in df.columns and self.right_col in df.columns
 
         # Create the widget
-        self.widget = self._create_widget(anywidget, traitlets, page_size)
+        self.widget = self._create_widget(page_size)
 
-    def _create_widget(
-        self, anywidget: Any, traitlets: Any, page_size: int
-    ) -> anywidget.AnyWidget:
+    def _create_widget(self, page_size: int) -> anywidget.AnyWidget:
         """Create the anywidget instance."""
 
-        # Define widget class dynamically to avoid import-time dependency
+        # Defined here rather than at module level so that the observers below
+        # can close over this widget and the browser that owns it.
         class _ConcordanceWidget(anywidget.AnyWidget):
             # Traits for state synchronization
             page_data = traitlets.List(trait=traitlets.Dict()).tag(sync=True)
@@ -680,9 +667,6 @@ export function render({ model, el }) {
         widget.column_name = self.column
         widget.total_matches = len(self.df)
         widget.page_size = page_size
-
-        # Store reference to parent for access to DataFrames
-        widget._parent = self
 
         # Set up observers
         @traitlets.observe("current_page", "page_size")
