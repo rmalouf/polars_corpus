@@ -17,8 +17,8 @@ from .assoc import (
     tscore,
     zscore,
 )
-from .search import LazySearchResults, SearchResults, _check_count, _window_span
-from .utils import as_expr, check_expr, check_measures
+from .search import LazySearchResults, SearchResults, _window_span
+from .utils import _check_count, as_expr, check_expr, check_measures
 
 __all__ = [
     "collocations",

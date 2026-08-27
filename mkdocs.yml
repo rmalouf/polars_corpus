@@ -75,6 +75,7 @@ nav:
       - Vocabulary: notebooks/vocabulary.ipynb
   - Reference:
       - Reading corpora: io.md
+      - Frequency lists: frequencies.md
       - Search: search.md
       - Association metrics: assoc.md
       - Collocation: collocations.md

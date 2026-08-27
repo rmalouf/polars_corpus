@@ -1,6 +1,6 @@
 # Feature Gaps - polars-corpus
 
-**Last updated:** 2026-08-26
+**Last updated:** 2026-08-27
 **Scope:** what to add to cover the basic corpus-analysis toolkit
 
 This is a survey of the documentation -- the twelve reference pages, the six
@@ -45,20 +45,50 @@ Three things are deliberately out rather than pending:
   corpora, and that annotation is a separate project rather than something
   this library will grow. It may be linked from here later. See section 7.
 
-## 2. Frequency lists as a function
+## 2. Frequency lists -- closed
 
-`frequencies.ipynb` is good teaching, but every cell hand-rolls the same
-pipeline: `filter(is_letters) -> to_lowercase -> group_by -> agg(pl.len()) ->
-sort`. There is no `frequency_list()`.
+`frequency_list()` takes a corpus and returns one row per type, with the count
+in `freq`, the count as a rate per `basis` words in `rate`, and the number of
+files the type occurs in in `range`. The rate divides by the tokens actually
+counted, so filtering the result afterwards drops rows without moving the rate
+on the rows that remain.
 
-One call returning type, count, relative rate and document range, taking
-`min_freq` and a `by=` grouping column for subcorpus or diachronic
-breakdowns, would be the most-used function in the library and would retire
-the six-line incantation students currently copy.
+`docs/frequencies.md` documents it and is on the nav, and
+`docs/notebooks/frequencies.ipynb` now leads with the function, keeping the
+hand-rolled `group_by` once as the explanation of what it packages.
 
-Related and also absent from the docs: **stopword lists**, and any
-normalization helper beyond `is_letters` -- case folding is manual everywhere
-it appears.
+Three things are deliberately out rather than pending:
+
+- **A `by=` argument** for subcorpus or diachronic breakdowns. Getting it from
+  Polars' own `group_by` instead needs `frequency_list` to return an
+  expression, which was tried: it works, and the `.over()` aggregations are
+  correctly scoped inside `agg`, but it cannot sort itself, costs the caller
+  `.explode().unnest()` at every call site, runs about twice as slow at 20M
+  rows, and has no frame to check column names against. The frame form matches
+  `dispersion` and `keywords`; the breakdown can come back as `by=` later
+  without changing anything already shipped.
+- **Arguments that duplicate a frame operation.** `lowercase=`,
+  `letters_only=`, `min_freq=` and `min_range=` were all written, and all
+  removed once it was clear each had an exact equivalent the caller could
+  already write. Normalizing is `expr`'s job -- case folding is
+  `pl.col("token").str.to_lowercase()`, and a token `expr` evaluates to null is
+  dropped, so restricting what counts as a word is a `filter` on the corpus or
+  a `when`/`then`. Thresholding is `.filter(pl.col("freq") >= 10)` on the
+  result, which is the same rows in the same order, because the rate is
+  computed before either. The earlier survey asked for `min_freq` and for a
+  normalization helper by name; the answer to both is that the frame and the
+  expression were already the helper.
+
+  `dispersion` and `collocations` keep their `min_freq`, which is not the same
+  argument: there it guards a measure that misbehaves on rare words, rather
+  than tidying a result. A count of 1 is a perfectly good count.
+- **Stopword lists**, which the earlier survey listed here as missing. They are
+  an information-retrieval device rather than a linguistic one: the list is a
+  judgement about which words carry no meaning, made once, for no particular
+  question, and then applied to every question. A student who drops *not*, *no*
+  and *very* because a list says so has been taught to throw away the data
+  before looking at it. Whoever wants one can write `is_in` over their own
+  list, which is also the version they can defend.
 
 ## 3. Concordance workflow past generating one
 
@@ -169,13 +199,13 @@ above, they rank the same.
 
 ## If only three
 
-1. A real `frequency_list()` (section 2).
+1. ~~A real `frequency_list()` (section 2).~~ Done.
 2. Concordance sorting, sampling and export (section 3).
 3. `from_spacy()` (section 7), the one that most widens who can use the
    library at all.
 
-The first two are what a student opens AntConc for, and collocation is the
-only one of those staples the docs cover so far.
+The first two are what a student opens AntConc for. Frequency and collocation
+are now covered; the concordance is the staple still missing.
 
 Note how much of item 2 is writing rather than coding. That is not a discount
 on the work -- it is where the work is. Collocation is the evidence: the

@@ -10,12 +10,11 @@ from ._internal import Match, Opcode, OpcodeMatcher, Span
 from .cqp_parser import cqp
 from .search import LazySearchResults, SearchResults
 from .simple_parser import simple_to_cqp
-from .utils import as_eager, check_columns
+from .utils import DEFAULT_FILE_ID, as_eager, check_columns
 
 __all__ = ["search", "search_cqp", "Match", "Span"]
 
 DEFAULT_CHUNK_TOKENS = 10_000_000
-DEFAULT_FILE_ID = "file_id"
 
 
 def _col_name(i: int) -> str:

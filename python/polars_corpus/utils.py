@@ -12,6 +12,9 @@ from ._typing import IntoExpr, Measure, T_Frame
 
 __all__ = ["ngrams", "proportion", "is_letters"]
 
+# The column a corpus is expected to hold its file ids in.
+DEFAULT_FILE_ID = "file_id"
+
 
 def output_name(expr: IntoExprColumn) -> str:
     """Name of the column produced by `expr`.
@@ -148,6 +151,15 @@ def as_expr(expr: object, param: str = "expr", hint: str = "") -> pl.Expr:
         f"{param} must be a column name or a polars expression, "
         f"got {type(expr).__name__}"
     )
+
+
+def _check_count(value: object, param: str, hint: str = "") -> int:
+    """Check that `value` is a count: an integer, zero or more."""
+    if not isinstance(value, int) or value < 0:
+        raise ValueError(
+            f"{param} must be a non-negative integer, got {value!r}.{hint}"
+        )
+    return value
 
 
 def check_choice(value: object, options: Sequence[str], param: str = "method") -> str:

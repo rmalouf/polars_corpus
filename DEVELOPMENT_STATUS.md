@@ -1,6 +1,6 @@
 # Development Status - polars-corpus
 
-**Last updated:** 2026-08-26
+**Last updated:** 2026-08-27
 **Version:** 0.2.0-pre
 **Status:** Pre-release; core is stable, not yet published to PyPI
 
@@ -9,11 +9,11 @@
 ## Summary
 
 A corpus linguistics toolkit for Polars, split between a Python API and a Rust
-matching engine. Search, concordancing, collocation, keywords, dispersion, the
-statistical measures and the plots are all working and covered by tests.
-Collocation, the largest documentation hole in the last survey, is closed:
-`collocations()`, a reference page, and an annotated notebook on the docs
-site. It and `keywords()` both take a measure of your own -- a callable --
+matching engine. Search, concordancing, frequency lists, collocation, keywords,
+dispersion, the statistical measures and the plots are all working and covered
+by tests. Collocation and frequency lists, the two largest documentation holes
+in the last survey, are closed: `collocations()` and `frequency_list()`, a
+reference page each, and notebooks on the docs site. It and `keywords()` both take a measure of your own -- a callable --
 wherever they take a built-in measure's name. Documentation is otherwise
 mkdocs reference pages built from the docstrings, plus the example notebooks
 and a reference page for each of the two query languages; there is no
@@ -27,10 +27,10 @@ unit tests.
 
 | | |
 |---|---|
-| Python source | ~6,650 lines, 19 modules |
+| Python source | ~6,800 lines, 20 modules |
 | Rust source | ~1,100 lines, 6 files |
-| Tests | ~5,200 lines, 1,016 tests in 16 files |
-| Docs | 12 pages plus 6 example notebooks (mkdocs-material / mkdocstrings) |
+| Tests | ~5,450 lines, 1,059 tests in 17 files |
+| Docs | 13 pages plus 6 example notebooks (mkdocs-material / mkdocstrings) |
 | Examples | 8 notebooks, 3 scripts |
 
 ---
@@ -49,7 +49,12 @@ unit tests.
    a column per bound variable, interactive `ConcordanceWidget` (anywidget)
    with pagination and sorting. Context clips at file boundaries when the
    search named a `file_id_column`.
-3. **Collocation and keywords** — `collocations()` ranks the words around a
+3. **Frequency lists** — `frequency_list()` returns one row per type with
+   its count, its rate per `basis` words, and the number of files it occurs
+   in. Normalizing and thresholding are the caller's: a case fold in `expr`,
+   a `filter` on the corpus for what counts as a word, and a `filter` on the
+   result to drop the rare words.
+4. **Collocation and keywords** — `collocations()` ranks the words around a
    search's matches by one or more association measures; `collocates()`
    returns the window counts it is built on, and `keywords()` and `crosstab()`
    bundle frequencies into the same `freqs` struct the measures consume.
@@ -57,19 +62,19 @@ unit tests.
    of the chunk holding the match when given a `chunk_column`, which is how a
    span stops at a sentence boundary. Colligation is the same call over the
    `pos` column, or over a struct of token and tag; the notebook shows it.
-4. **Association measures** — PMI, MI3, log-dice, t-score, z-score,
+5. **Association measures** — PMI, MI3, log-dice, t-score, z-score,
    log-likelihood, chi-squared, minimum sensitivity, Kilgarriff's simple
    maths, Welch's t-test. `collocations()` and `keywords()` each take the
    measures that make sense for them by name, or a callable of your own with
    the same `(f12, f1, f2, n)` signature, ranked and named alongside the
    built-ins (`_apply_measure` in `assoc.py`).
-5. **Lexical diversity** — TTR, MSTTR, Yule's K, MTLD.
-6. **Lexical dispersion** — `dispersion()` with range, range%, sd, cv, cv%,
+6. **Lexical diversity** — TTR, MSTTR, Yule's K, MTLD.
+7. **Lexical dispersion** — `dispersion()` with range, range%, sd, cv, cv%,
    Juilland's D, Burch's DA, Gries's DP; several measures per call.
-7. **I/O** — `read_text_corpus()` / `scan_text_corpus()`, `from_nltk()`.
-8. **Chunking** — BIO tags to chunk IDs via `chunk_id()` / `with_chunk_index()`.
-9. **Polars integration** — `.corpus` namespace on Expr, DataFrame, LazyFrame.
-10. **Visualization** — `barcode_plot()`, `dispersion_plot()`, `keyword_plot()`,
+8. **I/O** — `read_text_corpus()` / `scan_text_corpus()`, `from_nltk()`.
+9. **Chunking** — BIO tags to chunk IDs via `chunk_id()` / `with_chunk_index()`.
+10. **Polars integration** — `.corpus` namespace on Expr, DataFrame, LazyFrame.
+11. **Visualization** — `barcode_plot()`, `dispersion_plot()`, `keyword_plot()`,
     on matplotlib from the `examples` extra. (The notebooks still import
     seaborn; the library itself no longer does.)
 
@@ -169,10 +174,9 @@ them produced only noise.
 **Coverage**
 
 See [FEATURE_GAPS.md](FEATURE_GAPS.md) for what the toolkit is still missing
-against what a linguist expects. Collocation, the big one at the last survey,
-is finished end to end -- function, reference page, notebook. Next are a
-`frequency_list()` function, concordance sorting and export, and
-`from_spacy()`.
+against what a linguist expects. Collocation and frequency lists, the big ones
+at the last two surveys, are finished end to end -- function, reference page,
+notebook. Next are concordance sorting and export, and `from_spacy()`.
 
 ---
 

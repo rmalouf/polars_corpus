@@ -11,6 +11,7 @@ from .cqp_parser import *  # noqa: F403
 from .dispersion import *  # noqa: F403
 from .embeddings import *  # noqa: F403
 from .exprs import *  # noqa: F403
+from .frequency import *  # noqa: F403
 from .keywords import *  # noqa: F403
 from .lexical import *  # noqa: F403
 from .matcher import *  # noqa: F403

@@ -9,7 +9,7 @@ import polars as pl
 from polars._typing import IntoExprColumn
 
 from ._internal import Match, Span, py_concordance, py_kwic, spans_to_chunks
-from .utils import as_eager, check_columns, output_name
+from .utils import _check_count, as_eager, check_columns, output_name
 
 if TYPE_CHECKING:
     from sentence_transformers import SentenceTransformer
@@ -64,15 +64,6 @@ def _check_variables(value: object, available: list[str]) -> list[str]:
                 f"{', '.join(available)}.{hint}"
             )
     return list(dict.fromkeys(names))
-
-
-def _check_count(value: object, param: str, hint: str = "") -> int:
-    """Check that `value` is a count: an integer, zero or more."""
-    if not isinstance(value, int) or value < 0:
-        raise ValueError(
-            f"{param} must be a non-negative integer, got {value!r}.{hint}"
-        )
-    return value
 
 
 def _window_span(

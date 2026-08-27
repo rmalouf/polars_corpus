@@ -4,6 +4,7 @@ from typing import Any, Optional
 
 import polars as pl
 
+from ._typing import IntoExpr
 from .assoc import (
     chisq,
     crosstab,
@@ -17,6 +18,7 @@ from .assoc import (
     zscore,
 )
 from .chunk import chunk_id, with_chunk_index
+from .frequency import frequency_list
 from .lexical import (
     count_hapaxes,
     frequency_spectrum,
@@ -190,6 +192,9 @@ class CorpusDataFrame:
     def crosstab(self, x: str, y: str, freqs_name: str = "freqs") -> pl.DataFrame:
         return crosstab(self._df, x, y, freqs_name)
 
+    def frequency_list(self, expr: IntoExpr = "token", **kwargs: Any) -> pl.DataFrame:
+        return frequency_list(self._df, expr, **kwargs)
+
     def with_chunk_index(self, chunk_column: str, **kwargs: Any) -> pl.DataFrame:
         return with_chunk_index(self._df, chunk_column, **kwargs)
 
@@ -207,6 +212,9 @@ class CorpusLazyFrame:
 
     def crosstab(self, x: str, y: str, freqs_name: str = "freqs") -> pl.LazyFrame:
         return crosstab(self._lf, x, y, freqs_name)
+
+    def frequency_list(self, expr: IntoExpr = "token", **kwargs: Any) -> pl.LazyFrame:
+        return frequency_list(self._lf, expr, **kwargs)
 
     def with_chunk_index(self, chunk_column: str, **kwargs: Any) -> pl.LazyFrame:
         return with_chunk_index(self._lf, chunk_column, **kwargs)
