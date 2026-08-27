@@ -203,24 +203,24 @@ def collocations(
         MEASURES[m] if isinstance(m, str) else _apply_measure(m, *FREQS)
         for m in methods
     ]
-    names = [expr.meta.output_name() for expr in exprs]
-
-    columns = ["collocate", pl.struct(pl.col(FREQS).cast(pl.UInt64)).alias("freqs")]
-    reserved = ["collocate", "freqs"]
+    columns = [
+        pl.col("collocate"),
+        pl.struct(pl.col(FREQS).cast(pl.UInt64)).alias("freqs"),
+    ]
     if file_id_column is not None:
-        columns.append("range")
-        reserved.append("range")
-    taken = [name for name in names if names.count(name) > 1 or name in reserved]
+        columns.append(pl.col("range"))
+    columns += exprs
+
+    names = [column.meta.output_name() for column in columns]
+    taken = [name for name in names if names.count(name) > 1]
     if taken:
         raise ValueError(
             f"two columns of the result would be called {sorted(set(taken))[0]!r}. "
             "Alias the measure that names it, e.g. .alias('my_measure')"
         )
 
-    result = (
-        result.with_columns(*exprs)
-        .select(*columns, *names)
-        .sort(by=names[0], descending=True)
+    result = result.select(*columns).sort(
+        by=exprs[0].meta.output_name(), descending=True
     )
 
     return result.collect(engine="streaming")
