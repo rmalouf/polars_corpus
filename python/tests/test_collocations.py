@@ -191,13 +191,19 @@ def test_no_file_ids_omits_range() -> None:
 
 def test_measures_rank_differently() -> None:
     # The point of offering several: PMI likes the rare word, t-score the
-    # frequent one, and here they disagree about "the".
-    result = collocations(fox(), "token", ["pmi", "tscore"], window=5, min_freq=1)
+    # frequent one. "sly" occurs once, next to a fox; "the" sits next to a fox
+    # six times but is just as common away from one.
+    corpus = pl.DataFrame(
+        {"token": ("a sly fox . " + "the fox . " * 6 + "the dog . " * 6).split()}
+    )
+    result = collocations(
+        search(corpus, "fox"), "token", ["pmi", "tscore"], window=1, min_freq=1
+    )
     by_pmi = result.sort("PMI", descending=True)["collocate"].to_list()
     by_t = result.sort("TScore", descending=True)["collocate"].to_list()
 
-    assert by_pmi != by_t
-    assert by_pmi.index("the") > by_t.index("the")
+    assert by_pmi.index("sly") < by_pmi.index("the")
+    assert by_t.index("the") < by_t.index("sly")
 
 
 @pytest.mark.parametrize(
