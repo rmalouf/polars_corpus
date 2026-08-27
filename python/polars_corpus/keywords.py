@@ -32,8 +32,8 @@ def keywords(
     reference: T_Frame,
     expr: IntoExpr,
     method: str,
-    min_target_tf: int = 0,
-    min_target_df: int = 0,
+    min_target_freq: int = 0,
+    min_target_range: int = 0,
     k: Optional[float] = None,
     file_id_column: str = "file_id",
 ) -> T_Frame:
@@ -59,18 +59,18 @@ def keywords(
          - 'pmi' : Pointwise Mutual Information
          - 'smp' : Kilgarriff's simple maths parameter (requires `k`)
          - 'ttest' : Welch's t-test on per-file relative frequencies
-    min_target_tf : int, default 0
-        Minimum term frequency in the target corpus required for a word to be
+    min_target_freq : int, default 0
+        Minimum frequency in the target corpus required for a word to be
         included in the results.
-    min_target_df : int, default 0
-        Minimum document frequency in the target corpus required for a word to be
-        included in the results.
+    min_target_range : int, default 0
+        Minimum range in the target corpus -- the number of distinct files a
+        word must occur in -- required for it to be included in the results.
     k: float, default None
         Constant added to both frequencies in Kilgarriff's "simple maths
         parameter"; larger values favor more frequent words. Required when
         `method` is 'smp' and unused otherwise.
     file_id_column : str, default "file_id"
-        Column holding file ids, used for document frequencies and for the
+        Column holding file ids, used for range counts and for the
         per-file relative frequencies underlying 'ttest'.
 
     Returns
@@ -82,11 +82,11 @@ def keywords(
         Every method but 'ttest' returns the frequency table with one column
         named for the measure. 'ttest' returns the words more frequent in the
         target, ranked by p-value ascending, with the target-corpus counts the
-        thresholds are applied to (`target_tf`, `target_df`) and the columns
+        thresholds are applied to (`target_freq`, `target_range`) and the columns
         `t`, `p`, `df`, and `g`. The test statistic `t` and the p-value `p`
         indicate the strength of evidence for an association, while Hedges' `g`
         is the effect size. Note that `df` here is the test's degrees of
-        freedom, not a document frequency.
+        freedom; a word's range is reported as `target_range`.
 
     Raises
     ------
@@ -115,7 +115,7 @@ def keywords(
     Examples
     --------
     >>> import polars_corpus as plc
-    >>> plc.keywords(target, reference, "lemma", "ll", min_target_df=5)
+    >>> plc.keywords(target, reference, "lemma", "ll", min_target_range=5)
     >>> plc.keywords(target, reference, "token", "ttest", file_id_column="text_id")
     """
     method = check_choice(method, METHODS)
@@ -150,17 +150,19 @@ def keywords(
 
     if method == "ttest":
         result = _keywords_ttest(
-            combined, keyword_name, min_target_tf, min_target_df, file_id_column
+            combined, keyword_name, min_target_freq, min_target_range, file_id_column
         )
     else:
         freq_table = crosstab(combined, keyword_name, PART_FIELD)
-        target_df = (
+        target_range = (
             combined.filter(pl.col(PART_FIELD) == "target")
             .group_by(keyword_name)
-            .agg(pl.col(file_id_column).n_unique().alias("target_df"))
+            .agg(pl.col(file_id_column).n_unique().alias("target_range"))
         )
-        freq_table = freq_table.join(target_df, on=keyword_name, how="left")
-        result = _keywords_assoc(freq_table, method, min_target_tf, min_target_df, k)
+        freq_table = freq_table.join(target_range, on=keyword_name, how="left")
+        result = _keywords_assoc(
+            freq_table, method, min_target_freq, min_target_range, k
+        )
 
     return collect_like(result, target)
 
@@ -168,8 +170,8 @@ def keywords(
 def _keywords_assoc(
     freq_table: pl.LazyFrame,
     method: str,
-    min_target_tf: int,
-    min_target_df: int,
+    min_target_freq: int,
+    min_target_range: int,
     k: Optional[float],
 ) -> pl.LazyFrame:
     """Rank keywords from a crosstab frequency table by association strength.
@@ -201,8 +203,8 @@ def _keywords_assoc(
 
     result = (
         freq_table.filter(
-            f12 >= min_target_tf,
-            pl.col("target_df") >= min_target_df,
+            f12 >= min_target_freq,
+            pl.col("target_range") >= min_target_range,
             pl.col(PART_FIELD) == "target",
         )
         .with_columns(assoc_expr)
@@ -215,15 +217,15 @@ def _keywords_assoc(
 def _keywords_ttest(
     combined: pl.LazyFrame,
     expr_name: str,
-    min_target_tf: int,
-    min_target_df: int,
+    min_target_freq: int,
+    min_target_range: int,
     file_id_column: str = "file_id",
 ) -> pl.LazyFrame:
     """Rank keywords by Welch's t-test on per-file relative frequencies.
 
     `combined` is the two corpora concatenated, with a `PART_FIELD` column
     marking which is which. Returns the words overrepresented in the target
-    (`t` > 0) that clear `min_target_tf` and `min_target_df`, sorted by p-value
+    (`t` > 0) that clear `min_target_freq` and `min_target_range`, sorted by p-value
     ascending, with the target counts and the test's `t`, `p`, `df`, and `g`
     (Hedges' g) columns alongside the word.
     """
@@ -231,8 +233,8 @@ def _keywords_ttest(
         combined.filter(pl.col(PART_FIELD) == "target")
         .group_by(expr_name)
         .agg(
-            target_tf=pl.len(),
-            target_df=pl.col(file_id_column).n_unique(),
+            target_freq=pl.len(),
+            target_range=pl.col(file_id_column).n_unique(),
         )
     )
 
@@ -271,10 +273,10 @@ def _keywords_ttest(
         .join(target_counts, on=expr_name, how="inner")
         .filter(
             pl.col("t") > 0,
-            pl.col("target_tf") >= min_target_tf,
-            pl.col("target_df") >= min_target_df,
+            pl.col("target_freq") >= min_target_freq,
+            pl.col("target_range") >= min_target_range,
         )
-        .select(expr_name, "target_tf", "target_df", "t", "p", "df", "g")
+        .select(expr_name, "target_freq", "target_range", "t", "p", "df", "g")
         .sort(by="p")
     )
     return result

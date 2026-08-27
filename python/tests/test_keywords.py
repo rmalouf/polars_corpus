@@ -3,11 +3,11 @@ import pytest
 from polars.testing import assert_frame_equal
 from polars_corpus import keywords
 
-# Target corpus. Per-word term frequency (tf) and document frequency (df):
-#   cat : tf=3, df=2 (t1, t2)
-#   dog : tf=2, df=1 (t1)
-#   fish: tf=1, df=1 (t3)
-#   the : tf=3, df=3 (t1, t2, t3)
+# Target corpus. Per-word frequency and range (files it occurs in):
+#   cat : freq=3, range=2 (t1, t2)
+#   dog : freq=2, range=1 (t1)
+#   fish: freq=1, range=1 (t3)
+#   the : freq=3, range=3 (t1, t2, t3)
 TARGET = pl.DataFrame(
     {
         "norm": ["cat", "cat", "cat", "dog", "dog", "fish", "the", "the", "the"],
@@ -23,8 +23,8 @@ REFERENCE = pl.DataFrame(
     }
 )
 
-# Expected target document frequencies keyed by word.
-TARGET_DF = {"cat": 2, "dog": 1, "fish": 1, "the": 3}
+# Expected target ranges (files each word occurs in), keyed by word.
+TARGET_RANGE = {"cat": 2, "dog": 1, "fish": 1, "the": 3}
 
 
 @pytest.mark.parametrize(
@@ -39,7 +39,7 @@ TARGET_DF = {"cat": 2, "dog": 1, "fish": 1, "the": 3}
 def test_keywords_assoc_structure(method: str, col: str, kwargs: dict) -> None:
     result = keywords(TARGET, REFERENCE, pl.col("norm"), method, **kwargs)
 
-    assert result.columns == ["norm", "freqs", "target_df", col]
+    assert result.columns == ["norm", "freqs", "target_range", col]
     # Only target-corpus words appear, and the part marker is dropped.
     assert set(result["norm"]) == {"cat", "dog", "fish", "the"}
     # Ranked by association strength, descending.
@@ -47,10 +47,10 @@ def test_keywords_assoc_structure(method: str, col: str, kwargs: dict) -> None:
     assert vals == sorted(vals, reverse=True)
 
 
-def test_keywords_target_df_values() -> None:
+def test_keywords_target_range_values() -> None:
     result = keywords(TARGET, REFERENCE, pl.col("norm"), "ll")
-    got = dict(zip(result["norm"], result["target_df"]))
-    assert got == TARGET_DF
+    got = dict(zip(result["norm"], result["target_range"]))
+    assert got == TARGET_RANGE
 
 
 @pytest.mark.parametrize(
@@ -62,18 +62,18 @@ def test_keywords_target_df_values() -> None:
 )
 def test_keywords_computed_term(term: pl.Expr) -> None:
     # A computed term is never materialized on `combined`; group_by evaluates it,
-    # and its output name must line up with the crosstab column for target_df.
+    # and its output name must line up with the crosstab column for target_range.
     target = pl.DataFrame(
         {"token": ["Cat", "CAT", "dog"], "file_id": ["t1", "t2", "t1"]}
     )
     reference = pl.DataFrame(
         {"token": ["The", "the", "dog"], "file_id": ["r1", "r2", "r1"]}
     )
-    result = keywords(target, reference, term, "ll", min_target_df=1)
+    result = keywords(target, reference, term, "ll", min_target_range=1)
 
     name = term.meta.output_name()
-    assert "target_df" in result.columns
-    got = dict(zip(result[name], result["target_df"]))
+    assert "target_range" in result.columns
+    got = dict(zip(result[name], result["target_range"]))
     assert got == {"cat": 2, "dog": 1}
 
 
@@ -104,12 +104,12 @@ def test_keywords_string_term(method: str) -> None:
     "threshold,value,expected",
     [
         # Thresholds are inclusive lower bounds (>=).
-        ("min_target_tf", 0, {"cat", "dog", "fish", "the"}),
-        ("min_target_tf", 2, {"cat", "dog", "the"}),  # fish (tf=1) excluded
-        ("min_target_tf", 3, {"cat", "the"}),  # dog (tf=2) also excluded
-        ("min_target_df", 0, {"cat", "dog", "fish", "the"}),
-        ("min_target_df", 2, {"cat", "the"}),  # dog/fish (df=1) excluded
-        ("min_target_df", 3, {"the"}),  # only "the" reaches df=3
+        ("min_target_freq", 0, {"cat", "dog", "fish", "the"}),
+        ("min_target_freq", 2, {"cat", "dog", "the"}),  # fish (freq=1) excluded
+        ("min_target_freq", 3, {"cat", "the"}),  # dog (freq=2) also excluded
+        ("min_target_range", 0, {"cat", "dog", "fish", "the"}),
+        ("min_target_range", 2, {"cat", "the"}),  # dog/fish (range=1) excluded
+        ("min_target_range", 3, {"the"}),  # only "the" reaches range=3
     ],
 )
 def test_keywords_frequency_thresholds(
@@ -142,11 +142,11 @@ def test_keywords_k_ignored_by_other_methods() -> None:
     [
         # ttest reports only the words overrepresented in the target, so "the"
         # is absent throughout; the thresholds cut that set down further.
-        ("min_target_tf", 0, {"cat", "dog", "fish"}),
-        ("min_target_tf", 2, {"cat", "dog"}),  # fish (tf=1) excluded
-        ("min_target_tf", 3, {"cat"}),  # dog (tf=2) also excluded
-        ("min_target_df", 2, {"cat"}),  # dog/fish (df=1) excluded
-        ("min_target_df", 3, set()),  # only "the" reaches df=3, and it is not key
+        ("min_target_freq", 0, {"cat", "dog", "fish"}),
+        ("min_target_freq", 2, {"cat", "dog"}),  # fish (freq=1) excluded
+        ("min_target_freq", 3, {"cat"}),  # dog (freq=2) also excluded
+        ("min_target_range", 2, {"cat"}),  # dog/fish (range=1) excluded
+        ("min_target_range", 3, set()),  # only "the" reaches range=3, and it is not key
     ],
 )
 def test_keywords_ttest_frequency_thresholds(
@@ -161,7 +161,7 @@ def test_keywords_ttest_thresholds_keep_statistics() -> None:
     # per-file relative frequencies the test is computed from, whose
     # denominator is every token in the file.
     full = keywords(TARGET, REFERENCE, pl.col("norm"), "ttest")
-    filtered = keywords(TARGET, REFERENCE, pl.col("norm"), "ttest", min_target_tf=2)
+    filtered = keywords(TARGET, REFERENCE, pl.col("norm"), "ttest", min_target_freq=2)
     assert_frame_equal(
         full.filter(pl.col("norm").is_in(filtered["norm"].implode())), filtered
     )
@@ -170,10 +170,18 @@ def test_keywords_ttest_thresholds_keep_statistics() -> None:
 def test_keywords_ttest() -> None:
     result = keywords(TARGET, REFERENCE, pl.col("norm"), "ttest")
 
-    assert result.columns == ["norm", "target_tf", "target_df", "t", "p", "df", "g"]
+    assert result.columns == [
+        "norm",
+        "target_freq",
+        "target_range",
+        "t",
+        "p",
+        "df",
+        "g",
+    ]
     # The target counts the thresholds cut on are reported alongside the test.
-    got = dict(zip(result["norm"], result["target_df"]))
-    assert got == {word: TARGET_DF[word] for word in result["norm"]}
+    got = dict(zip(result["norm"], result["target_range"]))
+    assert got == {word: TARGET_RANGE[word] for word in result["norm"]}
     # ttest only reports words overrepresented in the target (t > 0).
     assert (result["t"] > 0).all()
     # Hedges' g shares the t-statistic's sign.
@@ -241,7 +249,7 @@ def test_keywords_drops_null_terms(method: str, part: str) -> None:
 @pytest.mark.parametrize("part", ["target", "reference"])
 def test_keywords_drops_null_file_ids(method: str, part: str) -> None:
     # A token with no file id is in no document, so it must not add a document
-    # of its own to the counts `min_target_df` and 'ttest' work from.
+    # of its own to the counts `min_target_range` and 'ttest' work from.
     frames = {"target": TARGET, "reference": REFERENCE}
     dropped = {
         part: frames[part].filter(pl.col("file_id") != frames[part]["file_id"][0])
@@ -264,7 +272,7 @@ def test_keywords_drops_null_file_ids(method: str, part: str) -> None:
 
 def test_keywords_null_file_id_not_a_document() -> None:
     # "the" is in all three target files; blanking one file id must leave it a
-    # document frequency of 2, not 3 with null counted as a file of its own.
+    # range of 2, not 3 with null counted as a file of its own.
     target = TARGET.with_columns(
         pl.when(pl.col("file_id") == "t3")
         .then(None)
@@ -272,7 +280,7 @@ def test_keywords_null_file_id_not_a_document() -> None:
         .alias("file_id")
     )
     result = keywords(target, REFERENCE, "norm", "ll")
-    assert dict(zip(result["norm"], result["target_df"])) == {
+    assert dict(zip(result["norm"], result["target_range"])) == {
         "cat": 2,
         "dog": 1,
         "the": 2,
