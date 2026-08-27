@@ -4,10 +4,21 @@ from typing import Optional
 
 import polars as pl
 
-from ._typing import IntoExpr
-from .assoc import chisq, logdice, loglik, mi3, minsens, pmi, tscore, zscore
+from ._typing import IntoExpr, Measure
+from .assoc import (
+    FREQS,
+    _apply_measure,
+    chisq,
+    logdice,
+    loglik,
+    mi3,
+    minsens,
+    pmi,
+    tscore,
+    zscore,
+)
 from .search import LazySearchResults, SearchResults, _check_count, _window_span
-from .utils import as_expr, check_choices, check_expr
+from .utils import as_expr, check_expr, check_measures
 
 __all__ = [
     "collocations",
@@ -38,13 +49,11 @@ COLUMNS = {
     "minsens": "MinSens",
 }
 
-FREQS = ("f12", "f1", "f2", "n")
-
 
 def collocations(
     results: SearchResults | LazySearchResults,
     expr: IntoExpr,
-    method: str | list[str],
+    method: str | Measure | list[str | Measure],
     window: int | tuple[int, int] = 5,
     chunk_column: Optional[str] = None,
     min_freq: int = 5,
@@ -68,7 +77,7 @@ def collocations(
         Column name or expression identifying the collocates (e.g. token or
         lemma). It must produce a single column, though that column may be a
         struct: `pl.struct("lemma", "pos")` collocates on the pair.
-    method : str | list of str
+    method : str | callable | list
         [Association metric](assoc.md) to rank the collocates by, or a list of
         them to compute together:
 
@@ -81,6 +90,10 @@ def collocations(
         - 'tscore' : t-score, which favors frequent words
         - 'zscore' : z-score
         - 'minsens' : Minimum sensitivity
+
+        `method` can also be a `Callable` which takes the four counts `f12`, `f1`, `f2`
+         and `n` described under `Returns`. It receives them as Polars expressions
+         and returns one expression.
     window : int or (int, int), default 5
         Words to take on each side of a match. To define an asymmetric window,
         pass a pair: `(0, 5)` collects only what follows a match and `(5, 0)` only what precedes it.
@@ -114,9 +127,11 @@ def collocations(
     ------
     ValueError
         If `results` is None; if `expr` does not identify a single column of the
-        corpus; if `method` is not one of the measures listed above, or a list of
-        them; if `window` includes no context; or if `min_range` is asked for
-        over results with no file id column.
+        corpus; if `method` is not one of the measures listed above, a function,
+        or a list of them; if a measure of your own returns something that is
+        not an expression, has no name to give its column, or names a column the
+        result already holds; if `window` includes no context; or if `min_range`
+        is asked for over results with no file id column.
 
     See Also
     --------
@@ -152,8 +167,12 @@ def collocations(
     >>> plc.collocations(results, "lemma", "ll", chunk_column="sentence_tag")
     >>> # Drop collocations that come from just a handful of texts:
     >>> plc.collocations(results, "lemma", "ll", min_freq=10, min_range=5)
+    >>> # A measure of your own, ranked beside one that ships:
+    >>> def log_ratio(f12, f1, f2, n):
+    ...     return ((f12 / f1) / ((f2 - f12) / (n - f1))).log(2)
+    >>> plc.collocations(results, "lemma", ["ll", log_ratio])
     """
-    methods = check_choices(method, METHODS)
+    methods = check_measures(method, METHODS)
     span = _window_span(window, chunk_column)
     _check_count(min_freq, "min_freq", " Use min_freq=0 to keep them all.")
     _check_count(min_range, "min_range")
@@ -201,15 +220,30 @@ def collocations(
         "zscore": zscore(*FREQS).alias("ZScore"),
         "minsens": minsens(*FREQS).alias("MinSens"),
     }
+    # The built-ins are aliased above and a measure of the caller's own is
+    # aliased by `_apply_measure`, so each expression carries its own column name.
+    exprs = [
+        measures[m] if isinstance(m, str) else _apply_measure(m, *FREQS)
+        for m in methods
+    ]
+    names = [expr.meta.output_name() for expr in exprs]
+
     columns = ["collocate", pl.struct(pl.col(FREQS).cast(pl.UInt64)).alias("freqs")]
+    reserved = ["collocate", "freqs"]
     if file_id_column is not None:
         columns.append("range")
-    columns += [COLUMNS[m] for m in methods]
+        reserved.append("range")
+    taken = [name for name in names if names.count(name) > 1 or name in reserved]
+    if taken:
+        raise ValueError(
+            f"two columns of the result would be called {sorted(set(taken))[0]!r}. "
+            "Alias the measure that names it, e.g. .alias('my_measure')"
+        )
 
     result = (
-        result.with_columns(*(measures[m] for m in methods))
-        .select(columns)
-        .sort(by=COLUMNS[methods[0]], descending=True)
+        result.with_columns(*exprs)
+        .select(*columns, *names)
+        .sort(by=names[0], descending=True)
     )
 
     return result.collect(engine="streaming")

@@ -5,13 +5,22 @@ from typing import Optional
 
 import polars as pl
 
-from ._typing import IntoExpr, T_Frame
-from .assoc import chisq, crosstab, loglik, minsens, pmi, smp, welchs_t_from_stats
+from ._typing import IntoExpr, Measure, T_Frame
+from .assoc import (
+    _apply_measure,
+    chisq,
+    crosstab,
+    loglik,
+    minsens,
+    pmi,
+    smp,
+    welchs_t_from_stats,
+)
 from .utils import (
     as_corpus,
     as_expr,
-    check_choice,
     check_columns,
+    check_measure,
     check_expr,
     collect_like,
 )
@@ -31,7 +40,7 @@ def keywords(
     target: T_Frame,
     reference: T_Frame,
     expr: IntoExpr,
-    method: str,
+    method: str | Measure,
     min_target_freq: int = 0,
     min_target_range: int = 0,
     k: Optional[float] = None,
@@ -50,7 +59,7 @@ def keywords(
         Column name or expression identifying the word/type to compute keyness
         for (e.g., token or lemma). Note that `expr` is evaluated against the
         combined target+reference corpora.
-    method : {'chisq', 'll', 'minsens', 'pmi', 'smp', 'ttest'}
+    method : str | callable
         [Association metric](assoc.md) used to rank keywords:
 
          - 'chisq' : Pearson's chi-squared (χ²)
@@ -59,6 +68,10 @@ def keywords(
          - 'pmi' : Pointwise Mutual Information
          - 'smp' : Kilgarriff's simple maths parameter (requires `k`)
          - 'ttest' : Welch's t-test on per-file relative frequencies
+
+         `method` can also be a `Callable` which takes the four counts `f12`, `f1`, `f2`
+         and `n` described under `Returns`. It receives them as Polars expressions
+         and returns one expression.
     min_target_freq : int, default 0
         Minimum frequency in the target corpus required for a word to be
         included in the results.
@@ -94,8 +107,9 @@ def keywords(
         If `target` or `reference` is not a Polars DataFrame or LazyFrame, is
         empty, or is missing a column `keywords` needs; if `expr` is not a
         column name or expression; if `method` is not one of the measures
-        listed above; or if `method` is 'smp' and `k` is missing or not
-        positive.
+        listed above or a function; if a measure of your own returns something
+        that is not an expression, or has no name to give its column; or if
+        `method` is 'smp' and `k` is missing or not positive.
 
     Notes
     -----
@@ -117,8 +131,12 @@ def keywords(
     >>> import polars_corpus as plc
     >>> plc.keywords(target, reference, "lemma", "ll", min_target_range=5)
     >>> plc.keywords(target, reference, "token", "ttest", file_id_column="text_id")
+    >>> # A measure of your own:
+    >>> def log_ratio(f12, f1, f2, n):
+    ...     return ((f12 / f1) / ((f2 - f12) / (n - f1))).log(2)
+    >>> plc.keywords(target, reference, "lemma", log_ratio, min_target_freq=10)
     """
-    method = check_choice(method, METHODS)
+    method = check_measure(method, METHODS)
     keyword_expr = as_expr(expr)
     if method == "smp":
         if k is None:
@@ -169,7 +187,7 @@ def keywords(
 
 def _keywords_assoc(
     freq_table: pl.LazyFrame,
-    method: str,
+    method: str | Measure,
     min_target_freq: int,
     min_target_range: int,
     k: Optional[float],
@@ -198,8 +216,10 @@ def _keywords_assoc(
         case "smp":
             assert k is not None
             assoc_expr = smp(f12, f1, f2, n, k).alias("SMP")
-        case _:
+        case str():
             raise ValueError(f"Unknown method {method!r}")
+        case _:
+            assoc_expr = _apply_measure(method, f12, f1, f2, n)
 
     result = (
         freq_table.filter(
@@ -268,8 +288,6 @@ def _keywords_ttest(
         )
         .select(expr_name, "t_test")
         .unnest("t_test")
-        # An inner join: a word absent from the target has no counts, and with
-        # a target mean of zero it can never come out of the test as a keyword.
         .join(target_counts, on=expr_name, how="inner")
         .filter(
             pl.col("t") > 0,

@@ -141,8 +141,9 @@ Type after ` : `, written for a reader, not copied from the annotation:
 ```
 corpus : DataFrame | LazyFrame
 expr : IntoExpr
-method : {'chisq', 'll', 'minsens', 'pmi', 'smp', 'ttest'}
+alt : {'greater', 'less', 'twosided'}, default 'twosided'
 method : str | list of str
+method : str | callable | list
 min_freq : int, default 0
 ax : Axes, optional
 **kwargs
@@ -150,6 +151,14 @@ ax : Axes, optional
 
 - A fixed set of string choices goes in braces, alphabetical, or is spelled out
   as a bullet list in the body when each needs a gloss.
+- **Braces only when the set really is the whole story.** mkdocstrings parses
+  the braces as a choice set, drops anything written after the closing brace,
+  and renders the first choice as a `default:` whether or not the parameter has
+  one. So `{'chisq', ..., 'ttest'} or callable` loses the `or callable` and
+  gains a `default: 'chisq'` that does not exist. A parameter that also takes a
+  function gets `str | callable` (`keywords`) or `str | callable | list`
+  (`collocations`), with the choices as a bullet list below. A parameter
+  that takes only strings keeps `str | list of str` (`dispersion`).
 - `default X` for a value the reader would want to know; `optional` when the
   default is "not given" and the body explains what happens then.
 - Backtick parameter names, column names, and code in prose: `` `min_freq` ``.

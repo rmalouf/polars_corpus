@@ -6,7 +6,7 @@ import polars as pl
 from polars._typing import IntoExprColumn
 from polars.plugins import register_plugin_function
 
-from ._typing import IntoExpr, T_Frame
+from ._typing import IntoExpr, Measure, T_Frame
 from .utils import (
     as_corpus,
     as_expr,
@@ -32,6 +32,13 @@ __all__ = [
 LIB = Path(__file__).parent
 
 ALTERNATIVES = ("twosided", "greater", "less")
+
+# The four contingency table counts every measure is written over, in the
+# order they are passed. Also the column names `crosstab` gives them.
+FREQS = ("f12", "f1", "f2", "n")
+
+# Names polars gives an expression that was never aliased.
+_DEFAULT_NAMES = FREQS + ("literal",)
 
 
 def _as_freqs(
@@ -116,6 +123,35 @@ def crosstab(corpus: T_Frame, x: IntoExprColumn, y: IntoExprColumn) -> T_Frame:
         .drop("f12")
     )
     return collect_like(result, corpus)
+
+
+def _apply_measure(
+    fn: Measure, f12: IntoExpr, f1: IntoExpr, f2: IntoExpr, n: IntoExpr
+) -> pl.Expr:
+    """Compute a measure a caller wrote, and name the column it produces.
+
+    `fn` gets the four counts as Float64 expressions, the same ones the built-in
+    measures work from. Its column takes the name `fn` aliased its result with,
+    or `fn`'s own name when it aliased nothing. An expression carrying no alias
+    reports a name polars supplied for it -- the leftmost count it reads, or
+    "literal" when it starts from a constant -- which is what `_DEFAULT_NAMES`
+    catches.
+    """
+    expr = fn(*_as_freqs(f12, f1, f2, n))
+    if not isinstance(expr, pl.Expr):
+        raise ValueError(
+            "a measure must return a polars expression built from the four "
+            f"counts it is given, but this one returned {type(expr).__name__}"
+        )
+    name = expr.meta.output_name(raise_if_undetermined=False)
+    if not name or name in _DEFAULT_NAMES:
+        name = getattr(fn, "__name__", "")
+        if not name or name == "<lambda>":
+            raise ValueError(
+                "a measure needs a name for the column it produces. Define it "
+                "with def, or alias what it returns, e.g. .alias('my_measure')"
+            )
+    return expr.alias(name)
 
 
 def pmi(f12: IntoExpr, f1: IntoExpr, f2: IntoExpr, n: IntoExpr) -> pl.Expr:

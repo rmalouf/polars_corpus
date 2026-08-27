@@ -8,6 +8,8 @@ from polars_corpus.utils import (
     check_choices,
     check_columns,
     check_expr,
+    check_measure,
+    check_measures,
     collect_like,
     is_letters,
     proportion,
@@ -212,6 +214,45 @@ def test_check_choices_normalizes(value: object, expected: list[str]) -> None:
 def test_check_choices_rejects(value: object, match: str) -> None:
     with pytest.raises(ValueError, match=match):
         check_choices(value, METHODS)
+
+
+def a_measure(f12: pl.Expr, f1: pl.Expr, f2: pl.Expr, n: pl.Expr) -> pl.Expr:
+    return f12 / f1
+
+
+@pytest.mark.parametrize("value,expected", [("LL", "ll"), (a_measure, a_measure)])
+def test_check_measure_passes_functions_through(
+    value: object, expected: object
+) -> None:
+    assert check_measure(value, METHODS) == expected
+
+
+@pytest.mark.parametrize(
+    "value,expected",
+    [
+        (a_measure, [a_measure]),  # one measure is a list of one
+        ([a_measure], [a_measure]),
+        (["ll", a_measure], ["ll", a_measure]),  # kept in the order asked for
+        ([a_measure, "LL", "ll"], [a_measure, "ll"]),  # repeats dropped
+        ([a_measure, a_measure], [a_measure]),  # including repeated functions
+    ],
+)
+def test_check_measures_normalizes(value: object, expected: list[object]) -> None:
+    assert check_measures(value, METHODS) == expected
+
+
+@pytest.mark.parametrize(
+    "value,match",
+    [
+        ([], "method is empty"),
+        ([a_measure, "bogus"], "Unknown method 'bogus'"),
+        (3, "a function, or a list of them; got int"),
+        ([None], "got NoneType"),
+    ],
+)
+def test_check_measures_rejects(value: object, match: str) -> None:
+    with pytest.raises(ValueError, match=match):
+        check_measures(value, METHODS)
 
 
 @pytest.mark.parametrize("expr", ["count", pl.col("count")])

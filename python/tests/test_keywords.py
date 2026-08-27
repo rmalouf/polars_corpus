@@ -2,6 +2,7 @@ import polars as pl
 import pytest
 from polars.testing import assert_frame_equal
 from polars_corpus import keywords
+from polars_corpus.assoc import chisq, loglik, minsens, pmi
 
 # Target corpus. Per-word frequency and range (files it occurs in):
 #   cat : freq=3, range=2 (t1, t2)
@@ -292,6 +293,77 @@ def test_keywords_lazy_drops_nulls() -> None:
     target = pl.concat([TARGET, NULL_ROWS]).lazy()
     got = keywords(target, REFERENCE.lazy(), "norm", "ll").collect()
     assert None not in got["norm"].to_list()
+
+
+# --- Measures of the caller's own ---------------------------------------------
+
+# The four built-ins that are plain functions of the counts. 'smp' takes an
+# extra k and 'ttest' is not a function of the counts at all, so both are out.
+BUILTIN_FUNCTIONS = [
+    ("pmi", "PMI", pmi),
+    ("ll", "LogLik", loglik),
+    ("chisq", "ChiSq", chisq),
+    ("minsens", "MinSens", minsens),
+]
+
+
+def log_ratio(f12: pl.Expr, f1: pl.Expr, f2: pl.Expr, n: pl.Expr) -> pl.Expr:
+    """A measure the library does not ship (Hardie 2014)."""
+    return ((f12 / f1) / ((f2 - f12) / (n - f1))).log(2)
+
+
+def named_by_alias(f12: pl.Expr, f1: pl.Expr, f2: pl.Expr, n: pl.Expr) -> pl.Expr:
+    return log_ratio(f12, f1, f2, n).alias("LogRatio")
+
+
+@pytest.mark.parametrize(
+    "method,col,function", BUILTIN_FUNCTIONS, ids=[m for m, _, _ in BUILTIN_FUNCTIONS]
+)
+def test_keywords_builtin_function_matches_its_name(
+    method: str, col: str, function
+) -> None:
+    """Passing a measure's function ranks exactly as naming it does."""
+    by_name = keywords(TARGET, REFERENCE, "norm", method)
+    by_function = keywords(TARGET, REFERENCE, "norm", function)
+
+    assert by_function.columns[-1] == function.__name__
+    assert_frame_equal(
+        by_function.rename({function.__name__: col}), by_name, check_row_order=False
+    )
+
+
+@pytest.mark.parametrize(
+    "measure,column",
+    [(log_ratio, "log_ratio"), (named_by_alias, "LogRatio")],
+    ids=["named by def", "named by alias"],
+)
+def test_keywords_own_measure(measure, column: str) -> None:
+    result = keywords(TARGET, REFERENCE, "norm", measure)
+
+    assert result.columns == ["norm", "freqs", "target_range", column]
+    # Ranked strongest first, as the built-in measures are.
+    assert result[column].to_list() == sorted(result[column], reverse=True)
+    fields = [pl.col("freqs").struct.field(name) for name in ("f12", "f1", "f2", "n")]
+    expected = result.select(measure(*fields)).to_series()
+    assert result[column].to_list() == pytest.approx(expected.to_list())
+
+
+def test_keywords_own_measure_still_warns_about_k() -> None:
+    with pytest.warns(UserWarning, match="only used when method='smp'"):
+        keywords(TARGET, REFERENCE, "norm", log_ratio, k=1)
+
+
+@pytest.mark.parametrize(
+    "measure,message",
+    [
+        (lambda f12, f1, f2, n: f12 / f1, "needs a name for the column"),
+        (lambda f12, f1, f2, n: 3, "must return a polars expression"),
+    ],
+    ids=["unnamed", "not an expression"],
+)
+def test_keywords_bad_own_measure(measure, message: str) -> None:
+    with pytest.raises(ValueError, match=message):
+        keywords(TARGET, REFERENCE, "norm", measure)
 
 
 def test_keywords_invalid_method() -> None:

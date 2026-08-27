@@ -7,7 +7,7 @@ from typing import cast, Optional
 import polars as pl
 from polars._typing import IntoExprColumn
 
-from ._typing import IntoExpr, T_Frame
+from ._typing import IntoExpr, Measure, T_Frame
 
 
 __all__ = ["ngrams", "proportion", "is_letters"]
@@ -191,6 +191,42 @@ def check_choices(
             f"{param} is empty; name at least one of: {', '.join(options)}"
         )
     return list(dict.fromkeys(check_choice(item, options, param) for item in value))
+
+
+def check_measure(
+    value: object, options: Sequence[str], param: str = "method"
+) -> str | Measure:
+    """Match `value` against `options`, or pass a user-written measure through.
+
+    A callable is taken as a measure of the caller's own and returned unchanged;
+    anything else is normalized as `check_choice` normalizes it.
+    """
+    if callable(value):
+        return cast(Measure, value)
+    return check_choice(value, options, param)
+
+
+def check_measures(
+    value: object, options: Sequence[str], param: str = "method"
+) -> list[str | Measure]:
+    """Match `value`, one measure or a list of them, against `options`.
+
+    As `check_choices`, but a callable item passes through as a measure of the
+    caller's own. Repeats are dropped, keeping the order asked for.
+    """
+    if isinstance(value, str) or callable(value):
+        return [check_measure(value, options, param)]
+    if not isinstance(value, (list, tuple)):
+        raise ValueError(
+            f"{param} must be one of {', '.join(options)}, a function, or a "
+            f"list of them; got {type(value).__name__}"
+        )
+    if not value:
+        raise ValueError(
+            f"{param} is empty; name at least one of: {', '.join(options)}"
+        )
+    # remove duplicate methods
+    return list(dict.fromkeys(check_measure(item, options, param) for item in value))
 
 
 def ngrams(n: int, in_expr: IntoExpr, as_str: bool = True) -> pl.Expr:

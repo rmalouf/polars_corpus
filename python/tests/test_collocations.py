@@ -218,6 +218,104 @@ def test_bad_arguments(kwargs: dict, message: str) -> None:
         collocations(fox(), **args)
 
 
+# --- Measures of the caller's own ---------------------------------------------
+
+# The eight built-ins that are plain functions of the four counts. 'freq' is a
+# bare column reference and has no function form, so it is left out.
+BUILTIN_FUNCTIONS = [
+    ("pmi", pmi),
+    ("mi3", mi3),
+    ("logdice", logdice),
+    ("ll", loglik),
+    ("chisq", chisq),
+    ("tscore", tscore),
+    ("zscore", zscore),
+    ("minsens", minsens),
+]
+
+
+def log_ratio(f12: pl.Expr, f1: pl.Expr, f2: pl.Expr, n: pl.Expr) -> pl.Expr:
+    """A measure the library does not ship (Hardie 2014)."""
+    return ((f12 / f1) / ((f2 - f12) / (n - f1))).log(2)
+
+
+def named_by_alias(f12: pl.Expr, f1: pl.Expr, f2: pl.Expr, n: pl.Expr) -> pl.Expr:
+    return log_ratio(f12, f1, f2, n).alias("LogRatio")
+
+
+@pytest.mark.parametrize(
+    "method,function", BUILTIN_FUNCTIONS, ids=[m for m, _ in BUILTIN_FUNCTIONS]
+)
+def test_builtin_function_matches_its_name(method: str, function) -> None:
+    """Passing a measure's function ranks exactly as naming it does."""
+    by_name = collocations(fox(), "token", method, window=2, min_freq=1)
+    by_function = collocations(fox(), "token", function, window=2, min_freq=1)
+
+    assert by_function.columns[-1] == function.__name__
+    # Keyed by collocate: equal scores tie, and ties do not sort predictably.
+    scored = dict(zip(by_function["collocate"], by_function[function.__name__]))
+    assert scored == pytest.approx(
+        dict(zip(by_name["collocate"], by_name[COLUMNS[method]]))
+    )
+
+
+@pytest.mark.parametrize(
+    "measure,column",
+    [(log_ratio, "log_ratio"), (named_by_alias, "LogRatio")],
+)
+def test_own_measure_names_its_column(measure, column: str) -> None:
+    """The function's name, or the alias it puts on what it returns."""
+    result = collocations(fox(), "token", measure, window=2, min_freq=1)
+
+    assert result.columns == ["collocate", "freqs", "range", column]
+    expected = result.select(measure(*FIELDS)).to_series()
+    assert result[column].to_list() == pytest.approx(expected.to_list())
+
+
+def test_own_measure_beside_builtins() -> None:
+    result = collocations(
+        fox(), "token", ["ll", log_ratio, "pmi"], window=2, min_freq=1
+    )
+
+    # Columns in the order asked for, ranked by the first of them.
+    assert result.columns == [
+        "collocate",
+        "freqs",
+        "range",
+        "LogLik",
+        "log_ratio",
+        "PMI",
+    ]
+    assert result["LogLik"].to_list() == sorted(result["LogLik"], reverse=True)
+
+
+def test_own_measure_ranks_when_it_comes_first() -> None:
+    result = collocations(fox(), "token", [log_ratio, "ll"], window=2, min_freq=1)
+
+    assert result["log_ratio"].to_list() == sorted(result["log_ratio"], reverse=True)
+
+
+@pytest.mark.parametrize(
+    "measure,message",
+    [
+        (lambda f12, f1, f2, n: f12 / f1, "needs a name for the column"),
+        (lambda f12, f1, f2, n: 3, "must return a polars expression"),
+        (
+            lambda f12, f1, f2, n: (f12 / f1).alias("range"),
+            "would be called 'range'",
+        ),
+        (
+            lambda f12, f1, f2, n: (f12 / f1).alias("LogLik"),
+            "would be called 'LogLik'",
+        ),
+    ],
+    ids=["unnamed", "not an expression", "reserved column", "clashes with builtin"],
+)
+def test_bad_own_measure(measure, message: str) -> None:
+    with pytest.raises(ValueError, match=message):
+        collocations(fox(), "token", ["ll", measure], window=2, min_freq=1)
+
+
 def test_min_range_needs_file_ids() -> None:
     with pytest.raises(ValueError, match="no file ids"):
         collocations(fox(file_id_column=None), "token", "ll", min_range=2)
