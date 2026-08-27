@@ -11,8 +11,10 @@
 A corpus linguistics toolkit for Polars, split between a Python API and a Rust
 matching engine. Search, concordancing, collocation, keywords, dispersion, the
 statistical measures and the plots are all working and covered by tests.
-Collocation, the largest documentation hole in the last survey, now has a
-`collocations()` function and a reference page. Documentation is otherwise
+Collocation, the largest documentation hole in the last survey, is closed:
+`collocations()`, a reference page, and an annotated notebook on the docs
+site. It and `keywords()` both take a measure of your own -- a callable --
+wherever they take a built-in measure's name. Documentation is otherwise
 mkdocs reference pages built from the docstrings, plus the example notebooks
 and a reference page for each of the two query languages; there is no
 narrative guide. The main functional gap is proximity operators in the Simple
@@ -25,10 +27,10 @@ unit tests.
 
 | | |
 |---|---|
-| Python source | ~6,500 lines, 19 modules |
+| Python source | ~6,650 lines, 19 modules |
 | Rust source | ~1,100 lines, 6 files |
-| Tests | ~5,000 lines, 980 tests in 16 files |
-| Docs | 12 pages plus 5 example notebooks (mkdocs-material / mkdocstrings) |
+| Tests | ~5,200 lines, 1,016 tests in 16 files |
+| Docs | 12 pages plus 6 example notebooks (mkdocs-material / mkdocstrings) |
 | Examples | 8 notebooks, 3 scripts |
 
 ---
@@ -53,10 +55,14 @@ unit tests.
    bundle frequencies into the same `freqs` struct the measures consume.
    Windows are symmetric or asymmetric (`window=(5, 0)`), or run to the edges
    of the chunk holding the match when given a `chunk_column`, which is how a
-   span stops at a sentence boundary.
+   span stops at a sentence boundary. Colligation is the same call over the
+   `pos` column, or over a struct of token and tag; the notebook shows it.
 4. **Association measures** — PMI, MI3, log-dice, t-score, z-score,
    log-likelihood, chi-squared, minimum sensitivity, Kilgarriff's simple
-   maths, Welch's t-test.
+   maths, Welch's t-test. `collocations()` and `keywords()` take any of them
+   by name, or a callable of your own with the same `(f12, f1, f2, n)`
+   signature, ranked and named alongside the built-ins (`_apply_measure` in
+   `assoc.py`).
 5. **Lexical diversity** — TTR, MSTTR, Yule's K, MTLD.
 6. **Lexical dispersion** — `dispersion()` with range, range%, sd, cv, cv%,
    Juilland's D, Burch's DA, Gries's DP; several measures per call.
@@ -70,7 +76,11 @@ unit tests.
 ### Incomplete
 
 - **`visualizations.py`** — the three plots above work and are tested; the
-  mosaic plot from a crosstab and the collocation graph are still TODOs.
+  mosaic plot from a crosstab is still a TODO. So is a plot of collocates,
+  but not as the collocation graph the file's TODO names: networks are not
+  the direction, and clustering the collocate space -- spectral clustering
+  is the likeliest first try -- is the shape to explore instead. Either way
+  it is a task of its own, not part of `collocations()`.
 
 ### Not implemented
 
@@ -89,6 +99,10 @@ unit tests.
 
   Sentence-level proximity (`<<s>>`) additionally needs a sentence boundary
   column, which `with_chunk_index()` can already supply.
+- **Dependency-based collocation** (word sketches). Out of scope here: the
+  library's data format is flat and nothing in it reads dependency arcs.
+  Dependency annotation is a separate project, which this one may link to
+  later.
 - **Parallel chunk processing.** The lazy search loop is sequential; Polars
   already parallelizes the mask expressions within each chunk, and on the BNC
   the chunked search runs as fast as the eager one, so threading the loop has
@@ -156,9 +170,9 @@ them produced only noise.
 
 See [FEATURE_GAPS.md](FEATURE_GAPS.md) for what the toolkit is still missing
 against what a linguist expects. Collocation, the big one at the last survey,
-is now written; what is left there is a notebook to go with the reference
-page. Next are a `frequency_list()` function, concordance sorting and export,
-and `from_spacy()`.
+is finished end to end -- function, reference page, notebook. Next are a
+`frequency_list()` function, concordance sorting and export, and
+`from_spacy()`.
 
 ---
 

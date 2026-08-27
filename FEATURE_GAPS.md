@@ -3,7 +3,7 @@
 **Last updated:** 2026-08-26
 **Scope:** what to add to cover the basic corpus-analysis toolkit
 
-This is a survey of the documentation -- the twelve reference pages, the five
+This is a survey of the documentation -- the twelve reference pages, the six
 example notebooks, `mkdocs.yml`, the README -- against what a linguist expects
 a corpus tool to do.
 
@@ -18,33 +18,32 @@ isn't there yet.
 
 ---
 
-## 1. Collocation
+## 1. Collocation -- closed
 
-Mostly closed since the last survey. `collocations()` takes a search and
-returns its collocates ranked by one or more association measures, which is
-the path from a node word to a ranked list that nothing showed before;
-`docs/collocations.md` documents it and is on the nav. log-dice and MI3
-landed alongside t-score and z-score, so the two most-reported scores in the
-literature are no longer missing. Windows take an asymmetric `(left, right)`
-pair for L5/R5 spans, and a `chunk_column` runs the window to the edges of
-the chunk holding the match instead, so a sentence tag column gives a span
-that stops at the sentence boundary.
+`collocations()` takes a search and returns its collocates ranked by one or
+more association measures; `docs/collocations.md` documents it,
+`docs/notebooks/collocation.ipynb` is annotated and on the nav, and log-dice
+and MI3 landed alongside t-score and z-score, so the two most-reported scores
+in the literature are no longer missing. Windows take an asymmetric
+`(left, right)` pair for L5/R5 spans, and a `chunk_column` runs the window to
+the edges of the chunk holding the match instead, so a sentence tag column
+gives a span that stops at the sentence boundary. A measure the library does
+not ship goes in the same argument as one it does, as a callable.
 
-What is left:
+Three things are deliberately out rather than pending:
 
-- **A notebook.** `docs/notebooks/collocation.ipynb` is a working draft --
-  unannotated, not in the nav, and not counted as documentation. Until it is
-  written the reference page carries the whole topic, and every other measure
-  in the library has a notebook making the case for when to reach for it.
-- **Colligation.** Collocates over the `pos` column rather than `token`, or
-  over a struct of both. `expr=` already reaches it -- the draft notebook does
-  exactly this -- but no reader will discover it from the reference page
-  alone. It is a worked example, not a feature.
-- **Collocation networks.** Still a TODO in `visualizations.py`.
-
-Dependency-based collocation (word sketches) is the one major collocation
-feature nothing in the docs reaches. It depends on the corpus carrying
-dependency columns, which is a data-format decision -- see section 7.
+- **Colligation** stays a worked example, not a top-level function. `expr=`
+  already reaches it -- collocate over `pos`, or over a struct of token and
+  tag -- and the notebook does exactly that. A `colligations()` would be a
+  rename of an argument.
+- **Visualizing collocations** is a task of its own, not the tail of this one.
+  Collocation networks in particular are not the direction; clustering the
+  collocate space, probably spectral, is the shape worth trying. Until then
+  the TODO in `visualizations.py` is a note for later, not a documentation
+  gap.
+- **Dependency-based collocation** (word sketches) needs dependency-annotated
+  corpora, and that annotation is a separate project rather than something
+  this library will grow. It may be linked from here later. See section 7.
 
 ## 2. Frequency lists as a function
 
@@ -90,6 +89,11 @@ makes the argument for why $G^2$ alone misleads, so the ground is prepared.
 `logdice` arrived with the collocation measures and is an effect size, but it
 is not offered as a `keywords()` method.
 
+A reader who knows the formula can now pass it in: `method=` takes a callable
+over `(f12, f1, f2, n)`, and log ratio is four lines. That is a workaround,
+not a fix -- the gap is what a student finds in the list of methods, and
+these belong in it.
+
 ## 6. Text-level descriptive measures
 
 Everything documented is token-level or type-level. Nothing computes per-text
@@ -132,9 +136,10 @@ Two decisions shape the API more than the conversion does:
    format in `CLAUDE.md` describes: `head` and `dep_`, `ent_type_`, `morph`,
    `is_stop`, whitespace. Our format is flat -- `token`, `pos`/`c5`, `mode`,
    `file_id` -- with no notion of dependency arcs and no tool that reads them.
-   Either pick a conservative default set (`token`, `lemma`, `pos`, `tag`,
-   `sentence_tag`, `file_id`) with the rest opt-in, or treat `from_spacy()` as
-   the moment we decide whether the library wants dependency columns at all.
+   That question is settled for the arcs: dependency annotation belongs to a
+   separate project, not to this one, so `head`/`dep_` stay out. What is left
+   is picking a conservative default set (`token`, `lemma`, `pos`, `tag`,
+   `sentence_tag`, `file_id`) and deciding which of the rest are opt-in.
 
 `from_stanza()` is the obvious sibling. spaCy first; it has the users.
 
@@ -159,14 +164,13 @@ above, they rank the same.
 
 1. A real `frequency_list()` (section 2).
 2. Concordance sorting, sampling and export (section 3).
-3. The collocation notebook (section 1), the last piece of what was the
-   largest hole.
+3. `from_spacy()` (section 7), the one that most widens who can use the
+   library at all.
 
-These are what a student opens AntConc for, and the docs show only collocation
-so far. `from_spacy()` (section 7) is the fourth, and the one that most widens
-who can use the library at all.
+The first two are what a student opens AntConc for, and collocation is the
+only one of those staples the docs cover so far.
 
-Note how much of items 2 and 3 is writing rather than coding. That is not a
-discount on the work -- it is where the work is. Collocation is the evidence:
-the function was a few hundred lines, and it still is not shipped until the
-notebook exists.
+Note how much of item 2 is writing rather than coding. That is not a discount
+on the work -- it is where the work is. Collocation is the evidence: the
+function was a few hundred lines, and it was not shipped until the notebook
+existed.
