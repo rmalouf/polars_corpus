@@ -69,6 +69,7 @@ nav:
   - Examples:
       - Word frequencies: notebooks/frequencies.ipynb
       - Concordances: notebooks/concordance.ipynb
+      - Collocations: notebooks/collocation.ipynb
       - Keyword Analysis: notebooks/keywords.ipynb
       - Dispersion: notebooks/dispersion.ipynb
       - Vocabulary: notebooks/vocabulary.ipynb
