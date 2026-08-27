@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import warnings
+from collections.abc import Callable
 from typing import Optional
 
 import polars as pl
@@ -11,10 +12,13 @@ from .assoc import (
     chisq,
     crosstab,
     loglik,
+    mi3,
     minsens,
     pmi,
     smp,
+    tscore,
     welchs_t_from_stats,
+    zscore,
 )
 from .utils import (
     as_corpus,
@@ -31,7 +35,21 @@ __all__ = [
 
 PART_FIELD = "_part"
 
-METHODS = ("ttest", "pmi", "ll", "chisq", "smp", "minsens")
+# The measures on offer that are functions of the four counts, each with the
+# column it is reported in. 'ttest' is not one of them: it works from the
+# per-file relative frequencies rather than the corpus totals.
+MEASURES: dict[str, tuple[Callable[..., pl.Expr], str]] = {
+    "pmi": (pmi, "PMI"),
+    "mi3": (mi3, "MI3"),
+    "ll": (loglik, "LogLik"),
+    "chisq": (chisq, "ChiSq"),
+    "tscore": (tscore, "TScore"),
+    "zscore": (zscore, "ZScore"),
+    "minsens": (minsens, "MinSens"),
+    "smp": (smp, "SMP"),
+}
+
+METHODS = ("ttest", *MEASURES)
 
 # TODO: Add Gries's (2001) KL divergence method?
 
@@ -64,10 +82,13 @@ def keywords(
 
          - 'chisq' : Pearson's chi-squared (χ²)
          - 'll' : Log-likelihood ratio (G²)
+         - 'mi3' : MI3, which pulls the ranking back towards frequent words
          - 'minsens' : Minimum sensitivity
-         - 'pmi' : Pointwise Mutual Information
+         - 'pmi' : Pointwise Mutual Information, which favors rare words
          - 'smp' : Kilgarriff's simple maths parameter (requires `k`)
+         - 'tscore' : t-score, which favors frequent words
          - 'ttest' : Welch's t-test on per-file relative frequencies
+         - 'zscore' : z-score
 
          `method` can also be a `Callable` which takes the four counts `f12`, `f1`, `f2`
          and `n` described under `Returns`. It receives them as Polars expressions
@@ -204,22 +225,13 @@ def _keywords_assoc(
     f2 = freqs.struct.field("f2")
     n = freqs.struct.field("n")
 
-    match method:
-        case "pmi":
-            assoc_expr = pmi(f12, f1, f2, n).alias("PMI")
-        case "ll":
-            assoc_expr = loglik(f12, f1, f2, n).alias("LogLik")
-        case "chisq":
-            assoc_expr = chisq(f12, f1, f2, n).alias("ChiSq")
-        case "minsens":
-            assoc_expr = minsens(f12, f1, f2, n).alias("MinSens")
-        case "smp":
-            assert k is not None
-            assoc_expr = smp(f12, f1, f2, n, k).alias("SMP")
-        case str():
-            raise ValueError(f"Unknown method {method!r}")
-        case _:
-            assoc_expr = _apply_measure(method, f12, f1, f2, n)
+    if isinstance(method, str):
+        measure, name = MEASURES[method]
+        # 'smp' is the one built-in that takes more than the four counts.
+        counts = (f12, f1, f2, n, k) if method == "smp" else (f12, f1, f2, n)
+        assoc_expr = measure(*counts).alias(name)
+    else:
+        assoc_expr = _apply_measure(method, f12, f1, f2, n)
 
     result = (
         freq_table.filter(

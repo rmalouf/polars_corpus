@@ -2,7 +2,7 @@ import polars as pl
 import pytest
 from polars.testing import assert_frame_equal
 from polars_corpus import keywords
-from polars_corpus.assoc import chisq, loglik, minsens, pmi
+from polars_corpus.assoc import chisq, loglik, mi3, minsens, pmi, tscore, zscore
 
 # Target corpus. Per-word frequency and range (files it occurs in):
 #   cat : freq=3, range=2 (t1, t2)
@@ -33,7 +33,10 @@ TARGET_RANGE = {"cat": 2, "dog": 1, "fish": 1, "the": 3}
     [
         ("ll", "LogLik", {}),
         ("pmi", "PMI", {}),
+        ("mi3", "MI3", {}),
         ("chisq", "ChiSq", {}),
+        ("tscore", "TScore", {}),
+        ("zscore", "ZScore", {}),
         ("smp", "SMP", {"k": 1}),
     ],
 )
@@ -297,12 +300,15 @@ def test_keywords_lazy_drops_nulls() -> None:
 
 # --- Measures of the caller's own ---------------------------------------------
 
-# The four built-ins that are plain functions of the counts. 'smp' takes an
-# extra k and 'ttest' is not a function of the counts at all, so both are out.
+# The built-ins that are plain functions of the counts. 'smp' takes an extra k
+# and 'ttest' is not a function of the counts at all, so both are out.
 BUILTIN_FUNCTIONS = [
     ("pmi", "PMI", pmi),
+    ("mi3", "MI3", mi3),
     ("ll", "LogLik", loglik),
     ("chisq", "ChiSq", chisq),
+    ("tscore", "TScore", tscore),
+    ("zscore", "ZScore", zscore),
     ("minsens", "MinSens", minsens),
 ]
 
@@ -369,7 +375,9 @@ def test_keywords_bad_own_measure(measure, message: str) -> None:
 def test_keywords_invalid_method() -> None:
     # check_choice's own behaviour is covered in test_utils; here, that the
     # message offers every method keywords() actually implements.
-    with pytest.raises(ValueError, match="ttest, pmi, ll, chisq, smp, minsens"):
+    with pytest.raises(
+        ValueError, match="ttest, pmi, mi3, ll, chisq, tscore, zscore, minsens, smp"
+    ):
         keywords(TARGET, REFERENCE, pl.col("norm"), "bogus")
 
 

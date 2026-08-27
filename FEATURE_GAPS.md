@@ -82,12 +82,19 @@ staple of the phraseology side of the field.
 
 ## 5. Keyness effect sizes
 
-`keywords()` offers `ll` and `ttest`. The effect-size measures the field now
-expects alongside significance are missing: **log ratio** (Hardie 2014),
+`keywords()` offers `chisq`, `ll`, `mi3`, `minsens`, `pmi`, `smp`, `tscore`,
+`ttest`, and `zscore` -- `mi3`, `tscore`, and `zscore` joined the list when the
+collocation measures landed. The effect-size measures the field now expects
+alongside significance are still missing: **log ratio** (Hardie 2014),
 **%DIFF**, odds ratio, and Bayes-factor BIC. The keywords notebook already
 makes the argument for why $G^2$ alone misleads, so the ground is prepared.
-`logdice` arrived with the collocation measures and is an effect size, but it
-is not offered as a `keywords()` method.
+
+`logdice` is deliberately not among them. In the keyness table the second
+marginal `f2` is the size of the target corpus, not a second word's frequency,
+so `2 f12 / (f1 + f2)` is dominated by `f2` and log-Dice reduces to a
+monotone function of the word's relative frequency in the target. It is an
+effect size for collocation, where both marginals are word frequencies; here
+it would just rank by frequency.
 
 A reader who knows the formula can now pass it in: `method=` takes a callable
 over `(f12, f1, f2, n)`, and log ratio is four lines. That is a workaround,
