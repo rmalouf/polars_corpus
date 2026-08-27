@@ -120,6 +120,11 @@ exporting in one breath therefore ends in the line the argument cannot supply:
 conc.sort(plc.kwic("L1")).with_columns(cs.by_dtype(pl.List(pl.String)).list.join(" "))
 ```
 
+`docs/search.md` documents both, and `docs/notebooks/concordance.ipynb` is
+annotated and on the nav: it counts the words either side of a node, sorts on
+them, writes the lines out as CSV and as a `great_tables` table, and finishes
+on the breakdown below.
+
 **Thinning and random sampling** was listed here in error. `sample(k, seed=)`,
 `shuffle(seed=)`, `head` and `tail` were already on `_SearchResultsBase` when
 the survey was written. All four return `Self`, so they chain into the rest of
@@ -133,7 +138,10 @@ Two things are deliberately out rather than pending:
   `conc.group_by("text_type").len()`, which is Polars' and needs no wrapping.
   The version worth having is normalized against how big each category is:
   raw hit counts across categories of unequal size mislead in exactly the way
-  the keywords notebook argues $G^2$ misleads. The primitive for that is
+  the keywords notebook argues $G^2$ misleads, and the raw table also drops
+  any category the query found nothing in, since a category with no hits
+  contributes no concordance rows -- *shall* in the notebook loses `voyage`,
+  the largest genre in the corpus. The primitive for the better answer is
   already here -- `with_spans_as_chunks()` writes the matches back onto the
   corpus as BIO tags, so a single `group_by` over the tagged corpus counts
   hits and tokens together and the rate falls out of the same aggregation.
@@ -183,7 +191,7 @@ basic descriptive battery. `chunk_id()` and `with_chunk_index()` supply
 sentence boundaries but appear nowhere on the docs site, which also blocks
 anything sentence-scoped.
 
-## 7. `from_spacy()`
+## 7. `from_spacy()` -- after the next release
 
 The documented I/O story is `read_text_corpus()` / `scan_text_corpus()` for
 plain text and `from_nltk()` for corpora somebody else already annotated.
@@ -224,6 +232,13 @@ Two decisions shape the API more than the conversion does:
 
 `from_stanza()` is the obvious sibling. spaCy first; it has the users.
 
+This is deferred past the next release, for the reason the widget's page is:
+it is a project of its own -- a dependency, a column-naming decision, a batch
+API and a body of tests that need spaCy installed to run -- and nothing
+already shipped is waiting on it. It widens who can use the library more than
+anything else in this file, which is an argument for doing it properly rather
+than for doing it next.
+
 ## 8. The query language and the missing guide
 
 One genuine code gap and two pages nobody has written. By the standard
@@ -245,14 +260,29 @@ above, they rank the same.
 
 1. ~~A real `frequency_list()` (section 2).~~ Done.
 2. ~~Concordance sorting, sampling and export (section 3).~~ Done.
-3. `from_spacy()` (section 7), the one that most widens who can use the
-   library at all.
+3. Keyness effect sizes (section 5): log ratio and %DIFF, the two the field
+   actually reports.
 
 The first two are what a student opens AntConc for, and both are covered now:
-frequency, collocation and the concordance workflow each have their function
-and their page. What is left of the three is `from_spacy()`, which is not a
-staple of the analysis at all but of getting the data in -- the step before
-any of the rest can run.
+frequency, collocation and the concordance workflow each have their function,
+their reference page and their notebook. The third is the smallest piece of
+code left with the largest claim on being taken seriously. `keywords()` ranks
+by significance alone, which the keywords notebook itself spends a section
+arguing is not enough, and `_apply_measure` already takes a callable over
+`(f12, f1, f2, n)` -- so each measure is four lines, a name in the list, and a
+paragraph saying when to reach for it.
+
+Two things sit below that line rather than above it, and are deliberately
+after the next release:
+
+- **`from_spacy()` (section 7).** It was item 3 here, and it is still the
+  entry that most widens who can use the library at all. But it is a project
+  with its own dependency, its own API decisions and its own tests, and
+  nothing already shipped is waiting on it.
+- **A page for `ConcordanceWidget` (section 3).** The same shape at a smaller
+  scale: the widget is written and tested, and what it needs is a page and a
+  place in a notebook -- a task with its own beginning and end rather than the
+  tail of this one.
 
 Note how much of item 2 turned out to be writing rather than coding: sampling
 was implemented before it was ever listed as missing, and what section 3 still

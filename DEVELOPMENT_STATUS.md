@@ -182,13 +182,14 @@ them produced only noise.
 **Coverage**
 
 See [FEATURE_GAPS.md](FEATURE_GAPS.md) for what the toolkit is still missing
-against what a linguist expects. Collocation and frequency lists, the big ones
-at the last two surveys, are finished end to end -- function, reference page,
-notebook. Concordance sorting and export have joined them on the first two:
-`kwic()` and `as_str=` are written and on `docs/search.md`, with the notebook
-that shows them off being revised alongside. What is left there is a page for
-the `ConcordanceWidget`, which is described here and nowhere on the docs site.
-Then `from_spacy()`.
+against what a linguist expects. Collocation, frequency lists and the
+concordance workflow -- the big ones at the last three surveys -- are each
+finished end to end: function, reference page, notebook. Next is keyness
+effect sizes, log ratio and %DIFF, which fit the callable `_apply_measure`
+already takes and need no new mechanism. `from_spacy()` and a page for the
+`ConcordanceWidget` come after the release rather than before it: each is a
+task with its own beginning and end, and nothing already shipped waits on
+either.
 
 ---
 
