@@ -12,8 +12,8 @@ A corpus linguistics toolkit for Polars: a Python API over a Rust matching
 engine. Search, concordancing, frequency lists, collocation, keywords,
 dispersion, the statistical measures and the plots all work and are tested.
 The main functional gap is proximity operators in the Simple query language;
-the main process gaps are the absence of CI and of any Rust unit tests. What
-else is left is mostly writing -- a page for the concordance widget, an
+the main process gap is the absence of any Rust unit tests. What else is left
+is mostly writing -- a page for the concordance widget, an
 effect-size section in the keywords notebook, prose on three stub reference
 pages.
 
@@ -139,22 +139,21 @@ Decisions already made, recorded here so they are not re-proposed as gaps.
 
 ## Known Issues
 
-1. **No CI**, deliberately for now; run ruff, clippy, pyrefly and pytest by
-   hand. Worth revisiting closer to a release.
-2. **No Rust unit tests.** The engine is exercised only through Python.
-3. **`pyrefly check` reports two errors**, both from the `.corpus` namespace
+1. **No Rust unit tests.** The engine is exercised only through Python.
+2. **`pyrefly check` reports two errors**, both from the `.corpus` namespace
    methods in `exprs.py` passing a `freqs_name` argument `crosstab` no longer
-   takes.
-4. **The `.corpus` namespace is invisible to type checkers.**
+   takes. Third-party stubs produce errors of their own, which is why CI does
+   not run pyrefly as a gate.
+3. **The `.corpus` namespace is invisible to type checkers.**
    `register_expr_namespace` installs the descriptor with a runtime `setattr`,
    which no stub can describe, so `pl.col("x").corpus.pmi()` does not
    type-check in user code either. This affects every polars plugin. The
    standalone functions (`plc.pmi(...)`) are the statically-checkable path, and
    library code calls them directly for that reason.
-5. **`__init__.py` leaks names.** Modules without `__all__` are star-imported,
+4. **`__init__.py` leaks names.** Modules without `__all__` are star-imported,
    so `polars_corpus.pl`, `.Any` and most submodule names are bound at top
    level; the `keywords` function also shadows the `keywords` module.
-6. **A zero-width binding is reported inconsistently.** `bindings_stack` in
+5. **A zero-width binding is reported inconsistently.** `bindings_stack` in
    `MatchBuffers` is not part of the backtracking state -- `_match_opcodes`
    pushes and pops `(cursor, pc)` tasks that all share one binding stack -- so a
    `*` or `?` binding that matched no token reports an empty span or no binding
@@ -162,10 +161,10 @@ Decisions already made, recorded here so they are not re-proposed as gaps.
    (test_matcher.py's `star-zero-match-empty-span`); `concordance()` shows the
    two as a null and an empty list. The fix is probably to record the stack's
    depth with each task and truncate back to it when the task resumes.
-7. **`{lemma/CLASS}_TAG` drops the class.** A Simple query giving both a
+6. **`{lemma/CLASS}_TAG` drops the class.** A Simple query giving both a
    simplified POS class and an explicit tag keeps the `_TAG` and discards the
    class without complaint (`LEMMA` in `simple_parser.py`).
-8. **No published wheels or PyPI release.**
+7. **No published wheels or PyPI release.**
 
 ---
 
@@ -174,12 +173,11 @@ Decisions already made, recorded here so they are not re-proposed as gaps.
 **Before 1.0**
 1. Proximity operators.
 2. Publish to PyPI.
-3. Add CI, deferred until closer to release.
 
 **Quality**
-4. Make the binding stack part of the backtracking state (Known Issues 6).
-5. Rust unit tests for the matcher.
-6. Benchmarks (`examples/bench.py` is a starting point).
+3. Make the binding stack part of the backtracking state (Known Issues 5).
+4. Rust unit tests for the matcher.
+5. Benchmarks (`examples/bench.py` is a starting point).
 
 **Future plans**
 
@@ -187,26 +185,26 @@ Coverage against what a linguist expects of a corpus toolkit. Nothing shipped
 is waiting on any of these. A feature that isn't documented is a feature users
 don't have, so the writing entries rank with the code ones.
 
-7. **A page for `ConcordanceWidget`.** Written and tested, but documented only
+6. **A page for `ConcordanceWidget`.** Written and tested, but documented only
    here and absent from the docs site.
-8. **An effect-size section in the keywords notebook.** It argues that
+7. **An effect-size section in the keywords notebook.** It argues that
    log-likelihood alone misleads and then offers nothing instead; ranking the
    same words by `ll` and by `logratio` side by side is what closes it.
-9. **N-grams and clusters.** `ngrams()` sits in `docs/utils.md` with no prose
+8. **N-grams and clusters.** `ngrams()` sits in `docs/utils.md` with no prose
    or example; clusters around a node and lexical-bundle extraction, the
    phraseology staple, do not exist.
-10. **Text-level descriptive measures.** Per-text sentence length, mean word
-    length and readability (Flesch, ARI) -- the basic descriptive battery,
-    none of which is implemented.
-11. **`from_spacy()`.** Raw text to `token`, `lemma`, `pos`, `tag` and
+9. **Text-level descriptive measures.** Per-text sentence length, mean word
+   length and readability (Flesch, ARI) -- the basic descriptive battery, none
+   of which is implemented.
+10. **`from_spacy()`.** Raw text to `token`, `lemma`, `pos`, `tag` and
     `sentence_tag`, batched over `nlp.pipe()` -- the entry that most widens who
     can use the library, and the only documented way to get a `lemma` column.
     `from_stanza()` is the sibling, but spaCy has the users.
-12. **Docs for `chunk_id()` and `with_chunk_index()`.** They supply the
+11. **Docs for `chunk_id()` and `with_chunk_index()`.** They supply the
     sentence boundaries sentence-scoped work needs, and are on no page.
-13. **A narrative getting-started guide.** The User Guide nav entries are still
+12. **A narrative getting-started guide.** The User Guide nav entries are still
     commented out in `mkdocs.yml`.
-14. **Prose on `assoc.md`, `lexical.md` and `utils.md`.** Bare mkdocstrings
+13. **Prose on `assoc.md`, `lexical.md` and `utils.md`.** Bare mkdocstrings
     stubs -- nothing on what a measure means or when to reach for it.
 
 ---
@@ -224,6 +222,10 @@ don't have, so the writing entries rank with the code ones.
 
 - Build and test commands, and why the venv sits outside the source tree, are
   in CLAUDE.md.
+- CI (`.github/workflows/`) runs on every push to main and every PR: `test.yml`
+  lints (cargo fmt, clippy, ruff) and runs pytest on 3.11 through 3.14, Linux
+  plus one macOS job to guard the arm64 build; `docs.yml` builds the site.
+  pyrefly is not a gate (Known Issues 2).
 - The Simple query language compiles straight to CQP with no intermediate AST:
   `simple_to_cqp()` emits a CQP string that the matcher behind `search_cqp()`
   compiles. Its lark grammar (`_GRAMMAR` in `simple_parser.py`) is built into an
