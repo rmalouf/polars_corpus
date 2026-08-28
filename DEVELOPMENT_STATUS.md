@@ -1,6 +1,6 @@
 # Development Status - polars-corpus
 
-**Last updated:** 2026-08-27
+**Last updated:** 2026-08-28
 **Version:** 0.2.0-pre
 **Status:** Pre-release; core is stable, not yet published to PyPI
 
@@ -8,21 +8,14 @@
 
 ## Summary
 
-A corpus linguistics toolkit for Polars, split between a Python API and a Rust
-matching engine. Search, concordancing, frequency lists, collocation, keywords,
-dispersion, the statistical measures and the plots are all working and covered
-by tests. Collocation and frequency lists, the two largest documentation holes
-in the last survey, are closed: `collocations()` and `frequency_list()`, a
-reference page each, and notebooks on the docs site. The concordance workflow
-has caught up with them -- `kwic()` for the classic KWIC sort, `as_str=` for a
-concordance `write_csv` will take -- and owes only a page for its interactive
-widget. `collocations()` and `keywords()` both take a measure of your own -- a
-callable -- wherever they take a built-in measure's name. Documentation is
-otherwise mkdocs reference pages built from the docstrings, plus the example
-notebooks and a reference page for each of the two query languages; there is
-no narrative guide. The main functional gap is proximity operators in the Simple
-query language; the main process gaps are the absence of CI and of any Rust
-unit tests.
+A corpus linguistics toolkit for Polars: a Python API over a Rust matching
+engine. Search, concordancing, frequency lists, collocation, keywords,
+dispersion, the statistical measures and the plots all work and are tested.
+The main functional gap is proximity operators in the Simple query language;
+the main process gaps are the absence of CI and of any Rust unit tests. What
+else is left is mostly writing -- a page for the concordance widget, an
+effect-size section in the keywords notebook, prose on three stub reference
+pages.
 
 ---
 
@@ -30,9 +23,9 @@ unit tests.
 
 | | |
 |---|---|
-| Python source | ~6,950 lines, 20 modules |
+| Python source | ~7,300 lines, 20 modules |
 | Rust source | ~1,100 lines, 6 files |
-| Tests | ~5,600 lines, 1,094 tests in 17 files |
+| Tests | ~5,600 lines, 1,095 tests in 17 files |
 | Docs | 13 pages plus 6 example notebooks (mkdocs-material / mkdocstrings) |
 | Examples | 8 notebooks, 3 scripts |
 
@@ -42,44 +35,40 @@ unit tests.
 
 ### Working
 
-1. **Search engine** — NFA matcher in Rust; CQP and Simple query languages;
-   variable bindings (`$x: ...`) in both. A LazyFrame corpus is searched out
-   of core, one chunk of whole files at a time (`chunk_tokens` sets the
-   budget), returning `LazySearchResults` with file-relative match spans; the
-   corpus never has to fit in memory. A LazyFrame always takes that path,
-   as a single chunk when it carries no file id column to cut on.
+1. **Search engine** — NFA matcher in Rust; CQP and Simple query languages,
+   with variable bindings (`$x: ...`) in both. A LazyFrame corpus is searched
+   out of core, one chunk of whole files at a time (`chunk_tokens` sets the
+   budget), returning `LazySearchResults` with file-relative spans, so the
+   corpus never has to fit in memory; a frame with no file id column to cut on
+   goes through as a single chunk.
 2. **Concordancing** — KWIC generation in Rust, `SearchResults.concordance()`,
-   a column per bound variable, interactive `ConcordanceWidget` (anywidget)
-   with pagination and sorting. Context clips at file boundaries when the
-   search named a `file_id_column`. `kwic()` returns the expression for a
-   context position -- `"L1"`, `"node"`, `"R2"`, or the signed integer CQP
-   writes it as -- so the classic KWIC sort is `conc.sort(kwic("L1"),
-   kwic("L2"))`, and the same expression groups and filters; `as_str=True`
-   joins the list columns into strings, the form `write_csv` and
-   `great_tables` accept.
-3. **Frequency lists** — `frequency_list()` returns one row per type with
-   its count, its rate per `basis` words, and the number of files it occurs
-   in. Normalizing and thresholding are the caller's: a case fold in `expr`,
-   a `filter` on the corpus for what counts as a word, and a `filter` on the
-   result to drop the rare words.
+   a column per bound variable, interactive `ConcordanceWidget` (anywidget).
+   Context clips at file boundaries when the search named a `file_id_column`.
+   `kwic()` returns the expression for a context position -- `"L1"`, `"node"`,
+   `"R2"`, or the signed integer CQP writes it as -- so the classic sort is
+   `conc.sort(kwic("L1"), kwic("L2"))` and the same expression groups and
+   filters; `as_str=True` joins the list columns into the strings `write_csv`
+   and `great_tables` accept.
+3. **Frequency lists** — `frequency_list()` gives one row per type: its count,
+   its rate per `basis` words, and the number of files it occurs in.
+   Normalizing and thresholding stay the caller's (see Deliberately out).
 4. **Collocation and keywords** — `collocations()` ranks the words around a
-   search's matches by one or more association measures; `collocates()`
-   returns the window counts it is built on, and `keywords()` and `crosstab()`
-   bundle frequencies into the same `freqs` struct the measures consume.
-   Windows are symmetric or asymmetric (`window=(5, 0)`), or run to the edges
-   of the chunk holding the match when given a `chunk_column`, which is how a
-   span stops at a sentence boundary. Colligation is the same call over the
-   `pos` column, or over a struct of token and tag; the notebook shows it.
+   search's matches by one or more measures; `collocates()` returns the window
+   counts underneath it, and `keywords()` and `crosstab()` bundle frequencies
+   into the same `freqs` struct the measures consume. Windows are symmetric,
+   asymmetric (`window=(5, 0)`), or run to the edges of the chunk holding the
+   match (`chunk_column`), which is how a span stops at a sentence boundary.
 5. **Association measures** — PMI, MI3, log-dice, t-score, z-score,
-   log-likelihood, chi-squared, minimum sensitivity, Kilgarriff's simple
-   maths, Welch's t-test. For keyness there are also the effect sizes the
-   field reports beside a significance score: log ratio, %DIFF, the odds
-   ratio, and Bayes-factor BIC. `collocations()` and `keywords()` each take the
-   measures that make sense for them by name, or a callable of your own with
-   the same `(f12, f1, f2, n)` signature, ranked and named alongside the
-   built-ins (`_apply_measure` in `assoc.py`). Log ratio and %DIFF read `f2` as
-   the size of the corpus `f12` was counted in, so they belong to `keywords()`
-   and not to the collocation table, whose margins mean something else.
+   log-likelihood, chi-squared, minimum sensitivity, Kilgarriff's simple maths,
+   Welch's t-test, plus the keyness effect sizes the field reports beside a
+   significance score: log ratio, %DIFF, the odds ratio, Bayes-factor BIC.
+   Either function takes a measure by name or as a callable with the same
+   `(f12, f1, f2, n)` signature (`_apply_measure` in `assoc.py`). Log ratio and
+   %DIFF read `f2` as the size of the corpus `f12` was counted in, so they are
+   keyness-only; they and `oddsratio` take a `discount` for the zero cell
+   (0.5, CQPweb's convention), which `keywords()` does not expose for the
+   reason it does not expose `chisq`'s `yates`: the argument belongs to the
+   measure.
 6. **Lexical diversity** — TTR, MSTTR, Yule's K, MTLD.
 7. **Lexical dispersion** — `dispersion()` with range, range%, sd, cv, cv%,
    Juilland's D, Burch's DA, Gries's DP; several measures per call.
@@ -87,86 +76,96 @@ unit tests.
 9. **Chunking** — BIO tags to chunk IDs via `chunk_id()` / `with_chunk_index()`.
 10. **Polars integration** — `.corpus` namespace on Expr, DataFrame, LazyFrame.
 11. **Visualization** — `barcode_plot()`, `dispersion_plot()`, `keyword_plot()`,
-    on matplotlib from the `examples` extra. (The notebooks still import
-    seaborn; the library itself no longer does.)
+    on matplotlib from the `examples` extra. The notebooks still import seaborn;
+    the library no longer does.
 
 ### Incomplete
 
 - **`visualizations.py`** — the three plots above work and are tested; the
-  mosaic plot from a crosstab is still a TODO. So is a plot of collocates,
-  but not as the collocation graph the file's TODO names: networks are not
-  the direction, and clustering the collocate space -- spectral clustering
-  is the likeliest first try -- is the shape to explore instead. Either way
-  it is a task of its own, not part of `collocations()`.
+  mosaic plot from a crosstab is still a TODO, as is a plot of collocates.
 
 ### Not implemented
 
 - **Proximity operators** (`<<s>>`, `<<3>>`, `<<5<<`, `>>5>>`) in the Simple
-  query language. They are not in the grammar and raise
-  `UnexpectedCharacters`. There is no direct CQP equivalent, so translation
-  needs one of:
+  query language. They are not in the grammar and raise `UnexpectedCharacters`.
+  There is no direct CQP equivalent, so translation needs one of:
   1. *Expand to CQP disjunctions.* `day <<3>> night` becomes
      `([token="day"%c] []{0,3} [token="night"%c]) | ([token="night"%c] []{0,3} [token="day"%c])`.
      Simple, but combinatorial once constraints nest, e.g.
      `waste <<s>> (time <<3>> money)`.
   2. *Add proximity opcodes to the Rust matcher.* Efficient and the right
      long-term answer, but the largest change.
-  3. *Filter after matching.* Search each term separately and post-process by
-     distance. Least efficient, and awkward to compose.
+  3. *Filter after matching.* Least efficient, and awkward to compose.
 
   Sentence-level proximity (`<<s>>`) additionally needs a sentence boundary
   column, which `with_chunk_index()` can already supply.
-- **Dependency-based collocation** (word sketches). Out of scope here: the
-  library's data format is flat and nothing in it reads dependency arcs.
-  Dependency annotation is a separate project, which this one may link to
-  later.
 - **Parallel chunk processing.** The lazy search loop is sequential; Polars
   already parallelizes the mask expressions within each chunk, and on the BNC
-  the chunked search runs as fast as the eager one, so threading the loop has
-  not been worth it yet.
+  the chunked search runs as fast as the eager one, so it has not been worth it.
+
+### Deliberately out
+
+Decisions already made, recorded here so they are not re-proposed as gaps.
+
+- **Dependency-based collocation** (word sketches). The data format is flat and
+  nothing reads dependency arcs; annotating for them is a separate project.
+- **A `colligations()` function.** `collocations(expr=...)` over `pos`, or over
+  a struct of token and tag, already is it.
+- **Collocation networks.** Clustering the collocate space -- spectral, most
+  likely -- is the direction worth trying instead.
+- **Stopword lists.** A judgement about which words carry no meaning, made once
+  for no particular question and then applied to every question. `is_in` over
+  your own list is the version you can defend.
+- **`lowercase=`, `letters_only=`, `min_freq=`, `min_range=` on
+  `frequency_list()`.** All written, all removed: normalizing is `expr`'s job,
+  restricting what counts as a word is a `filter` on the corpus, and
+  thresholding is a `filter` on the result, which leaves the rate alone because
+  it is computed first. The `min_freq` on `dispersion()` and `collocations()` is
+  a different argument -- it guards a measure that misbehaves on rare words.
+- **`by=` on `frequency_list()`.** The expression-returning form that would let
+  Polars' own `group_by` do the breakdown was tried: it cannot sort itself,
+  costs the caller `.explode().unnest()` at every call site, runs twice as slow
+  at 20M rows, and has no frame to check column names against. `by=` can still
+  come back later without changing the frame form.
+- **A hits-by-metadata breakdown and an HTML export for concordances.** The raw
+  counts are a Polars `group_by`; normalizing them against category size is
+  `with_spans_as_chunks()` plus one `group_by` over the tagged corpus; and after
+  `as_str=True` the HTML export is `conc.style` from `great_tables`.
+- **`logdice` for keyness.** Here `f2` is the size of the target corpus rather
+  than a second word's frequency, so `2 f12 / (f1 + f2)` is dominated by `f2`
+  and reduces to a monotone function of relative frequency.
 
 ---
 
 ## Known Issues
 
-1. **No CI**, deliberately, for now. Nothing runs ruff, clippy, pyrefly, or
-   pytest automatically; run them by hand. Worth revisiting closer to a release.
-2. **No Rust unit tests.** The engine is exercised only through Python
-   integration tests.
+1. **No CI**, deliberately for now; run ruff, clippy, pyrefly and pytest by
+   hand. Worth revisiting closer to a release.
+2. **No Rust unit tests.** The engine is exercised only through Python.
 3. **`pyrefly check` reports two errors**, both from the `.corpus` namespace
-   methods in `exprs.py` passing a `freqs_name` argument that `crosstab` no
-   longer takes. No file carries a `# pyrefly: ignore-errors` marker.
+   methods in `exprs.py` passing a `freqs_name` argument `crosstab` no longer
+   takes.
 4. **The `.corpus` namespace is invisible to type checkers.**
-   `pl.api.register_expr_namespace` installs a descriptor onto polars' classes
-   with a runtime `setattr`, which no stub can describe, so
-   `pl.col("x").corpus.pmi()` does not type-check in user code either. This
-   affects every polars plugin and there is no fix available to us. The
-   standalone functions (`plc.pmi(...)`, `plc.loglik(...)`) are the
-   statically-checkable path; the namespace is sugar over them. Library code
-   calls the functions directly for this reason.
+   `register_expr_namespace` installs the descriptor with a runtime `setattr`,
+   which no stub can describe, so `pl.col("x").corpus.pmi()` does not
+   type-check in user code either. This affects every polars plugin. The
+   standalone functions (`plc.pmi(...)`) are the statically-checkable path, and
+   library code calls them directly for that reason.
 5. **`__init__.py` leaks names.** Modules without `__all__` are star-imported,
-   so `polars_corpus.pl`, `.Any`, `.Optional` and most submodule names are bound
-   at top level. The `keywords` function also shadows the `keywords` module.
+   so `polars_corpus.pl`, `.Any` and most submodule names are bound at top
+   level; the `keywords` function also shadows the `keywords` module.
 6. **A zero-width binding is reported inconsistently.** `bindings_stack` in
-   `MatchBuffers` is not part of the backtracking state: `_match_opcodes` pushes
-   and pops `(cursor, pc)` tasks, but every task shares one binding stack, so
-   which bindings reach the winning path depends on the order the branches were
-   tried. A `*` or `?` binding that matched no token therefore sometimes reports
-   an empty span and sometimes no binding at all —
-   `[pos="DT"] ($mods: [pos="JJ"]*) [pos="NN"]` over "the dog" reports no
-   `mods`, while `$adjs: ([pos="JJ"]*) [pos="NN"]` reports `Span(18, 18)` in
-   test_matcher.py's `star-zero-match-empty-span`. `concordance()` shows the
-   first as a null and the second as an empty list, which is now the visible
-   face of the bug. The fix is probably to record the binding stack's depth
-   with each task and truncate back to it when the task is resumed.
-7. **`{lemma/CLASS}_TAG` drops the class.** A Simple query that gives both a
+   `MatchBuffers` is not part of the backtracking state -- `_match_opcodes`
+   pushes and pops `(cursor, pc)` tasks that all share one binding stack -- so a
+   `*` or `?` binding that matched no token reports an empty span or no binding
+   at all depending on the order the branches were tried
+   (test_matcher.py's `star-zero-match-empty-span`); `concordance()` shows the
+   two as a null and an empty list. The fix is probably to record the stack's
+   depth with each task and truncate back to it when the task resumes.
+7. **`{lemma/CLASS}_TAG` drops the class.** A Simple query giving both a
    simplified POS class and an explicit tag keeps the `_TAG` and discards the
    class without complaint (`LEMMA` in `simple_parser.py`).
 8. **No published wheels or PyPI release.**
-
-Notebooks are excluded from ruff (`[tool.ruff] extend-exclude`). They are
-working scratchpads and are expected to sit in unfinished states, so linting
-them produced only noise.
 
 ---
 
@@ -178,81 +177,70 @@ them produced only noise.
 3. Add CI, deferred until closer to release.
 
 **Quality**
-4. Make the binding stack part of the backtracking state, so a zero-width
-   binding always reports its empty span (Known Issues 6).
+4. Make the binding stack part of the backtracking state (Known Issues 6).
 5. Rust unit tests for the matcher.
 6. Benchmarks (`examples/bench.py` is a starting point).
 
-**Coverage**
+**Future plans**
 
-See [FEATURE_GAPS.md](FEATURE_GAPS.md) for what the toolkit is still missing
-against what a linguist expects. Collocation, frequency lists and the
-concordance workflow -- the big ones at the last three surveys -- are each
-finished end to end: function, reference page, notebook. Next is keyness
-effect sizes, log ratio and %DIFF, which fit the callable `_apply_measure`
-already takes and need no new mechanism. `from_spacy()` and a page for the
-`ConcordanceWidget` come after the release rather than before it: each is a
-task with its own beginning and end, and nothing already shipped waits on
-either.
+Coverage against what a linguist expects of a corpus toolkit. Nothing shipped
+is waiting on any of these. A feature that isn't documented is a feature users
+don't have, so the writing entries rank with the code ones.
 
----
-
-## Target Audience
-
-Linguistics students and researchers first, data scientists working with text
-second. Design target is 100M+ word corpora on 16GB of memory.
+7. **A page for `ConcordanceWidget`.** Written and tested, but documented only
+   here and absent from the docs site.
+8. **An effect-size section in the keywords notebook.** It argues that
+   log-likelihood alone misleads and then offers nothing instead; ranking the
+   same words by `ll` and by `logratio` side by side is what closes it.
+9. **N-grams and clusters.** `ngrams()` sits in `docs/utils.md` with no prose
+   or example; clusters around a node and lexical-bundle extraction, the
+   phraseology staple, do not exist.
+10. **Text-level descriptive measures.** Per-text sentence length, mean word
+    length and readability (Flesch, ARI) -- the basic descriptive battery,
+    none of which is implemented.
+11. **`from_spacy()`.** Raw text to `token`, `lemma`, `pos`, `tag` and
+    `sentence_tag`, batched over `nlp.pipe()` -- the entry that most widens who
+    can use the library, and the only documented way to get a `lemma` column.
+    `from_stanza()` is the sibling, but spaCy has the users.
+12. **Docs for `chunk_id()` and `with_chunk_index()`.** They supply the
+    sentence boundaries sentence-scoped work needs, and are on no page.
+13. **A narrative getting-started guide.** The User Guide nav entries are still
+    commented out in `mkdocs.yml`.
+14. **Prose on `assoc.md`, `lexical.md` and `utils.md`.** Bare mkdocstrings
+    stubs -- nothing on what a measure means or when to reach for it.
 
 ---
 
 ## Dependencies
 
-- **Runtime:** polars >=1.35, lark >=1.2, nltk >=3.9, anywidget >=0.9
-- **Build:** maturin, pyo3 0.28, pyo3-polars 0.27
-- **Rust:** polars 0.54, statrs 0.19, itertools 0.15
-- **Python:** >=3.11 (wheels are cp311-abi3)
-- **Managed via:** `pyproject.toml` plus `uv.lock`; see CLAUDE.md
-
----
-
-## Build & Test Commands
-
-```bash
-make develop          # Rebuild after Rust changes; ~1s incremental
-make develop-release  # Same, full release profile (benchmarking)
-make build            # Distribution wheels (M4 + x86_64)
-make docs             # Build the user guide
-
-ruff format && ruff check
-cargo fmt && cargo clippy
-pyrefly check python/polars_corpus/
-pytest
-```
-
-The virtualenv lives outside the source tree at `~/.venvs/polars_corpus`; do not
-run `uv run` in this directory. See the Environment section of CLAUDE.md for
-why.
+- **Runtime:** polars, lark, nltk, anywidget; versions in `pyproject.toml`
+- **Build:** maturin, pyo3, pyo3-polars; the Rust side (polars, statrs,
+  itertools) is pinned in `Cargo.toml`
+- **Python:** >=3.11; wheels are cp311-abi3
 
 ---
 
 ## Notes
 
+- Build and test commands, and why the venv sits outside the source tree, are
+  in CLAUDE.md.
 - The Simple query language compiles straight to CQP with no intermediate AST:
-  `simple_parser.simple_to_cqp()` emits a CQP string that the same matcher
-  behind `search_cqp()` compiles. The grammar (`_GRAMMAR` in
-  `simple_parser.py`) is lark, built into an LALR parser once at import; each
-  call runs a `SimpleCompiler` transformer holding the requested column names.
-  Because whitespace separates query items, a whole token (`{walk}_VB*`) has to
-  lex as one terminal, so the transformer re-matches each terminal to recover
-  its parts, against regexes (`_POS_TAG_PARTS`, `_LEMMA_PARTS`) built from the
-  same fragments as the grammar so the two cannot drift. `docs/simple_query.md`
-  documents the language for users, `docs/cqp_query.md` documents what it
-  compiles to, and the two grammars are the specification.
+  `simple_to_cqp()` emits a CQP string that the matcher behind `search_cqp()`
+  compiles. Its lark grammar (`_GRAMMAR` in `simple_parser.py`) is built into an
+  LALR parser once at import, and each call runs a `SimpleCompiler` transformer
+  holding the requested column names. Because whitespace separates query items,
+  a whole token (`{walk}_VB*`) has to lex as one terminal, so the transformer
+  re-matches each terminal against regexes (`_POS_TAG_PARTS`, `_LEMMA_PARTS`)
+  built from the same fragments as the grammar, so the two cannot drift.
+  `docs/simple_query.md` and `docs/cqp_query.md` document the two languages;
+  the grammars are the specification.
 - Tests assert on actual matched spans rather than match counts.
 - Association measures take a `freqs` struct column, so frequency column names
   are named once in `crosstab()` rather than repeated at every call site.
 - `collocates()` and `collocations()` share one counting pass,
-  `_SearchResultsBase._collocate_counts`: the first returns the counts, the
-  second joins the corpus frequencies and scores them. `f1` counts the context
-  tokens the windows actually held rather than the positions they could have
-  held, so a window truncated at a file or chunk boundary contributes only
-  what it reached.
+  `_SearchResultsBase._collocate_counts`. `f1` counts the context tokens the
+  windows actually held rather than the positions they could have held, so a
+  window truncated at a file or chunk boundary contributes only what it reached.
+- Notebooks are excluded from ruff (`[tool.ruff] extend-exclude`): they are
+  working scratchpads expected to sit in unfinished states, and linting them
+  produced only noise.
