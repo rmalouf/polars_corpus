@@ -156,9 +156,9 @@ def collocations(
     >>> # Drop collocations that come from just a handful of texts:
     >>> plc.collocations(results, "lemma", "ll", min_freq=10, min_range=5)
     >>> # A measure of your own, ranked beside one that ships:
-    >>> def log_ratio(f12, f1, f2, n):
-    ...     return ((f12 / f1) / ((f2 - f12) / (n - f1))).log(2)
-    >>> plc.collocations(results, "lemma", ["ll", log_ratio])
+    >>> def jaccard(f12, f1, f2, n):
+    ...     return f12 / (f1 + f2 - f12)
+    >>> plc.collocations(results, "lemma", ["ll", jaccard])
     """
     methods = check_measures(method, tuple(MEASURES))
     span = _window_span(window, chunk_column)

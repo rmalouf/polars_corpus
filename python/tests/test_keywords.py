@@ -2,9 +2,21 @@ import polars as pl
 import pytest
 from polars.testing import assert_frame_equal
 from polars_corpus import keywords
-from polars_corpus.assoc import chisq, loglik, mi3, minsens, pmi, tscore, zscore
+from polars_corpus.assoc import (
+    bic,
+    chisq,
+    loglik,
+    logratio,
+    mi3,
+    minsens,
+    oddsratio,
+    pctdiff,
+    pmi,
+    tscore,
+    zscore,
+)
 
-from .helpers import log_ratio, named_by_alias
+from .helpers import jaccard, named_by_alias
 
 # Target corpus. Per-word frequency and range (files it occurs in):
 #   cat : freq=3, range=2 (t1, t2)
@@ -40,6 +52,10 @@ TARGET_RANGE = {"cat": 2, "dog": 1, "fish": 1, "the": 3}
         ("tscore", "TScore", {}),
         ("zscore", "ZScore", {}),
         ("smp", "SMP", {"k": 1}),
+        ("bic", "BIC", {}),
+        ("logratio", "LogRatio", {}),
+        ("pctdiff", "%DIFF", {}),
+        ("oddsratio", "OddsRatio", {}),
     ],
 )
 def test_keywords_assoc_structure(method: str, col: str, kwargs: dict) -> None:
@@ -298,10 +314,14 @@ BUILTIN_FUNCTIONS = [
     ("pmi", "PMI", pmi),
     ("mi3", "MI3", mi3),
     ("ll", "LogLik", loglik),
+    ("bic", "BIC", bic),
     ("chisq", "ChiSq", chisq),
     ("tscore", "TScore", tscore),
     ("zscore", "ZScore", zscore),
     ("minsens", "MinSens", minsens),
+    ("logratio", "LogRatio", logratio),
+    ("pctdiff", "%DIFF", pctdiff),
+    ("oddsratio", "OddsRatio", oddsratio),
 ]
 
 
@@ -323,7 +343,7 @@ def test_keywords_builtin_function_matches_its_name(
 
 @pytest.mark.parametrize(
     "measure,column",
-    [(log_ratio, "log_ratio"), (named_by_alias, "LogRatio")],
+    [(jaccard, "jaccard"), (named_by_alias, "Jaccard")],
     ids=["named by def", "named by alias"],
 )
 def test_keywords_own_measure(measure, column: str) -> None:
@@ -339,7 +359,7 @@ def test_keywords_own_measure(measure, column: str) -> None:
 
 def test_keywords_own_measure_still_warns_about_k() -> None:
     with pytest.warns(UserWarning, match="only used when method='smp'"):
-        keywords(TARGET, REFERENCE, "norm", log_ratio, k=1)
+        keywords(TARGET, REFERENCE, "norm", jaccard, k=1)
 
 
 @pytest.mark.parametrize(
@@ -359,7 +379,11 @@ def test_keywords_invalid_method() -> None:
     # check_choice's own behaviour is covered in test_utils; here, that the
     # message offers every method keywords() actually implements.
     with pytest.raises(
-        ValueError, match="ttest, pmi, mi3, ll, chisq, tscore, zscore, minsens, smp"
+        ValueError,
+        match=(
+            "ttest, pmi, mi3, ll, bic, chisq, tscore, zscore, minsens, smp, "
+            "logratio, pctdiff, oddsratio"
+        ),
     ):
         keywords(TARGET, REFERENCE, pl.col("norm"), "bogus")
 

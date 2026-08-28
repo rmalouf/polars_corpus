@@ -72,10 +72,14 @@ unit tests.
    `pos` column, or over a struct of token and tag; the notebook shows it.
 5. **Association measures** — PMI, MI3, log-dice, t-score, z-score,
    log-likelihood, chi-squared, minimum sensitivity, Kilgarriff's simple
-   maths, Welch's t-test. `collocations()` and `keywords()` each take the
+   maths, Welch's t-test. For keyness there are also the effect sizes the
+   field reports beside a significance score: log ratio, %DIFF, the odds
+   ratio, and Bayes-factor BIC. `collocations()` and `keywords()` each take the
    measures that make sense for them by name, or a callable of your own with
    the same `(f12, f1, f2, n)` signature, ranked and named alongside the
-   built-ins (`_apply_measure` in `assoc.py`).
+   built-ins (`_apply_measure` in `assoc.py`). Log ratio and %DIFF read `f2` as
+   the size of the corpus `f12` was counted in, so they belong to `keywords()`
+   and not to the collocation table, whose margins mean something else.
 6. **Lexical diversity** — TTR, MSTTR, Yule's K, MTLD.
 7. **Lexical dispersion** — `dispersion()` with range, range%, sd, cv, cv%,
    Juilland's D, Burch's DA, Gries's DP; several measures per call.

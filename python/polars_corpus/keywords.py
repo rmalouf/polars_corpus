@@ -9,11 +9,15 @@ import polars as pl
 from ._typing import IntoExpr, Measure, T_Frame
 from .assoc import (
     _apply_measure,
+    bic,
     chisq,
     crosstab,
     loglik,
+    logratio,
     mi3,
     minsens,
+    oddsratio,
+    pctdiff,
     pmi,
     smp,
     tscore,
@@ -42,11 +46,15 @@ MEASURES: dict[str, tuple[Callable[..., pl.Expr], str]] = {
     "pmi": (pmi, "PMI"),
     "mi3": (mi3, "MI3"),
     "ll": (loglik, "LogLik"),
+    "bic": (bic, "BIC"),
     "chisq": (chisq, "ChiSq"),
     "tscore": (tscore, "TScore"),
     "zscore": (zscore, "ZScore"),
     "minsens": (minsens, "MinSens"),
     "smp": (smp, "SMP"),
+    "logratio": (logratio, "LogRatio"),
+    "pctdiff": (pctdiff, "%DIFF"),
+    "oddsratio": (oddsratio, "OddsRatio"),
 }
 
 METHODS = ("ttest", *MEASURES)
@@ -80,15 +88,25 @@ def keywords(
     method : str | callable
         [Association metric](assoc.md) used to rank keywords:
 
+         - 'bic' : Bayes factor BIC, log-likelihood penalized by corpus size
          - 'chisq' : Pearson's chi-squared (χ²)
          - 'll' : Log-likelihood ratio (G²)
+         - 'logratio' : Hardie's log ratio, the effect size (column `LogRatio`)
          - 'mi3' : MI3, which pulls the ranking back towards frequent words
          - 'minsens' : Minimum sensitivity
+         - 'oddsratio' : Odds ratio, the effect size (column `OddsRatio`)
+         - 'pctdiff' : %DIFF, the effect size in percent (column `%DIFF`)
          - 'pmi' : Pointwise Mutual Information, which favors rare words
          - 'smp' : Kilgarriff's simple maths parameter (requires `k`)
          - 'tscore' : t-score, which favors frequent words
          - 'ttest' : Welch's t-test on per-file relative frequencies
          - 'zscore' : z-score
+
+         'll', 'chisq' and 'bic' measure the evidence that a word's two
+         frequencies differ, which grows with the size of the corpora.
+         'logratio', 'oddsratio' and 'pctdiff' measure how large that
+         difference is, which does not. The literature expects one of each,
+         because a large corpus makes a tiny difference significant.
 
          `method` can also be a `Callable` which takes the four counts `f12`, `f1`, `f2`
          and `n` described under `Returns`. It receives them as Polars expressions
@@ -136,6 +154,15 @@ def keywords(
     -----
     Rows with null values in either `expr` or `file_id_column` are dropped.
 
+    'bic' and 'chisq' are unsigned, so a word much rarer in the target corpus
+    than in the reference ranks alongside one much commoner. Every other
+    measure is signed, and puts the words the target overuses at the top.
+
+    'logratio', 'oddsratio' and 'pctdiff' have no value for a word absent from
+    the reference corpus, and stand a count of 0.5 in for that zero. The
+    ranking among such words then rests on that constant as much as on the
+    data, which `min_target_freq` is the way to keep in hand.
+
     References
     ----------
     - Hofland, K. and Johansson, S. 1982. *Word frequencies in British and
@@ -152,10 +179,14 @@ def keywords(
     >>> import polars_corpus as plc
     >>> plc.keywords(target, reference, "lemma", "ll", min_target_range=5)
     >>> plc.keywords(target, reference, "token", "ttest", file_id_column="text_id")
-    >>> # A measure of your own:
-    >>> def log_ratio(f12, f1, f2, n):
-    ...     return ((f12 / f1) / ((f2 - f12) / (n - f1))).log(2)
-    >>> plc.keywords(target, reference, "lemma", log_ratio, min_target_freq=10)
+    >>> # An effect size beside the significance measure, on the same words:
+    >>> keys = plc.keywords(target, reference, "lemma", "ll", min_target_freq=10)
+    >>> keys.with_columns(pl.col("freqs").corpus.logratio().alias("LogRatio"))
+    >>> # A measure of your own -- Hofland and Johansson's difference coefficient:
+    >>> def diff_coefficient(f12, f1, f2, n):
+    ...     target_rf, reference_rf = f12 / f2, (f1 - f12) / (n - f2)
+    ...     return (target_rf - reference_rf) / (target_rf + reference_rf)
+    >>> plc.keywords(target, reference, "lemma", diff_coefficient, min_target_freq=10)
     """
     method = check_measure(method, METHODS)
     keyword_expr = as_expr(expr)

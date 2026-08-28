@@ -4,19 +4,23 @@ import polars as pl
 import pytest
 from polars.testing import assert_frame_equal
 from polars_corpus import (
+    bic,
     chisq,
     crosstab,
     logdice,
     loglik,
+    logratio,
     mi3,
     minsens,
+    oddsratio,
+    pctdiff,
     pmi,
     smp,
     tscore,
     welchs_t,
     zscore,
 )
-from polars_corpus.assoc import welchs_t_from_stats
+from polars_corpus.assoc import _DEFAULT_NAMES, welchs_t_from_stats
 from polars_corpus.utils import output_name
 
 
@@ -247,6 +251,120 @@ def test_logdice_tops_out_at_fourteen() -> None:
     assert table.select(logdice("f12", "f1", "f2", "n")).item() == pytest.approx(14.0)
 
 
+# The keyness measures read the margins as `crosstab(word, corpus_part)` lays
+# them out: f2 is the size of the target corpus, so the reference corpus holds
+# f1 - f12 occurrences of the word among its n - f2 tokens. A frequency of zero
+# is replaced by the discount before the ratio is taken.
+def _rel_freqs_ref(
+    f12: int, f1: int, f2: int, n: int, discount: float = 0.5
+) -> tuple[float, float]:
+    """Relative frequency of the word in the target corpus and in the reference."""
+    reference = f1 - f12
+    return (
+        (discount if f12 == 0 else f12) / f2,
+        (discount if reference == 0 else reference) / (n - f2),
+    )
+
+
+def _oddsratio_ref(f12: int, f1: int, f2: int, n: int, discount: float = 0.5) -> float:
+    """Reference odds ratio, with the discount standing in for an empty cell."""
+    cells = (f12, f1 - f12, f2 - f12, n - f1 - f2 + f12)
+    o11, o12, o21, o22 = (discount if cell == 0 else cell for cell in cells)
+    return o11 * o22 / (o12 * o21)
+
+
+def _logratio_ref(f12: int, f1: int, f2: int, n: int) -> float:
+    target, reference = _rel_freqs_ref(f12, f1, f2, n)
+    return math.log2(target / reference)
+
+
+def _pctdiff_ref(f12: int, f1: int, f2: int, n: int) -> float:
+    target, reference = _rel_freqs_ref(f12, f1, f2, n)
+    return 100 * (target - reference) / reference
+
+
+# The keyness effect sizes, each beside the formula it is meant to compute.
+KEYNESS_MEASURES = {
+    "logratio": (logratio("f12", "f1", "f2", "n"), _logratio_ref),
+    "pctdiff": (pctdiff("f12", "f1", "f2", "n"), _pctdiff_ref),
+    "oddsratio": (oddsratio("f12", "f1", "f2", "n"), _oddsratio_ref),
+}
+
+
+@pytest.mark.parametrize("dtype", [pl.Int64, pl.UInt32])
+@pytest.mark.parametrize(
+    "measure, reference", KEYNESS_MEASURES.values(), ids=KEYNESS_MEASURES
+)
+def test_keyness_measures(measure: pl.Expr, reference, dtype: pl.DataType) -> None:
+    # f12=0 stays in: the discount is what these measures have instead of a
+    # zero cell, so it is part of the formula rather than an edge case.
+    table = pl.DataFrame(CONTINGENCY).cast(dtype)
+    result = table.with_columns(value=measure)
+
+    expected = [reference(**row) for row in table.iter_rows(named=True)]
+    assert result["value"].to_list() == pytest.approx(expected)
+
+
+@pytest.mark.parametrize(
+    "measure, at_independence",
+    [(logratio, 0.0), (pctdiff, 0.0), (oddsratio, 1.0)],
+    ids=["logratio", "pctdiff", "oddsratio"],
+)
+def test_keyness_measures_at_independence(measure, at_independence: float) -> None:
+    # f12=6 of CONTINGENCY: the word is equally common in both corpora.
+    table = pl.DataFrame({"f12": [6], "f1": [12], "f2": [10], "n": [20]})
+    value = table.select(measure("f12", "f1", "f2", "n")).item()
+    assert value == pytest.approx(at_independence)
+
+
+def test_pctdiff_rescales_logratio() -> None:
+    # %DIFF and log ratio are one ranking on two scales.
+    table = pl.DataFrame(CONTINGENCY)
+    result = table.select(
+        got=pctdiff("f12", "f1", "f2", "n"),
+        expected=100 * ((2 ** logratio("f12", "f1", "f2", "n")) - 1),
+    )
+    assert result["got"].to_list() == pytest.approx(result["expected"].to_list())
+
+
+def test_oddsratio_ignores_which_margin_is_the_corpus() -> None:
+    # Unlike log ratio, the odds ratio is symmetric in its two margins.
+    table = pl.DataFrame(CONTINGENCY)
+    result = table.select(
+        got=oddsratio("f12", "f1", "f2", "n"),
+        swapped=oddsratio("f12", "f2", "f1", "n"),
+    )
+    assert result["got"].to_list() == pytest.approx(result["swapped"].to_list())
+
+
+@pytest.mark.parametrize("measure", [logratio, pctdiff, oddsratio])
+def test_discount_keeps_an_empty_reference_finite(measure) -> None:
+    # A word every occurrence of which is in the target corpus: the reference
+    # frequency is 0, which is a ratio only the discount can rescue.
+    table = pl.DataFrame({"f12": [3], "f1": [3], "f2": [9], "n": [16]})
+    assert math.isfinite(table.select(measure("f12", "f1", "f2", "n")).item())
+    assert math.isinf(table.select(measure("f12", "f1", "f2", "n", discount=0)).item())
+
+
+def test_bic_penalizes_loglik_by_corpus_size() -> None:
+    table = pl.DataFrame(CONTINGENCY)
+    result = table.select(
+        got=bic("f12", "f1", "f2", "n"),
+        # loglik carries the sign of the deviation and BIC does not, so the
+        # penalty comes off its magnitude.
+        expected=loglik("f12", "f1", "f2", "n").abs() - pl.col("n").log(),
+    )
+    assert result["got"].to_list() == pytest.approx(result["expected"].to_list())
+    # f12=20: o11=20, o12=10, o21=5, o22=15, and n=50.
+    expected = 2 * (
+        20 * math.log(20 / 15)
+        + 10 * math.log(10 / 15)
+        + 5 * math.log(5 / 10)
+        + 15 * math.log(15 / 10)
+    ) - math.log(50)
+    assert result["got"][1] == pytest.approx(expected)
+
+
 def test_smp() -> None:
     # word 1: f12=2, f1=3 -> reference freq = f1-f12 = 1; (2+1)/(1+1) = 1.5
     # word 2: f12=0, f1=5 -> reference freq = 5; (0+1)/(5+1) = 1/6
@@ -299,6 +417,10 @@ def test_struct_assoc_measures() -> None:
         pl.col("freqs").corpus.logdice().alias("logdice"),
         pl.col("freqs").corpus.tscore().alias("tscore"),
         pl.col("freqs").corpus.zscore().alias("zscore"),
+        pl.col("freqs").corpus.bic().alias("bic"),
+        pl.col("freqs").corpus.logratio().alias("logratio"),
+        pl.col("freqs").corpus.pctdiff().alias("pctdiff"),
+        pl.col("freqs").corpus.oddsratio().alias("oddsratio"),
     )
 
     # Verify row C, y=1: f12=2, f1=3, f2=4, n=7
@@ -320,8 +442,11 @@ def test_struct_assoc_measures() -> None:
     # chisq matches the generic sum-of-(O-E)^2/E reference
     assert row["chisq"].item() == pytest.approx(_chisq_ref(f12, f1, f2, n))
 
-    for name, (_, reference) in COLLOCATION_MEASURES.items():
+    for name, (_, reference) in (COLLOCATION_MEASURES | KEYNESS_MEASURES).items():
         assert row[name].item() == pytest.approx(reference(f12, f1, f2, n))
+
+    # bic is the log-likelihood's magnitude, penalized by the corpus size.
+    assert row["bic"].item() == pytest.approx(abs(row["ll"].item()) - math.log(n))
 
 
 # A well-behaved table, and each measure with the margins it actually reads: a
@@ -339,6 +464,10 @@ MEASURES = {
     "logdice": (logdice("f12", "f1", "f2", "n"), ("f12", "f1", "f2")),
     "tscore": (tscore("f12", "f1", "f2", "n"), ("f12", "f1", "f2", "n")),
     "zscore": (zscore("f12", "f1", "f2", "n"), ("f12", "f1", "f2", "n")),
+    "bic": (bic("f12", "f1", "f2", "n"), ("f12", "f1", "f2", "n")),
+    "logratio": (logratio("f12", "f1", "f2", "n"), ("f12", "f1", "f2", "n")),
+    "pctdiff": (pctdiff("f12", "f1", "f2", "n"), ("f12", "f1", "f2", "n")),
+    "oddsratio": (oddsratio("f12", "f1", "f2", "n"), ("f12", "f1", "f2", "n")),
 }
 
 
@@ -352,6 +481,20 @@ def test_measures_propagate_nulls(measure: pl.Expr, margins: tuple[str, ...]) ->
     )
     values = table.select(measure).to_series()
     assert [m for m, value in zip(margins, values) if value is not None] == []
+
+
+@pytest.mark.parametrize("measure, _margins", MEASURES.values(), ids=MEASURES)
+def test_measures_leave_naming_to_their_caller(
+    measure: pl.Expr, _margins: tuple[str, ...]
+) -> None:
+    """Every measure reports a name `_apply_measure` knows to replace.
+
+    A measure names no column of its own, so polars falls back to the leftmost
+    count it reads or to "literal" when it starts from a constant. Both are in
+    `_DEFAULT_NAMES`; anything else would be taken for a name the measure chose.
+    """
+    name = measure.meta.output_name(raise_if_undetermined=False)
+    assert name in _DEFAULT_NAMES
 
 
 def test_measures_survive_unsigned_margins() -> None:

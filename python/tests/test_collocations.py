@@ -15,7 +15,7 @@ from polars_corpus.assoc import (
 )
 from polars_corpus.collocations import MEASURES as BUILTINS
 
-from .helpers import log_ratio, named_by_alias
+from .helpers import jaccard, named_by_alias
 
 # Two files, with "fox" once in each. Positions:
 #
@@ -263,7 +263,7 @@ def test_builtin_function_matches_its_name(method: str, function) -> None:
 
 @pytest.mark.parametrize(
     "measure,column",
-    [(log_ratio, "log_ratio"), (named_by_alias, "LogRatio")],
+    [(jaccard, "jaccard"), (named_by_alias, "Jaccard")],
 )
 def test_own_measure_names_its_column(measure, column: str) -> None:
     """The function's name, or the alias it puts on what it returns."""
@@ -275,9 +275,7 @@ def test_own_measure_names_its_column(measure, column: str) -> None:
 
 
 def test_own_measure_beside_builtins() -> None:
-    result = collocations(
-        fox(), "token", ["ll", log_ratio, "pmi"], window=2, min_freq=1
-    )
+    result = collocations(fox(), "token", ["ll", jaccard, "pmi"], window=2, min_freq=1)
 
     # Columns in the order asked for, ranked by the first of them.
     assert result.columns == [
@@ -285,16 +283,16 @@ def test_own_measure_beside_builtins() -> None:
         "freqs",
         "range",
         "LogLik",
-        "log_ratio",
+        "jaccard",
         "PMI",
     ]
     assert result["LogLik"].to_list() == sorted(result["LogLik"], reverse=True)
 
 
 def test_own_measure_ranks_when_it_comes_first() -> None:
-    result = collocations(fox(), "token", [log_ratio, "ll"], window=2, min_freq=1)
+    result = collocations(fox(), "token", [jaccard, "ll"], window=2, min_freq=1)
 
-    assert result["log_ratio"].to_list() == sorted(result["log_ratio"], reverse=True)
+    assert result["jaccard"].to_list() == sorted(result["jaccard"], reverse=True)
 
 
 @pytest.mark.parametrize(

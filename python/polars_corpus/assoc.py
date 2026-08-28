@@ -26,6 +26,10 @@ __all__ = [
     "smp",
     "chisq",
     "loglik",
+    "bic",
+    "logratio",
+    "pctdiff",
+    "oddsratio",
     "welchs_t",
     "welchs_t_from_stats",
 ]
@@ -54,6 +58,37 @@ def _as_freqs(
         as_expr(f1, "f1").cast(pl.Float64),
         as_expr(f2, "f2").cast(pl.Float64),
         as_expr(n, "n").cast(pl.Float64),
+    )
+
+
+def _discounted(count: pl.Expr, discount: float) -> pl.Expr:
+    """Stand `discount` in for a count of zero, leaving every other count alone.
+
+    A word missing from one of the two corpora gives the ratio measures a zero
+    denominator, and one infinity swamps whatever ranking they are sorted on.
+    Nudging only the zeros leaves every other value exactly what the counts say.
+
+    Written as an addition rather than a `when`/`then` so that the expression
+    keeps the name of the count it came from. An unnamed `when` reports
+    "literal", which two measures in one `with_columns` collide on.
+    """
+    if not discount:
+        return count
+    return count + discount * (count == 0).cast(pl.Float64)
+
+
+def _rel_freqs(
+    f12: pl.Expr, f1: pl.Expr, f2: pl.Expr, n: pl.Expr, discount: float
+) -> tuple[pl.Expr, pl.Expr]:
+    """A word's relative frequency in the target corpus and in the reference.
+
+    Reads the margins as `crosstab(word, corpus_part)` lays them out: `f1` is
+    the word's frequency in both corpora together and `f2` is the size of the
+    target corpus, so the reference counts are `f1 - f12` out of `n - f2`.
+    """
+    return (
+        _discounted(f12, discount) / f2,
+        _discounted(f1 - f12, discount) / (n - f2),
     )
 
 
@@ -540,6 +575,65 @@ def loglik(f12: IntoExpr, f1: IntoExpr, f2: IntoExpr, n: IntoExpr) -> pl.Expr:
     )
 
 
+def bic(f12: IntoExpr, f1: IntoExpr, f2: IntoExpr, n: IntoExpr) -> pl.Expr:
+    r"""
+    Compute the Bayes factor BIC for contingency table data.
+
+    Discounts the log-likelihood ratio by a penalty that grows with the corpus
+    size, so the threshold a word has to clear rises as the corpora get bigger.
+    In a corpus of a hundred million words almost every difference is
+    significant by $G^2$; BIC asks instead how much the evidence outweighs the
+    number of observations it rests on.
+
+    Parameters
+    ----------
+    f12 : IntoExpr
+        Joint frequencies of variable pairs. Can be a column name (str) or
+        Polars expression.
+    f1 : IntoExpr
+        Marginal frequencies of first variable. Can be a column name (str) or
+        Polars expression.
+    f2 : IntoExpr
+        Marginal frequencies of second variable. Can be a column name (str) or
+        Polars expression.
+    n : IntoExpr
+        Grand total (total number of observations). Can be a column name (str) or
+        Polars expression.
+
+    Returns
+    -------
+    pl.Expr
+        A Polars expression that computes the BIC values for each variable
+        pair.
+
+    Notes
+    -----
+    BIC is calculated as:
+
+    $$
+    \text{BIC} = |G^2| - \log n
+    $$
+
+    where $G^2$ is the log-likelihood ratio and the penalty is $d\log n$ for
+    the $d = 1$ degree of freedom of a 2×2 table. Wilson reads the result as
+    degrees of evidence: 0-2 is not worth more than a bare mention, 2-6 is
+    positive, 6-10 is strong, and above 10 is very strong.
+
+    Wilson writes $G^2$ unsigned. `loglik` here carries the sign of the
+    deviation instead, so BIC takes its magnitude and, like `chisq`, says how
+    strong the evidence is without saying which way it points. Pair it with
+    `logratio` or `pctdiff` for the direction.
+
+    References
+    ----------
+    - Wilson, A. 2013. Embracing Bayes factors for key item analysis in corpus
+      linguistics. In M. Bieswanger and A. Koll-Stobbe (eds.), *New Approaches
+      to the Study of Linguistic Variability*, 3-11. Frankfurt: Peter Lang.
+    """
+    _, _, _, size = _as_freqs(f12, f1, f2, n)
+    return loglik(f12, f1, f2, n).abs() - size.log()
+
+
 def minsens(f12: IntoExpr, f1: IntoExpr, f2: IntoExpr, n: IntoExpr) -> pl.Expr:
     """
     Compute minimum sensitivity values for contingency table data.
@@ -653,6 +747,220 @@ def smp(
     """
     f12, f1, _, _ = _as_freqs(f12, f1, f2, n)
     return (f12 + k) / (f1 - f12 + k)
+
+
+def logratio(
+    f12: IntoExpr,
+    f1: IntoExpr,
+    f2: IntoExpr,
+    n: IntoExpr,
+    discount: float = 0.5,
+) -> pl.Expr:
+    r"""
+    Compute Hardie's log ratio for keyword contingency table data.
+
+    Compares how common a word is in the target corpus with how common it is in
+    the reference, on a base-2 log scale: 1 means twice as common in the target,
+    2 means four times, and a negative value means it is rarer there. This is an
+    effect size rather than a test. It says how large the difference is, not how
+    strong the evidence for it is, and it does not grow with the corpus.
+
+    Parameters
+    ----------
+    f12 : IntoExpr
+        Joint frequencies of variable pairs. Can be a column name (str) or
+        Polars expression.
+    f1 : IntoExpr
+        Marginal frequencies of first variable. Can be a column name (str) or
+        Polars expression.
+    f2 : IntoExpr
+        Marginal frequencies of second variable. Can be a column name (str) or
+        Polars expression.
+    n : IntoExpr
+        Grand total (total number of observations). Can be a column name (str) or
+        Polars expression.
+    discount : float, default 0.5
+        Count to stand in for a frequency of zero, so that a word missing from
+        one corpus gets a large log ratio rather than an infinite one. Set it to
+        0 to leave the infinities in place.
+
+    Returns
+    -------
+    pl.Expr
+        A Polars expression that computes the log ratio for each variable pair.
+
+    Notes
+    -----
+    Log ratio is calculated as:
+
+    $$
+    \text{LR}(x,y) = \log_2\frac{f_{12} / f_2}{(f_1 - f_{12}) / (n - f_2)}
+    $$
+
+    Unlike the other measures here this one is not symmetric in its two
+    margins. It reads them as `crosstab` lays them out for a word by corpus
+    part table, which is what `keywords` passes it: $f_{12}$ is the word's
+    frequency in the target corpus and $f_2$ the size of that corpus, while
+    $f_1$ is the word's frequency in both corpora together and $n$ their
+    combined size. The reference corpus frequency is therefore $f_1 - f_{12}$
+    and its size $n - f_2$.
+
+    A word absent from the reference corpus has no ratio, and `discount`
+    replaces that zero frequency. Such a word is then ranked by the constant as
+    much as by its own frequency, so the top of a log ratio list is worth
+    reading with `min_target_freq` set.
+
+    References
+    ----------
+    - Hardie, A. 2014. Log Ratio: an informal introduction. *ESRC Centre for
+      Corpus Approaches to Social Science (CASS)*, Lancaster University.
+    """
+    f12, f1, f2, n = _as_freqs(f12, f1, f2, n)
+    target, reference = _rel_freqs(f12, f1, f2, n, discount)
+    return (target / reference).log(2)
+
+
+def pctdiff(
+    f12: IntoExpr,
+    f1: IntoExpr,
+    f2: IntoExpr,
+    n: IntoExpr,
+    discount: float = 0.5,
+) -> pl.Expr:
+    r"""
+    Compute %DIFF for keyword contingency table data.
+
+    Gives the difference between a word's relative frequency in the target
+    corpus and in the reference as a percentage of the reference figure: 100
+    means twice as common in the target, -50 means half as common. It ranks
+    words exactly as `logratio` does, on a percentage scale rather than a
+    logarithmic one.
+
+    Parameters
+    ----------
+    f12 : IntoExpr
+        Joint frequencies of variable pairs. Can be a column name (str) or
+        Polars expression.
+    f1 : IntoExpr
+        Marginal frequencies of first variable. Can be a column name (str) or
+        Polars expression.
+    f2 : IntoExpr
+        Marginal frequencies of second variable. Can be a column name (str) or
+        Polars expression.
+    n : IntoExpr
+        Grand total (total number of observations). Can be a column name (str) or
+        Polars expression.
+    discount : float, default 0.5
+        Count to stand in for a frequency of zero, so that a word missing from
+        one corpus gets a large percentage rather than an infinite one. Set it
+        to 0 to leave the infinities in place.
+
+    Returns
+    -------
+    pl.Expr
+        A Polars expression that computes %DIFF for each variable pair.
+
+    Notes
+    -----
+    %DIFF is calculated as:
+
+    $$
+    \%\text{DIFF}(x,y) = 100\,
+        \frac{f_{12} / f_2 - (f_1 - f_{12}) / (n - f_2)}
+             {(f_1 - f_{12}) / (n - f_2)}
+    $$
+
+    It reads the two margins as `logratio` does, and the two are the same
+    ranking on different scales:
+    $\%\text{DIFF} = 100\,(2^{\text{LR}} - 1)$.
+
+    References
+    ----------
+    - Gabrielatos, C. and A. Marchi. 2011. Keyness: Matching metrics to
+      definitions. Paper given at *Corpus Linguistics in the South 1*,
+      University of Portsmouth.
+    """
+    f12, f1, f2, n = _as_freqs(f12, f1, f2, n)
+    target, reference = _rel_freqs(f12, f1, f2, n, discount)
+    # The scaling trails the difference so the expression is named for `f12`
+    # rather than for the leading literal; see `_discounted`.
+    return (target - reference) / reference * 100
+
+
+def oddsratio(
+    f12: IntoExpr,
+    f1: IntoExpr,
+    f2: IntoExpr,
+    n: IntoExpr,
+    discount: float = 0.5,
+) -> pl.Expr:
+    r"""
+    Compute the odds ratio for contingency table data.
+
+    Divides the odds that a token of the target corpus is this word by the same
+    odds in the reference corpus. 1 means the word is no more likely in one than
+    the other, 2 means the odds are twice as high in the target. Like `logratio`
+    it measures the size of the difference rather than the evidence for it.
+
+    Parameters
+    ----------
+    f12 : IntoExpr
+        Joint frequencies of variable pairs. Can be a column name (str) or
+        Polars expression.
+    f1 : IntoExpr
+        Marginal frequencies of first variable. Can be a column name (str) or
+        Polars expression.
+    f2 : IntoExpr
+        Marginal frequencies of second variable. Can be a column name (str) or
+        Polars expression.
+    n : IntoExpr
+        Grand total (total number of observations). Can be a column name (str) or
+        Polars expression.
+    discount : float, default 0.5
+        Count to stand in for a cell of zero, so that a word missing from one
+        corpus gets a large odds ratio rather than an infinite one. Set it to 0
+        to leave the infinities in place.
+
+    Returns
+    -------
+    pl.Expr
+        A Polars expression that computes the odds ratio for each variable pair.
+
+    Notes
+    -----
+    For a 2×2 contingency table the odds ratio is:
+
+    $$
+    \text{OR} = \frac{o_{11}\,o_{22}}{o_{12}\,o_{21}}
+              = \frac{f_{12}\,(n - f_1 - f_2 + f_{12})}
+                     {(f_1 - f_{12})\,(f_2 - f_{12})}
+    $$
+
+    Swapping the two margins leaves this unchanged, so unlike `logratio` it does
+    not care which of them is the corpus part. Values run from 0 to infinity
+    with 1 at independence, which is an awkward scale to average or plot. Take
+    the logarithm for one that is symmetric about 0.
+
+    Odds and relative frequency are close for anything that is a small share of
+    a corpus, so for most words the odds ratio comes out near
+    $2^{\text{LR}}$. It rises above that for a word frequent enough that
+    removing its own tokens changes the corpus it is measured against.
+
+    Replacing a zero cell with `discount` is the usual 0.5 correction for an
+    odds ratio with an empty cell.
+
+    References
+    ----------
+    - Pojanapunya, P. and R. Watson Todd. 2018. Log-likelihood and odds ratio:
+      Keyness statistics for different purposes of keyword analysis. *Corpus
+      Linguistics and Linguistic Theory* 14(1): 133-167.
+    """
+    f12, f1, f2, n = _as_freqs(f12, f1, f2, n)
+    o11 = _discounted(f12, discount)
+    o12 = _discounted(f1 - f12, discount)
+    o21 = _discounted(f2 - f12, discount)
+    o22 = _discounted(n - f1 - f2 + f12, discount)
+    return (o11 * o22) / (o12 * o21)
 
 
 def welchs_t(x1: IntoExprColumn, x2: IntoExprColumn, alt: str = "twosided") -> pl.Expr:

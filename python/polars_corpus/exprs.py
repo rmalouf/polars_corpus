@@ -6,12 +6,16 @@ import polars as pl
 
 from ._typing import IntoExpr
 from .assoc import (
+    bic,
     chisq,
     crosstab,
     logdice,
     loglik,
+    logratio,
     mi3,
     minsens,
+    oddsratio,
+    pctdiff,
     pmi,
     smp,
     tscore,
@@ -181,6 +185,45 @@ class CorpusExpr:
             self._expr.struct.field("f2"),
             self._expr.struct.field("n"),
             yates,
+        )
+
+    def bic(self) -> pl.Expr:
+        """Compute the Bayes factor BIC from a freqs struct column."""
+        return bic(
+            self._expr.struct.field("f12"),
+            self._expr.struct.field("f1"),
+            self._expr.struct.field("f2"),
+            self._expr.struct.field("n"),
+        )
+
+    def logratio(self, discount: float = 0.5) -> pl.Expr:
+        """Compute Hardie's log ratio from a freqs struct column."""
+        return logratio(
+            self._expr.struct.field("f12"),
+            self._expr.struct.field("f1"),
+            self._expr.struct.field("f2"),
+            self._expr.struct.field("n"),
+            discount,
+        )
+
+    def pctdiff(self, discount: float = 0.5) -> pl.Expr:
+        """Compute %DIFF from a freqs struct column."""
+        return pctdiff(
+            self._expr.struct.field("f12"),
+            self._expr.struct.field("f1"),
+            self._expr.struct.field("f2"),
+            self._expr.struct.field("n"),
+            discount,
+        )
+
+    def oddsratio(self, discount: float = 0.5) -> pl.Expr:
+        """Compute the odds ratio from a freqs struct column."""
+        return oddsratio(
+            self._expr.struct.field("f12"),
+            self._expr.struct.field("f1"),
+            self._expr.struct.field("f2"),
+            self._expr.struct.field("n"),
+            discount,
         )
 
 

@@ -36,11 +36,11 @@ def spans(results: SearchResults | None) -> list[tuple[int, int]]:
     return [(m.span.start, m.span.end) for m in (results.matches if results else [])]
 
 
-def log_ratio(f12: pl.Expr, f1: pl.Expr, f2: pl.Expr, n: pl.Expr) -> pl.Expr:
-    """A measure the library does not ship (Hardie 2014)."""
-    return ((f12 / f1) / ((f2 - f12) / (n - f1))).log(2)
+def jaccard(f12: pl.Expr, f1: pl.Expr, f2: pl.Expr, n: pl.Expr) -> pl.Expr:
+    """A measure the library does not ship."""
+    return f12 / (f1 + f2 - f12)
 
 
 def named_by_alias(f12: pl.Expr, f1: pl.Expr, f2: pl.Expr, n: pl.Expr) -> pl.Expr:
     """The same measure, naming its own column instead of taking the def's name."""
-    return log_ratio(f12, f1, f2, n).alias("LogRatio")
+    return jaccard(f12, f1, f2, n).alias("Jaccard")

@@ -162,14 +162,24 @@ the only thing this section still owes.
 clusters-around-a-node tool and no lexical-bundle extraction, which is the
 staple of the phraseology side of the field.
 
-## 5. Keyness effect sizes
+## 5. Keyness effect sizes -- code done, one notebook section owed
 
-`keywords()` offers `chisq`, `ll`, `mi3`, `minsens`, `pmi`, `smp`, `tscore`,
-`ttest`, and `zscore` -- `mi3`, `tscore`, and `zscore` joined the list when the
-collocation measures landed. The effect-size measures the field now expects
-alongside significance are still missing: **log ratio** (Hardie 2014),
-**%DIFF**, odds ratio, and Bayes-factor BIC. The keywords notebook already
-makes the argument for why $G^2$ alone misleads, so the ground is prepared.
+`keywords()` offers `bic`, `chisq`, `ll`, `logratio`, `mi3`, `minsens`,
+`oddsratio`, `pctdiff`, `pmi`, `smp`, `tscore`, `ttest`, and `zscore`. The four
+the field expects alongside significance have landed: **log ratio** (Hardie
+2014) in `LogRatio`, **%DIFF** (Gabrielatos and Marchi 2011) in `%DIFF`, the
+odds ratio in `OddsRatio`, and **Bayes-factor BIC** (Wilson 2013) in `BIC`.
+`docs/assoc.md` documents each, and every one is on `pl.col("freqs").corpus.*`
+as well, so an effect size can be added to a table already ranked by `ll`
+without recomputing it.
+
+Two of the four read their margins asymmetrically, which is new here. Log ratio
+and %DIFF take `f2` as the size of the corpus `f12` was counted in, the way
+`crosstab(word, corpus_part)` lays a keyness table out; they would compute
+something else on the collocation table, whose `f1` is the window size instead.
+Neither is offered by `collocations()` for that reason. `bic` and `oddsratio`
+are symmetric and would work in either, but collocation is closed (section 1)
+and they are not what it is missing.
 
 `logdice` is deliberately not among them. In the keyness table the second
 marginal `f2` is the size of the target corpus, not a second word's frequency,
@@ -178,10 +188,20 @@ monotone function of the word's relative frequency in the target. It is an
 effect size for collocation, where both marginals are word frequencies; here
 it would just rank by frequency.
 
-A reader who knows the formula can now pass it in: `method=` takes a callable
-over `(f12, f1, f2, n)`, and log ratio is four lines. That is a workaround,
-not a fix -- the gap is what a student finds in the list of methods, and
-these belong in it.
+The zero cell had to be decided rather than discovered. A word absent from the
+reference corpus has no ratio at all, and one infinity at the top of a sorted
+column ruins the ranking it was sorted on, so `logratio`, `pctdiff` and
+`oddsratio` take a `discount` -- 0.5 by default, CQPweb's convention -- that
+stands in for a frequency of zero. It is not exposed on `keywords()`, for the
+reason `chisq`'s `yates` is not: the argument belongs to the measure, and the
+default is the one the literature reports. `discount=0` puts the infinities
+back for anyone who wants them.
+
+What is left is the notebook. `docs/notebooks/keywords.ipynb` spends a section
+arguing that $G^2$ alone misleads and then has nothing to offer instead; the
+section that follows it -- ranking the same words by `ll` and by `logratio`
+side by side, and looking at where they disagree -- is the remaining work, and
+by the standard at the top of this file it is what makes these shipped.
 
 ## 6. Text-level descriptive measures
 
@@ -260,17 +280,17 @@ above, they rank the same.
 
 1. ~~A real `frequency_list()` (section 2).~~ Done.
 2. ~~Concordance sorting, sampling and export (section 3).~~ Done.
-3. Keyness effect sizes (section 5): log ratio and %DIFF, the two the field
-   actually reports.
+3. ~~Keyness effect sizes (section 5): log ratio and %DIFF, the two the field
+   actually reports.~~ Code and reference page done; the notebook section
+   comparing a significance ranking against an effect-size one is still owed.
 
 The first two are what a student opens AntConc for, and both are covered now:
 frequency, collocation and the concordance workflow each have their function,
-their reference page and their notebook. The third is the smallest piece of
-code left with the largest claim on being taken seriously. `keywords()` ranks
-by significance alone, which the keywords notebook itself spends a section
-arguing is not enough, and `_apply_measure` already takes a callable over
-`(f12, f1, f2, n)` -- so each measure is four lines, a name in the list, and a
-paragraph saying when to reach for it.
+their reference page and their notebook. The third turned out as predicted:
+each measure was a few lines over `(f12, f1, f2, n)`, a name in the list, and a
+paragraph saying when to reach for it. What it cost beyond that was deciding
+what to do with a word the reference corpus never uses, which is the case these
+measures are most often reached for and the one they are least defined on.
 
 Two things sit below that line rather than above it, and are deliberately
 after the next release:
