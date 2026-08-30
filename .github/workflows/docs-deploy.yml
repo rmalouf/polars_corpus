@@ -1,0 +1,65 @@
+# Publishing the site, by hand. docs.yml only checks that it still builds.
+#
+# Manual so the site never runs ahead of the released library: publish after
+# a release goes to PyPI. Nothing here is tied to the version, so doc-only
+# fixes go out by running this again, with no bump and no tag.
+
+name: Publish documentation
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: 'Branch, tag or SHA to publish'
+        default: main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref }}
+
+      - uses: astral-sh/setup-uv@v9.0.0
+        with:
+          enable-cache: true
+          cache-suffix: docs-deploy
+
+      # --only-group installs mkdocs without building the Rust extension.
+      # mkdocstrings reads the sources under python/ (see mkdocs.yml), and the
+      # notebooks are rendered from their committed outputs, so the docs need
+      # neither the extension nor the corpora.
+      - name: Install documentation dependencies
+        run: uv sync --only-group docs
+
+      - name: Build documentation
+        run: uv run --no-sync mkdocs build --strict
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v5
+        with:
+          path: ./site
+
+  deploy:
+    name: Deploy to GitHub Pages
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v5
