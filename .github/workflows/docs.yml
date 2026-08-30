@@ -1,4 +1,4 @@
-# Does the site still build? Publishing it is docs-deploy.yml, by hand.
+# Test building docs (but don't deploy)
 
 name: Documentation
 

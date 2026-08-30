@@ -1,11 +1,5 @@
 # The pre-release check: build the wheels, then run the whole grid against
-# them. Everyday pushes go through test.yml, which tests one environment.
-#
-# Splitting the build from the tests is what makes the grid affordable. The
-# extension is abi3-py311 (see Cargo.toml), so one wheel per platform covers
-# 3.11 through 3.14: two release builds feed nine test legs that compile
-# nothing. It also means the tests run against the artifact that ships --
-# release profile, LTO and all -- rather than a dev-fast rebuild of it.
+# them.
 #
 # Publishing is deliberately not here. Download the artifacts and upload them
 # by hand until there is a reason to automate it.
@@ -58,11 +52,6 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
-      # The same coverage `make grid` gives locally -- every Python the wheels
-      # claim, each against both ends of the polars range pyproject allows --
-      # plus the one macOS leg that guards the arm64 build, on the newest
-      # Python since covering the versions is the Linux legs' job. An entry
-      # without `polars` uses the lockfile's.
       matrix:
         include:
           - {os: ubuntu-latest, python-version: '3.11'}
