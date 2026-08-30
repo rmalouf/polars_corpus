@@ -1,5 +1,5 @@
 [build-system]
-requires = ["maturin>=1.0,<2.0", "polars>=1.36"]
+requires = ["maturin>=1.0,<2.0", "polars>=1.36,<2.0"]
 build-backend = "maturin"
 
 [project]
@@ -29,17 +29,16 @@ authors = [
 description = "Text processing plugins for polars"
 readme = "README.md"
 license = "MIT"
+# minimum polars version is also hard-coded in Makefile and .github/workflows/release.yml
 dependencies = [
-    "polars>=1.36",
+    "polars>=1.36,<2.0",
     "lark>=1.2",
     "nltk>=3.9",
     "anywidget>=0.9"
 ]
 
 [project.optional-dependencies]
-# pyarrow is seaborn's, not ours: below 14 it takes the deprecated dataframe
-# interchange path for a polars frame and warns on every plot. It goes when
-# seaborn does.
+# pyarrow>=14 is required by seaborn
 examples = ["great_tables", "scipy", "matplotlib", "seaborn", "pyarrow>=14", "statsmodels", "adjusttext"]
 embeddings = ["sentence-transformers", "model2vec", "umap-learn",
     "hdbscan"]
@@ -49,14 +48,7 @@ Repository = "https://github.com/rmalouf/polars_corpus"
 Issues = "https://github.com/rmalouf/polars_corpus/issues"
 
 [tool.ruff]
-# The notebooks in examples/ are working scratchpads and are routinely left
-# mid-edit, with undefined names and unused imports. The pattern names the
-# notebooks rather than the directory, so the .py sources beside them are still
-# linted, and it leaves docs/notebooks/ alone: those are pages people read, and
-# they are held to the same formatting as the rest of the code.
 extend-exclude = ["examples/*.ipynb"]
-# Apply the exclusion even when a notebook is named directly on the command
-# line, which is what editors and pre-commit hooks do.
 force-exclude = true
 
 [tool.pyrefly.errors]
@@ -77,13 +69,9 @@ module-name = "polars_corpus._internal"
 python-source = "python"
 
 [tool.pyrefly]
-# _internal is the compiled Rust extension; its stubs live in _internal.pyi but
-# the module itself is only importable after `make develop`.
 ignore-missing-imports = ["polars_corpus._internal"]
 
 [dependency-groups]
-# What `mkdocs build` needs and nothing else, so the docs workflow can install
-# it with `uv sync --only-group docs` and skip building the Rust extension.
 docs = [
     "mkdocs",
     "mkdocs-material",
