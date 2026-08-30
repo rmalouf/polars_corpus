@@ -11,33 +11,35 @@ when:
   - event: ["pull_request"]
     branch: ["main"]
 
+# Not a NixOS image: PyPI's maturin, ruff and scipy wheels are dynamically
+# linked against a loader NixOS does not provide, so the toolchain comes from
+# the installers instead of from `dependencies`.
 engine: "microvm"
-image: "nixos"
+image: "almalinux10"
 
 clone:
   depth: 1
 
-dependencies:
-  - gcc
-  - cargo
-  - rustc
-  - clippy
-  - rustfmt
-  - uv
-  - python313
-
 environment:
   CARGO_TERM_COLOR: "always"
-  # See lint.yml: uv's own CPython builds cannot run on a NixOS guest.
+  CARGO_HOME: "/usr/local/cargo"
+  RUSTUP_HOME: "/usr/local/rustup"
   UV_PYTHON: "3.13"
-  UV_PYTHON_PREFERENCE: "only-system"
-  UV_PYTHON_DOWNLOADS: "never"
-  # dev-fast is the release profile without LTO, as on GitHub. `--compatibility
-  # linux` skips the manylinux audit, which the guest's Nix-store glibc fails;
-  # the wheel is installed here and never published.
-  MATURIN_PEP517_ARGS: "--profile dev-fast --compatibility linux"
+  # dev-fast is the release profile without LTO: the tests stay fast to run
+  # without paying for a full release build.
+  MATURIN_PEP517_ARGS: "--profile dev-fast"
 
 steps:
+  # cargo needs a linker, so gcc comes along. The symlinks put cargo and rustc
+  # on the default PATH, which the steps below inherit unchanged.
+  - name: "Install toolchain"
+    command: |
+      dnf install -y gcc
+      curl -LsSf https://astral.sh/uv/install.sh | env UV_INSTALL_DIR=/usr/local/bin sh
+      curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
+        | sh -s -- -y --no-modify-path --profile minimal -c clippy,rustfmt
+      ln -s "$CARGO_HOME"/bin/* /usr/local/bin/
+
   - name: "cargo fmt"
     command: "cargo fmt --all --check"
 
@@ -54,8 +56,8 @@ steps:
     command: "uv sync --group dev --extra examples"
 
   # The corpora test_convert.py reads. Downloaded every run: spindle caches Nix
-  # derivations between pipelines, not arbitrary directories. punkt_tab is not a
-  # corpus: state_union ships no sentence boundaries, so its reader tokenizes
+  # derivations between pipelines, and this pipeline has none. punkt_tab is not
+  # a corpus: state_union ships no sentence boundaries, so its reader tokenizes
   # them with PunktTokenizer.
   - name: "Download nltk corpora"
     command: >

@@ -9,26 +9,22 @@ when:
   - event: ["pull_request"]
     branch: ["main"]
 
+# A NixOS guest cannot exec a generic-linux dynamically linked binary, which is
+# what PyPI ships for ruff (and for maturin, see test.yml). An FHS image costs a
+# toolchain install per run and gives the environment the lockfile assumes.
 engine: "microvm"
-image: "nixos"
+image: "almalinux10"
 
 clone:
   depth: 1
 
-dependencies:
-  - uv
-  - python313
-
 environment:
-  # pyproject sets python-preference = only-managed, which is right on a
-  # development machine and wrong here: uv's CPython builds want a glibc loader
-  # at /lib64, which a NixOS guest does not have. Use the interpreter from
-  # dependencies above instead.
   UV_PYTHON: "3.13"
-  UV_PYTHON_PREFERENCE: "only-system"
-  UV_PYTHON_DOWNLOADS: "never"
 
 steps:
+  - name: "Install uv"
+    command: "curl -LsSf https://astral.sh/uv/install.sh | env UV_INSTALL_DIR=/usr/local/bin sh"
+
   # --only-group installs mkdocs and the pinned ruff without building the Rust
   # extension. Using the lockfile's ruff rather than uvx keeps a new ruff
   # release from failing an unrelated PR.
