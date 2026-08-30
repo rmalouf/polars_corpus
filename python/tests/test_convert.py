@@ -1,3 +1,4 @@
+import nltk.data
 import polars as pl
 import polars_corpus as plc
 import pytest
@@ -51,8 +52,14 @@ NLTK_CORPORA = [
 
 
 @pytest.fixture
-def root(tmp_path):
-    """A corpus directory holding one file per reader below."""
+def root(tmp_path, monkeypatch):
+    """A corpus directory holding one file per reader below.
+
+    A reader may only read under a root on `nltk.data.path` or under a temp
+    directory private to this user, which Linux's shared /tmp is not, so the
+    directory has to be authorized rather than merely created.
+    """
+    monkeypatch.setattr(nltk.data, "path", [*nltk.data.path, str(tmp_path)])
     (tmp_path / "a.txt").write_text(PLAIN)
     (tmp_path / "a.pos").write_text(TAGGED)
     (tmp_path / "a.words").write_text(WORDS)
