@@ -1,0 +1,48 @@
+# Everything that needs neither the Rust toolchain nor the compiled extension,
+# so it reports in a minute or so while test.yml is still building polars.
+# Spindle has no matrix and no path filters: one file is one pipeline, and it
+# runs on every push.
+
+when:
+  - event: ["push", "manual"]
+    branch: ["main"]
+  - event: ["pull_request"]
+    branch: ["main"]
+
+engine: "microvm"
+image: "nixos"
+
+clone:
+  depth: 1
+
+dependencies:
+  - uv
+  - python313
+
+environment:
+  # pyproject sets python-preference = only-managed, which is right on a
+  # development machine and wrong here: uv's CPython builds want a glibc loader
+  # at /lib64, which a NixOS guest does not have. Use the interpreter from
+  # dependencies above instead.
+  UV_PYTHON: "3.13"
+  UV_PYTHON_PREFERENCE: "only-system"
+  UV_PYTHON_DOWNLOADS: "never"
+
+steps:
+  # --only-group installs mkdocs and the pinned ruff without building the Rust
+  # extension. Using the lockfile's ruff rather than uvx keeps a new ruff
+  # release from failing an unrelated PR.
+  - name: "Install documentation dependencies"
+    command: "uv sync --only-group docs"
+
+  - name: "ruff check"
+    command: "uv run --no-sync ruff check python"
+
+  - name: "ruff format"
+    command: "uv run --no-sync ruff format --check python"
+
+  # mkdocstrings reads the sources statically and the notebooks render from
+  # their committed outputs, so the site builds without the extension.
+  # Deployment stays on GitHub Pages.
+  - name: "Build documentation"
+    command: "uv run --no-sync mkdocs build --strict"

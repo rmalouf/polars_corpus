@@ -1,0 +1,66 @@
+# The Rust half plus the test suite. Lint and test share one pipeline because
+# nothing caches between runs: splitting them would compile polars twice.
+#
+# Differences from .github/workflows/test.yml, which has to stay the stricter
+# gate: no Python matrix (spindle has none, and a file per version would
+# recompile polars for each), Linux only, and no macOS job to guard arm64.
+
+when:
+  - event: ["push", "manual"]
+    branch: ["main"]
+  - event: ["pull_request"]
+    branch: ["main"]
+
+engine: "microvm"
+image: "nixos"
+
+clone:
+  depth: 1
+
+dependencies:
+  - gcc
+  - cargo
+  - rustc
+  - clippy
+  - rustfmt
+  - uv
+  - python313
+
+environment:
+  CARGO_TERM_COLOR: "always"
+  # See lint.yml: uv's own CPython builds cannot run on a NixOS guest.
+  UV_PYTHON: "3.13"
+  UV_PYTHON_PREFERENCE: "only-system"
+  UV_PYTHON_DOWNLOADS: "never"
+  # dev-fast is the release profile without LTO, as on GitHub. `--compatibility
+  # linux` skips the manylinux audit, which the guest's Nix-store glibc fails;
+  # the wheel is installed here and never published.
+  MATURIN_PEP517_ARGS: "--profile dev-fast --compatibility linux"
+
+steps:
+  - name: "cargo fmt"
+    command: "cargo fmt --all --check"
+
+  # Checks only, so the crate never links: an extension-module cdylib has no
+  # Python symbols to link against outside the interpreter.
+  - name: "cargo clippy"
+    command: "cargo clippy --all-targets"
+    environment:
+      RUSTFLAGS: "-Dwarnings"
+
+  # The examples extra brings matplotlib, without which the plotting tests skip
+  # themselves.
+  - name: "Build extension and install dependencies"
+    command: "uv sync --group dev --extra examples"
+
+  # The corpora test_convert.py reads. Downloaded every run: spindle caches Nix
+  # derivations between pipelines, not arbitrary directories. punkt_tab is not a
+  # corpus: state_union ships no sentence boundaries, so its reader tokenizes
+  # them with PunktTokenizer.
+  - name: "Download nltk corpora"
+    command: >
+      uv run --no-sync python -m nltk.downloader
+      brown treebank state_union panlex_swadesh lin_thesaurus punkt_tab
+
+  - name: "Run Python tests"
+    command: "uv run --no-sync pytest"
