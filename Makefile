@@ -54,10 +54,14 @@ grid:
 			uv run --no-sync --with "polars==$(GRID_POLARS_MIN)" pytest -q || exit 1 ; \
 	done
 
-# Build release wheels for distribution with architecture-specific optimizations
+# Distribution wheels: the full release profile (fat LTO, one codegen unit --
+# minutes, not seconds) plus the codegen flags in .cargo/config.toml. No
+# target-cpu, deliberately: these run on other people's machines, and the
+# x86_64 feature list there is already what the polars wheel beside them needs.
+# --zig cross-compiles the linux wheel from macOS and tags it manylinux2014.
 build:
-	RUSTFLAGS="-C target-cpu=apple-m4" maturin build --release --target aarch64-apple-darwin
-	RUSTFLAGS="-C target-cpu=icelake-server" maturin build --release --target x86_64-unknown-linux-gnu --zig
+	maturin build --release --target aarch64-apple-darwin
+	maturin build --release --target x86_64-unknown-linux-gnu --zig
 
 #compile:
 #	#maturin build --release

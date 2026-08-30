@@ -1,0 +1,23 @@
+# Codegen flags for every cargo invocation here, including CI's -- this file is
+# what a RUSTFLAGS export would say, minus the exporting. The two do not merge:
+# setting RUSTFLAGS in the environment replaces this wholesale, which is why
+# `make develop` still gets target-cpu=native and nothing else.
+#
+# The x86_64 list is polars' own, copied from the workflow that builds the
+# `polars` wheel on PyPI (its `polars-lts-cpu` wheel is the same list truncated
+# at +cmpxchg16b). Matching it costs no reach: a CPU too old to run these
+# instructions is too old for the polars wheel this package is installed
+# beside. polars also passes `-Z tune-cpu=skylake`, which is nightly-only and
+# left off here.
+#
+# aarch64 gets nothing because rustc's default for aarch64-apple-darwin is
+# already apple-m1 -- the same 28 features, checked with `rustc --print cfg`.
+# That is why polars names a list for x86_64 and not for this one: the x86_64
+# default is fxsr,sse,sse2 and nothing else. Later M-series chips add bf16,
+# bti and i8mm, which are for matrix and ML kernels this crate does not have;
+# asking for them would drop M1 machines to buy nothing.
+[target.'cfg(target_arch = "x86_64")']
+rustflags = [
+    "-C",
+    "target-feature=+sse3,+ssse3,+sse4.1,+sse4.2,+popcnt,+cmpxchg16b,+avx,+avx2,+fma,+bmi1,+bmi2,+lzcnt,+pclmulqdq,+movbe",
+]
