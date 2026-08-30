@@ -230,7 +230,8 @@ don't have, so the writing entries rank with the code ones.
   same checks on a hosted spindle, one file per pipeline: `test.yml` for cargo
   fmt, clippy and pytest, `lint.yml` for ruff. One Python version, Linux only,
   and no build cache between runs, so GitHub stays the stricter gate for now.
-  `docs.yml` is manual-only while GitHub Pages serves the site.
+  It runs the newest supported Python, 3.14. `docs.yml` is manual-only while
+  GitHub Pages serves the site.
 - The Simple query language compiles straight to CQP with no intermediate AST:
   `simple_to_cqp()` emits a CQP string that the matcher behind `search_cqp()`
   compiles. Its lark grammar (`_GRAMMAR` in `simple_parser.py`) is built into an

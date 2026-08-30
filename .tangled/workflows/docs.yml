@@ -16,8 +16,6 @@ image: "almalinux10"
 clone:
   depth: 1
 
-environment:
-  UV_PYTHON: "3.13"
 
 steps:
   - name: "Install uv"

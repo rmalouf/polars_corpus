@@ -24,7 +24,9 @@ environment:
   CARGO_TERM_COLOR: "always"
   CARGO_HOME: "/usr/local/cargo"
   RUSTUP_HOME: "/usr/local/rustup"
-  UV_PYTHON: "3.13"
+  # The newest supported version, where a break shows up first. GitHub covers
+  # 3.11 through 3.14; here there is room for one.
+  UV_PYTHON: "3.14"
   # dev-fast is the release profile without LTO: the tests stay fast to run
   # without paying for a full release build.
   MATURIN_PEP517_ARGS: "--profile dev-fast"
