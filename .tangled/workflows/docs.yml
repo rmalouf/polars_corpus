@@ -1,12 +1,12 @@
 # Builds the site to catch a broken reference or a missing page. mkdocstrings
 # reads the sources statically and the notebooks render from their committed
 # outputs, so this needs neither the Rust toolchain nor the compiled extension.
-# Deployment stays on GitHub Pages: tangled has nothing to deploy to.
+# Deployment stays on GitHub Pages, which builds the site itself, so this is
+# manual-only for now: run it from the pipeline page when you want it. Add the
+# push and pull_request triggers back if tangled becomes the only remote.
 
 when:
-  - event: ["push", "manual"]
-    branch: ["main"]
-  - event: ["pull_request"]
+  - event: ["manual"]
     branch: ["main"]
 
 # See test.yml: PyPI's binaries cannot exec on a NixOS guest.
