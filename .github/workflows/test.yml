@@ -33,17 +33,12 @@ jobs:
           key: lint
       - name: cargo fmt
         run: cargo fmt --all --check
-      # Checks only, so the crate never links: an extension-module cdylib has
-      # no Python symbols to link against outside the interpreter.
       - name: cargo clippy
         run: cargo clippy --all-targets
       - uses: astral-sh/setup-uv@v9.0.0
         with:
           enable-cache: true
           cache-suffix: lint
-      # Use the ruff pinned in uv.lock rather than `uvx ruff`, so a new ruff
-      # release cannot fail an unrelated PR. Upgrade deliberately with
-      # `uv lock --upgrade-package ruff`.
       - name: Install ruff
         run: uv sync --only-group dev
       - name: ruff check
@@ -52,54 +47,31 @@ jobs:
         run: uv run --no-sync ruff format --check python
 
   python:
-    name: Python ${{ matrix.python-version }} on ${{ matrix.os }}
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest]
-        python-version: ['3.11', '3.12', '3.13', '3.14']
-        # One macOS run guards the arm64 build; the version matrix is Linux.
-        include:
-          - os: macos-latest
-            python-version: '3.13'
+    name: Python 3.14 on Linux
+    runs-on: ubuntu-latest
     env:
-      UV_PYTHON: ${{ matrix.python-version }}
-      # dev-fast is the release profile without LTO: the tests stay fast to run
-      # without paying for a full release build.
+      UV_PYTHON: '3.14'
       MATURIN_PEP517_ARGS: --profile dev-fast
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
-          key: ${{ matrix.python-version }}
+          key: test
       - uses: astral-sh/setup-uv@v9.0.0
         with:
           enable-cache: true
-          cache-suffix: test-${{ matrix.python-version }}
-          python-version: ${{ matrix.python-version }}
-      # The examples extra brings matplotlib, without which the plotting tests
-      # skip themselves.
+          cache-suffix: test
+          python-version: '3.14'
       - name: Build extension and install dependencies
         run: uv sync --group dev --extra examples
-
-      # The corpora test_convert.py reads. Cached because the download is well
-      # over 100MB and these never change.
       - name: Cache nltk data
         uses: actions/cache@v4
         with:
           path: ~/nltk_data
           key: nltk-${{ runner.os }}-${{ hashFiles('.github/workflows/test.yml') }}
-      # punkt_tab is not a corpus: state_union ships no sentence boundaries, so
-      # its reader tokenizes them with PunktTokenizer.
       - name: Download nltk corpora
         run: >
-          uv run --no-sync python -m nltk.downloader
-          brown treebank state_union panlex_swadesh lin_thesaurus punkt_tab
-
-      # No pyrefly step yet: `pyrefly check python/polars_corpus/` still reports
-      # errors from third-party stubs, so it cannot gate a PR.
-
+          uv run --no-sync python -m nltk.downloader brown
       - name: Run Python tests
         run: uv run --no-sync pytest

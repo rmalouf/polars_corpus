@@ -59,14 +59,10 @@ steps:
   - name: "Build extension and install dependencies"
     command: "uv sync --group dev"
 
-  # The corpora test_convert.py reads. Downloaded every run: what spindle caches
-  # between pipelines is Nix derivations, and these are not one. punkt_tab is
-  # not a corpus: state_union ships no sentence boundaries, so its reader tokenizes
-  # them with PunktTokenizer.
+  # The corpus test_convert.py reads. Downloaded every run: what spindle caches
+  # between pipelines is Nix derivations, and this is not one.
   - name: "Download nltk corpora"
-    command: >
-      uv run --no-sync python -m nltk.downloader
-      brown treebank state_union panlex_swadesh lin_thesaurus punkt_tab
+    command: "uv run --no-sync python -m nltk.downloader brown"
 
   - name: "Run Python tests"
     command: "uv run --no-sync pytest"

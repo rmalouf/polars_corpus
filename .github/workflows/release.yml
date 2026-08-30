@@ -1,0 +1,110 @@
+# The pre-release check: build the wheels, then run the whole grid against
+# them. Everyday pushes go through test.yml, which tests one environment.
+#
+# Splitting the build from the tests is what makes the grid affordable. The
+# extension is abi3-py311 (see Cargo.toml), so one wheel per platform covers
+# 3.11 through 3.14: two release builds feed nine test legs that compile
+# nothing. It also means the tests run against the artifact that ships --
+# release profile, LTO and all -- rather than a dev-fast rebuild of it.
+#
+# Publishing is deliberately not here. Download the artifacts and upload them
+# by hand until there is a reason to automate it.
+
+name: Release check
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  wheels:
+    name: Wheels for ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      # manylinux: auto builds in a container with an old glibc, so the wheel
+      # is not tagged for whatever the runner happens to ship.
+      - uses: PyO3/maturin-action@v1
+        with:
+          command: build
+          args: --release --out dist
+          manylinux: auto
+          sccache: 'true'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wheels-${{ matrix.os }}
+          path: dist/*.whl
+
+  test:
+    name: Python ${{ matrix.python-version }} / polars ${{ matrix.polars || 'newest' }} / ${{ matrix.os }}
+    needs: wheels
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      # The same coverage `make grid` gives locally -- every Python the wheels
+      # claim, each against both ends of the polars range pyproject allows --
+      # plus the one macOS leg that guards the arm64 build, on the newest
+      # Python since covering the versions is the Linux legs' job. An entry
+      # without `polars` uses the lockfile's.
+      matrix:
+        include:
+          - {os: ubuntu-latest, python-version: '3.11'}
+          - {os: ubuntu-latest, python-version: '3.12'}
+          - {os: ubuntu-latest, python-version: '3.13'}
+          - {os: ubuntu-latest, python-version: '3.14'}
+          - {os: ubuntu-latest, python-version: '3.11', polars: '1.36.*'}
+          - {os: ubuntu-latest, python-version: '3.12', polars: '1.36.*'}
+          - {os: ubuntu-latest, python-version: '3.13', polars: '1.36.*'}
+          - {os: ubuntu-latest, python-version: '3.14', polars: '1.36.*'}
+          - {os: macos-latest, python-version: '3.14'}
+    env:
+      UV_PYTHON: ${{ matrix.python-version }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v4
+        with:
+          name: wheels-${{ matrix.os }}
+          path: dist
+      - uses: astral-sh/setup-uv@v9.0.0
+        with:
+          enable-cache: true
+          cache-suffix: release-${{ matrix.python-version }}
+          python-version: ${{ matrix.python-version }}
+
+      # --no-install-project installs the dependencies without building the
+      # extension; the wheel from the job above goes in on top of them.
+      - name: Install dependencies
+        run: uv sync --group dev --extra examples --no-install-project
+      - name: Install the built wheel
+        run: uv pip install --no-deps dist/*.whl
+
+      - name: Cache nltk data
+        uses: actions/cache@v4
+        with:
+          path: ~/nltk_data
+          key: nltk-${{ runner.os }}-${{ hashFiles('.github/workflows/release.yml') }}
+      - name: Download nltk corpora
+        run: >
+          uv run --no-sync python -m nltk.downloader brown
+
+      # The wheel is non-editable and importlib mode keeps python/ off
+      # sys.path, so what runs is the wheel, as in `make grid`.
+      - name: Run Python tests
+        run: uv run --no-sync ${{ matrix.polars && format('--with polars=={0}', matrix.polars) || '' }} pytest
