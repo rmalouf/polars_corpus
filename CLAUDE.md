@@ -16,6 +16,7 @@ pyrefly check python/polars_corpus/
 pytest                             # Python changes need no rebuild
 make develop                       # Rebuild after Rust changes (required); ~1s
 make develop-release               # Same, release profile (benchmarking)
+make grid                          # Test on 3.11-3.14 before a release
 make build                         # Distribution wheels (slow: full LTO)
 make docs                          # Build the user guide
 ```

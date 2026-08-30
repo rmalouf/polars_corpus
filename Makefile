@@ -5,7 +5,12 @@
 # `uv lock`.
 VENV_DIR = ${HOME}/.venvs/polars_corpus
 
-.PHONY: develop develop-release build docs
+.PHONY: develop develop-release build docs grid
+
+# The Python versions the wheels claim (pyproject classifiers), and the profile
+# `make grid` builds them with.
+GRID_VERSIONS = 3.11 3.12 3.13 3.14
+GRID_PROFILE ?= dev-fast
 
 # Serve docs locally
 docs:
@@ -21,6 +26,24 @@ develop:
 # checking something that depends on LTO; `make develop` is the normal path.
 develop-release:
 	RUSTFLAGS="-C target-cpu=native" maturin develop --release
+
+# Run the test suite on every supported Python version. Not for the edit/test
+# loop -- this is the pre-release check, the half of the CI matrix that GitHub
+# covers with a single macOS job. Each version gets its own environment beside
+# the development one, outside the source tree (see CLAUDE.md), so it does not
+# disturb the extension `make develop` built. The install is non-editable, so
+# what the tests import is a built wheel rather than python/, and cargo reuses
+# one build across the four: the extension is abi3.
+# `make grid GRID_PROFILE=release` runs them against what actually ships.
+grid:
+	@for v in $(GRID_VERSIONS); do \
+		printf "\n=== Python %s ===\n" $$v ; \
+		env -u VIRTUAL_ENV UV_PROJECT_ENVIRONMENT=$(VENV_DIR)-$$v \
+			MATURIN_PEP517_ARGS="--profile $(GRID_PROFILE)" \
+			uv sync --python $$v --group dev --extra examples --no-editable || exit 1 ; \
+		env -u VIRTUAL_ENV UV_PROJECT_ENVIRONMENT=$(VENV_DIR)-$$v \
+			uv run --no-sync pytest -q || exit 1 ; \
+	done
 
 # Build release wheels for distribution with architecture-specific optimizations
 build:
