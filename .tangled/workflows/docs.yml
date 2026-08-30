@@ -1,6 +1,7 @@
 # Builds the site to catch a broken reference or a missing page. mkdocstrings
 # reads the sources statically and the notebooks render from their committed
 # outputs, so this needs neither the Rust toolchain nor the compiled extension.
+#
 # Deployment stays on GitHub Pages, which builds the site itself, so this is
 # manual-only for now: run it from the pipeline page when you want it. Add the
 # push and pull_request triggers back if tangled becomes the only remote.
@@ -9,20 +10,32 @@ when:
   - event: ["manual"]
     branch: ["main"]
 
-# See test.yml: PyPI's binaries cannot exec on a NixOS guest.
 engine: "microvm"
-image: "almalinux10"
+image: "nixos"
 
 clone:
   depth: 1
 
+dependencies:
+  - uv
+  - python313
+  # mkdocstrings formats the signatures it renders with whichever ruff is on
+  # PATH; see lint.yml for why it cannot be PyPI's.
+  - ruff
+
+environment:
+  # uv's own CPython builds are dynamically linked, which a NixOS guest cannot
+  # exec, so use the interpreter above. pyproject asks for managed Python, which
+  # is right on a development machine and impossible here.
+  UV_PYTHON: "3.13"
+  UV_PYTHON_PREFERENCE: "only-system"
+  UV_PYTHON_DOWNLOADS: "never"
 
 steps:
-  - name: "Install uv"
-    command: "curl -LsSf https://astral.sh/uv/install.sh | env UV_INSTALL_DIR=/usr/local/bin sh"
-
+  # --only-group installs mkdocs without building the Rust extension, and
+  # leaving ruff out of the venv keeps the nix one first on PATH.
   - name: "Install documentation dependencies"
-    command: "uv sync --only-group docs"
+    command: "uv sync --only-group docs --no-install-package ruff"
 
   - name: "Build documentation"
     command: "uv run --no-sync mkdocs build --strict"

@@ -1,7 +1,6 @@
-# ruff, which needs neither the Rust toolchain nor the compiled extension, so
-# it reports in well under a minute while test.yml is still building polars.
-# Spindle has no matrix and no path filters: one file is one pipeline, and it
-# runs on every push.
+# ruff, and nothing else, so it reports in seconds while test.yml is still
+# building polars. Spindle has no matrix and no path filters: one file is one
+# pipeline, and it runs on every push.
 
 when:
   - event: ["push", "manual"]
@@ -9,29 +8,22 @@ when:
   - event: ["pull_request"]
     branch: ["main"]
 
-# A NixOS guest cannot exec a generic-linux dynamically linked binary, which is
-# what PyPI ships for ruff (and for maturin, see test.yml). An FHS image costs a
-# toolchain install per run and gives the environment the lockfile assumes.
 engine: "microvm"
-image: "almalinux10"
+image: "nixos"
 
 clone:
   depth: 1
 
+# The one ruff that runs here. PyPI's is dynamically linked against a loader a
+# NixOS guest does not have, so the version is nixpkgs' rather than the
+# lockfile's: if the two disagree about formatting, GitHub is the gate that
+# counts and this one is noise. No uv and no venv -- ruff needs neither.
+dependencies:
+  - ruff
 
 steps:
-  - name: "Install uv"
-    command: "curl -LsSf https://astral.sh/uv/install.sh | env UV_INSTALL_DIR=/usr/local/bin sh"
-
-  # ruff is pinned in the docs group, which mkdocstrings formats signatures
-  # with; --only-group installs it without building the Rust extension. Using
-  # the lockfile's ruff rather than uvx keeps a new ruff release from failing an
-  # unrelated PR.
-  - name: "Install ruff"
-    command: "uv sync --only-group docs"
-
   - name: "ruff check"
-    command: "uv run --no-sync ruff check python"
+    command: "ruff check python"
 
   - name: "ruff format"
-    command: "uv run --no-sync ruff format --check python"
+    command: "ruff format --check python"

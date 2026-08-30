@@ -230,9 +230,11 @@ don't have, so the writing entries rank with the code ones.
   same checks on a hosted spindle, one file per pipeline: `test.yml` for cargo
   fmt, clippy and pytest, `lint.yml` for ruff. One Python version, Linux only,
   and no build cache between runs, so GitHub stays the stricter gate for now.
-  It runs the newest supported Python, 3.14; `make grid` is what covers the
-  3.11 floor before a release, so spindle never needs a file per version.
-  `docs.yml` is manual-only while GitHub Pages serves the site.
+  Its guest is NixOS, which cannot exec the dynamically linked binaries PyPI
+  ships, so Python is nixpkgs' 3.13, ruff is nixpkgs' too, and the `examples`
+  extra is left out: numpy finds no libstdc++ there, and the plotting tests
+  skip. `make grid` covers 3.11 through 3.14, and the plotting, before a
+  release. `docs.yml` is manual-only while GitHub Pages serves the site.
 - The Simple query language compiles straight to CQP with no intermediate AST:
   `simple_to_cqp()` emits a CQP string that the matcher behind `search_cqp()`
   compiles. Its lark grammar (`_GRAMMAR` in `simple_parser.py`) is built into an

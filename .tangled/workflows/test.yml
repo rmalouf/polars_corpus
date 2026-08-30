@@ -1,5 +1,6 @@
-# The Rust half plus the test suite. Lint and test share one pipeline because
-# nothing caches between runs: splitting them would compile polars twice.
+# The Rust half plus the test suite. cargo fmt and clippy run here rather than
+# in lint.yml because nothing caches between pipelines: splitting them off would
+# compile polars twice.
 #
 # Differences from .github/workflows/test.yml, which has to stay the stricter
 # gate: no Python matrix (spindle has none, and a file per version would
@@ -11,37 +12,36 @@ when:
   - event: ["pull_request"]
     branch: ["main"]
 
-# Not a NixOS image: PyPI's maturin, ruff and scipy wheels are dynamically
-# linked against a loader NixOS does not provide, so the toolchain comes from
-# the installers instead of from `dependencies`.
 engine: "microvm"
-image: "almalinux10"
+image: "nixos"
 
 clone:
   depth: 1
 
+dependencies:
+  - gcc
+  - cargo
+  - rustc
+  - clippy
+  - rustfmt
+  - uv
+  - python313
+
 environment:
   CARGO_TERM_COLOR: "always"
-  CARGO_HOME: "/usr/local/cargo"
-  RUSTUP_HOME: "/usr/local/rustup"
-  # The newest supported version, where a break shows up first. GitHub covers
-  # 3.11 through 3.14; here there is room for one.
-  UV_PYTHON: "3.14"
+  # uv's own CPython builds are dynamically linked, which a NixOS guest cannot
+  # exec, so the version is whichever nixpkgs packages rather than the newest
+  # supported. `make grid` is what covers the rest before a release.
+  UV_PYTHON: "3.13"
+  UV_PYTHON_PREFERENCE: "only-system"
+  UV_PYTHON_DOWNLOADS: "never"
   # dev-fast is the release profile without LTO: the tests stay fast to run
-  # without paying for a full release build.
-  MATURIN_PEP517_ARGS: "--profile dev-fast"
+  # without paying for a full release build. `--compatibility linux` skips the
+  # manylinux audit, which the guest's Nix-store glibc fails; the wheel is
+  # installed here and never published.
+  MATURIN_PEP517_ARGS: "--profile dev-fast --compatibility linux"
 
 steps:
-  # cargo needs a linker, so gcc comes along. The symlinks put cargo and rustc
-  # on the default PATH, which the steps below inherit unchanged.
-  - name: "Install toolchain"
-    command: |
-      dnf install -y gcc
-      curl -LsSf https://astral.sh/uv/install.sh | env UV_INSTALL_DIR=/usr/local/bin sh
-      curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
-        | sh -s -- -y --no-modify-path --profile minimal -c clippy,rustfmt
-      ln -s "$CARGO_HOME"/bin/* /usr/local/bin/
-
   - name: "cargo fmt"
     command: "cargo fmt --all --check"
 
@@ -52,14 +52,16 @@ steps:
     environment:
       RUSTFLAGS: "-Dwarnings"
 
-  # The examples extra brings matplotlib, without which the plotting tests skip
-  # themselves.
+  # No `--extra examples` here, unlike GitHub: its numpy needs a libstdc++ the
+  # guest has nowhere to load from, and a broken matplotlib is worse than an
+  # absent one -- pytest.importorskip only skips on ModuleNotFoundError. The
+  # plotting tests skip; GitHub and `make grid` run them.
   - name: "Build extension and install dependencies"
-    command: "uv sync --group dev --extra examples"
+    command: "uv sync --group dev"
 
-  # The corpora test_convert.py reads. Downloaded every run: spindle caches Nix
-  # derivations between pipelines, and this pipeline has none. punkt_tab is not
-  # a corpus: state_union ships no sentence boundaries, so its reader tokenizes
+  # The corpora test_convert.py reads. Downloaded every run: what spindle caches
+  # between pipelines is Nix derivations, and these are not one. punkt_tab is
+  # not a corpus: state_union ships no sentence boundaries, so its reader tokenizes
   # them with PunktTokenizer.
   - name: "Download nltk corpora"
     command: >
