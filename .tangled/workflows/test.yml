@@ -2,14 +2,18 @@
 # in lint.yml because nothing caches between pipelines: splitting them off would
 # compile polars twice.
 #
-# Differences from .github/workflows/test.yml, which has to stay the stricter
-# gate: no Python matrix (spindle has none, and a file per version would
-# recompile polars for each), Linux only, and no macOS job to guard arm64.
+# Manual-only, like docs.yml, because compiling polars from source on every
+# pipeline runs past the time limit: what spindle caches between runs is Nix
+# derivations, and a cargo build tree is not one. GitHub is the gate that
+# counts meanwhile. Put the push and pull_request triggers back if there is
+# ever something for the build to resume from.
+#
+# Differences from .github/workflows/test.yml: no Python matrix (spindle has
+# none, and a file per version would recompile polars for each), Linux only,
+# and no macOS job to guard arm64.
 
 when:
-  - event: ["push", "manual"]
-    branch: ["main"]
-  - event: ["pull_request"]
+  - event: ["manual"]
     branch: ["main"]
 
 engine: "microvm"
