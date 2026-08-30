@@ -11,6 +11,9 @@ VENV_DIR = ${HOME}/.venvs/polars_corpus
 # `make grid` builds them with.
 GRID_VERSIONS = 3.11 3.12 3.13 3.14
 GRID_PROFILE ?= dev-fast
+# The oldest polars pyproject allows. The lockfile's pin is the newest, so the
+# two legs bracket the range the dependency claims to support.
+GRID_POLARS_MIN = 1.36.*
 
 # Serve docs locally
 docs:
@@ -34,6 +37,9 @@ develop-release:
 # disturb the extension `make develop` built. The install is non-editable, so
 # what the tests import is a built wheel rather than python/, and cargo reuses
 # one build across the four: the extension is abi3.
+# Each version runs twice, against the lockfile's polars and against the oldest
+# pyproject allows: `explode(empty_as_null=)` and `LazyFrame.pivot` are the kind
+# of thing that raises the floor without anyone noticing.
 # `make grid GRID_PROFILE=release` runs them against what actually ships.
 grid:
 	@for v in $(GRID_VERSIONS); do \
@@ -43,6 +49,9 @@ grid:
 			uv sync --python $$v --group dev --extra examples --no-editable || exit 1 ; \
 		env -u VIRTUAL_ENV UV_PROJECT_ENVIRONMENT=$(VENV_DIR)-$$v \
 			uv run --no-sync pytest -q || exit 1 ; \
+		printf -- "--- polars %s ---\n" "$(GRID_POLARS_MIN)" ; \
+		env -u VIRTUAL_ENV UV_PROJECT_ENVIRONMENT=$(VENV_DIR)-$$v \
+			uv run --no-sync --with "polars==$(GRID_POLARS_MIN)" pytest -q || exit 1 ; \
 	done
 
 # Build release wheels for distribution with architecture-specific optimizations
