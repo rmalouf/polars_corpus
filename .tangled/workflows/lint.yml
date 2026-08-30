@@ -1,5 +1,5 @@
-# Everything that needs neither the Rust toolchain nor the compiled extension,
-# so it reports in a minute or so while test.yml is still building polars.
+# ruff, which needs neither the Rust toolchain nor the compiled extension, so
+# it reports in well under a minute while test.yml is still building polars.
 # Spindle has no matrix and no path filters: one file is one pipeline, and it
 # runs on every push.
 
@@ -25,10 +25,11 @@ steps:
   - name: "Install uv"
     command: "curl -LsSf https://astral.sh/uv/install.sh | env UV_INSTALL_DIR=/usr/local/bin sh"
 
-  # --only-group installs mkdocs and the pinned ruff without building the Rust
-  # extension. Using the lockfile's ruff rather than uvx keeps a new ruff
-  # release from failing an unrelated PR.
-  - name: "Install documentation dependencies"
+  # ruff is pinned in the docs group, which mkdocstrings formats signatures
+  # with; --only-group installs it without building the Rust extension. Using
+  # the lockfile's ruff rather than uvx keeps a new ruff release from failing an
+  # unrelated PR.
+  - name: "Install ruff"
     command: "uv sync --only-group docs"
 
   - name: "ruff check"
@@ -36,9 +37,3 @@ steps:
 
   - name: "ruff format"
     command: "uv run --no-sync ruff format --check python"
-
-  # mkdocstrings reads the sources statically and the notebooks render from
-  # their committed outputs, so the site builds without the extension.
-  # Deployment stays on GitHub Pages.
-  - name: "Build documentation"
-    command: "uv run --no-sync mkdocs build --strict"

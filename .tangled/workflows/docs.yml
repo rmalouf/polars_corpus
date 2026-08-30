@@ -1,0 +1,30 @@
+# Builds the site to catch a broken reference or a missing page. mkdocstrings
+# reads the sources statically and the notebooks render from their committed
+# outputs, so this needs neither the Rust toolchain nor the compiled extension.
+# Deployment stays on GitHub Pages: tangled has nothing to deploy to.
+
+when:
+  - event: ["push", "manual"]
+    branch: ["main"]
+  - event: ["pull_request"]
+    branch: ["main"]
+
+# See test.yml: PyPI's binaries cannot exec on a NixOS guest.
+engine: "microvm"
+image: "almalinux10"
+
+clone:
+  depth: 1
+
+environment:
+  UV_PYTHON: "3.13"
+
+steps:
+  - name: "Install uv"
+    command: "curl -LsSf https://astral.sh/uv/install.sh | env UV_INSTALL_DIR=/usr/local/bin sh"
+
+  - name: "Install documentation dependencies"
+    command: "uv sync --only-group docs"
+
+  - name: "Build documentation"
+    command: "uv run --no-sync mkdocs build --strict"
