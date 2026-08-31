@@ -1,6 +1,7 @@
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 
+use flate2::read::MultiGzDecoder;
 use polars::prelude::*;
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
@@ -13,11 +14,55 @@ fn io_err(path: &str, e: std::io::Error) -> PyErr {
     std::io::Error::new(e.kind(), format!("{path}: {e}")).into()
 }
 
+/// A compressed format a corpus file may be stored in.
+enum Compression {
+    None,
+    Gzip,
+    Zstd,
+}
+
+impl Compression {
+    /// The format the bytes a file opens with identify, or `None` if they
+    /// identify no format. Fewer bytes than a magic number simply match none.
+    fn detect(magic: &[u8]) -> Self {
+        if magic.starts_with(&[0x1f, 0x8b]) {
+            Compression::Gzip
+        } else if magic.starts_with(&[0x28, 0xb5, 0x2f, 0xfd]) {
+            Compression::Zstd
+        } else {
+            Compression::None
+        }
+    }
+}
+
+/// Open `path`, decoding it if it is compressed.
+///
+/// What the file opens with decides, not what it is named, because corpora are
+/// distributed under every convention and none: a gzipped file reads the same
+/// whether it is called `.wlp.gz`, `.wlp`, or `w_acad_1990`. `fill_buf` only
+/// peeks at those bytes, so an uncompressed file goes on to be read through
+/// the very buffer they were seen in.
+fn open_maybe_compressed(path: &str) -> std::io::Result<Box<dyn BufRead + Send + Sync>> {
+    let mut file = BufReader::new(File::open(path)?);
+    let compression = Compression::detect(file.fill_buf()?);
+    // A decoder is only a Read, so it needs a buffer of its own for the
+    // line-at-a-time reads to draw on.
+    Ok(match compression {
+        Compression::None => Box::new(file),
+        // Multi, because a `.gz` is often several members concatenated.
+        Compression::Gzip => Box::new(BufReader::new(MultiGzDecoder::new(file))),
+        Compression::Zstd => Box::new(BufReader::new(zstd::Decoder::with_buffer(file)?)),
+    })
+}
+
 /// An open COCA/COHA `.wlp` file, iterating over frames of `batch_size` tokens.
 ///
 /// A `##` line names the text the tokens after it belong to; every other line
 /// is one token as three tab-separated fields. Bytes that are not valid UTF-8
 /// are replaced rather than raising, because real COCA files carry a few.
+///
+/// A gzip- or zstd-compressed file is decoded as it is read, recognized by its
+/// leading bytes rather than its name.
 ///
 /// Only a batch is held at a time, so a query that wants the first rows of a
 /// corpus never parses the rest of the file.
@@ -25,7 +70,7 @@ fn io_err(path: &str, e: std::io::Error) -> PyErr {
 pub struct WlpFileReader {
     path: String,
     batch_size: usize,
-    reader: BufReader<File>,
+    reader: Box<dyn BufRead + Send + Sync>,
     /// The text id in force, carried across batches.
     text_id: String,
     line: Vec<u8>,
@@ -36,11 +81,11 @@ pub struct WlpFileReader {
 impl WlpFileReader {
     #[new]
     fn new(path: &str, batch_size: usize) -> PyResult<Self> {
-        let file = File::open(path).map_err(|e| io_err(path, e))?;
+        let reader = open_maybe_compressed(path).map_err(|e| io_err(path, e))?;
         Ok(WlpFileReader {
             path: path.to_owned(),
             batch_size,
-            reader: BufReader::new(file),
+            reader,
             text_id: String::new(),
             line: Vec::new(),
             lineno: 0,

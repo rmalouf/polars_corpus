@@ -1653,6 +1653,7 @@ dependencies = [
 name = "polars-corpus"
 version = "0.2.0-pre"
 dependencies = [
+ "flate2",
  "itertools 0.15.0",
  "polars",
  "polars-arrow",
@@ -1661,6 +1662,7 @@ dependencies = [
  "pyo3-polars",
  "serde",
  "statrs",
+ "zstd",
 ]
 
 [[package]]

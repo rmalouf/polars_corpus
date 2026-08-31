@@ -15,6 +15,10 @@ polars = { version = "0.55", default-features = false, features = ["dtype-struct
 # polars::prelude.
 polars-ops = { version = "0.55", default-features = false, features = ["rle"] }
 pyo3-polars = { version = "0.28", default-features = false, features = ["derive"] }
+# Transparent decompression in io.rs. Both are already in the tree under
+# polars, so neither adds a build.
+flate2 = "1.1"
+zstd = "0.13"
 statrs = { version = "0.19", default-features = false }
 itertools = "0.15.0"
 polars-arrow = { version = "0.55", default-features = true }

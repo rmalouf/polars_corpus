@@ -1,8 +1,10 @@
+import gzip
 from pathlib import Path
 
 import polars as pl
 import polars_corpus as plc
 import pytest
+from polars.testing import assert_frame_equal
 from polars_corpus import read_wlp_corpus, scan_wlp_corpus
 from polars_corpus.corpus_io import WlpCorpusReader
 
@@ -148,3 +150,58 @@ def test_output_is_searchable_with_default_columns(sample_file):
     results = plc.search(read_wlp_corpus([sample_file]), "the _jj _jj _nn1")
 
     assert results is not None and len(results.matches) == 1
+
+
+def zstd_frame(data: bytes) -> bytes:
+    """`data` wrapped in a zstd frame, stored as one uncompressed block.
+
+    Built by hand because the standard library has no zstd before 3.14, and
+    the reader's part is to recognize the frame and hand it to a decoder, not
+    to compress anything. Frame header: single segment, four-byte content
+    size. Block header: the size, then the raw and last-block flags.
+    """
+    header = b"\xa0" + len(data).to_bytes(4, "little")
+    block = ((len(data) << 3) | 1).to_bytes(3, "little")
+    return b"\x28\xb5\x2f\xfd" + header + block + data
+
+
+# `bytes` leaves the sample alone, for the uncompressed case.
+COMPRESSORS = {"plain": bytes, "gzip": gzip.compress, "zstd": zstd_frame}
+
+
+@pytest.mark.parametrize("compress", COMPRESSORS.values(), ids=COMPRESSORS)
+@pytest.mark.parametrize(
+    "load", [read_wlp_corpus, lambda p: scan_wlp_corpus(p).collect()]
+)
+def test_compressed_corpus_reads_as_the_plain_one(
+    load, compress, tmp_path, sample_file
+):
+    """gzip and zstd files are decoded on the way in.
+
+    Every case is named ".gz", and the name decides nothing: the plain file is
+    still read as text, and the zstd file is not read as gzip.
+    """
+    path = tmp_path / "compressed.wlp.gz"
+    path.write_bytes(compress(SAMPLE.encode()))
+
+    assert_frame_equal(load([path]), load([sample_file]))
+
+
+def test_every_gzip_member_is_read(tmp_path: Path):
+    """A `.gz` is often members concatenated, and all of them hold tokens."""
+    head, tail = SAMPLE.split("##4000162")
+    path = tmp_path / "concatenated.wlp.gz"
+    path.write_bytes(
+        gzip.compress(head.encode()) + gzip.compress(b"##4000162" + tail.encode())
+    )
+
+    assert read_wlp_corpus([path]).height == 10
+
+
+def test_truncated_compressed_file_raises(tmp_path: Path):
+    """A decoding error names the file, as a read error does."""
+    path = tmp_path / "truncated.wlp.gz"
+    path.write_bytes(gzip.compress(SAMPLE.encode())[:20])
+
+    with pytest.raises(OSError, match="truncated.wlp.gz"):
+        read_wlp_corpus([path])

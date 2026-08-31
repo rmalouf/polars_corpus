@@ -263,7 +263,9 @@ class WlpCorpusReader(CorpusReader):
 
     The texts a file holds name themselves, so `file_id` comes from the "##"
     lines rather than the path. Parsing is done in Rust, a batch of tokens at
-    a time, so `read_file` is unused.
+    a time, so `read_file` is unused. A gzip- or zstd-compressed file is
+    decoded as it is read, recognized by its leading bytes rather than its
+    name.
     """
 
     def schema(self) -> pl.Schema:
