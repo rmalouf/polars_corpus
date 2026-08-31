@@ -3,24 +3,31 @@
 from __future__ import annotations
 
 import os
+from itertools import islice
 from os import PathLike
 from typing import Generator, Iterator, Optional, Union
 
 import polars as pl
 from polars.io.plugins import register_io_source
 
+from ._internal import WlpFileReader
+
 __all__ = ["read_text_corpus", "scan_text_corpus", "read_wlp_corpus", "scan_wlp_corpus"]
 
 
 PathType = Union[str, bytes, PathLike[str], PathLike[bytes]]
 
+# Rows per frame when the query engine asks for no particular batch size.
+BATCH_SIZE = 10000
+
 
 class CorpusReader:
     """Read a list of corpus files into a frame, one row per token.
 
-    A subclass supplies `read_file`, which turns one file into rows. This
-    class adds the file id to each row and holds the eager and lazy entry
-    points, none of which depend on the file format.
+    A subclass supplies either `read_file`, which turns one file into rows, or
+    `read_frames`, when the format is parsed in Rust. This class adds the file
+    id to each row and holds the eager and lazy entry points, none of which
+    depend on the file format.
 
     The paths are listed at construction, so a generator can be passed and the
     files still re-read on every collect.
@@ -34,10 +41,8 @@ class CorpusReader:
         raise NotImplementedError()
 
     def read_file(self, path: PathType) -> Generator[dict[str, str]]:
-        """Yield one row per token in `path`, in `schema` order.
-
-        A format that names its own texts sets `file_id` here; one that does
-        not leaves it out, and `read_files` fills in the path.
+        """Yield one row per token in `path`, in `schema` order less `file_id`,
+        which `read_files` fills in.
         """
         raise NotImplementedError()
 
@@ -48,17 +53,28 @@ class CorpusReader:
             # the same name in different directories stay distinct.
             file_id = os.fsdecode(file)
             for row in self.read_file(file):
-                if "file_id" not in row:
-                    row["file_id"] = file_id
+                row["file_id"] = file_id
                 yield row
+
+    def read_frames(self, batch_size: int = BATCH_SIZE) -> Generator[pl.DataFrame]:
+        """Yield the corpus as frames of at most `batch_size` rows.
+
+        The default builds them from `read_file`'s rows; a format parsed in
+        Rust overrides this and never goes through rows at all. Either way a
+        batch is parsed only once it is asked for.
+        """
+        rows = self.read_files()
+        while batch := list(islice(rows, batch_size)):
+            yield pl.from_records(batch, schema=self.schema(), orient="row")
 
     def read_corpus(self) -> pl.DataFrame:
         """Read every corpus file into one DataFrame.
 
-        The schema comes from the rows, so a corpus holding no tokens comes
-        back as a frame with no columns.
+        The declared schema leads the concat, so a corpus holding no tokens
+        still comes back with its columns.
         """
-        return pl.DataFrame(self.read_files())
+        frames = [pl.DataFrame(schema=self.schema()), *self.read_frames()]
+        return pl.concat(frames, rechunk=True)
 
     def scan_corpus(self) -> pl.LazyFrame:
         """Register the reader as a Polars IO source, and hand back a LazyFrame.
@@ -78,26 +94,13 @@ class CorpusReader:
             n_rows: Optional[int],
             batch_size: Optional[int],
         ) -> Iterator[pl.DataFrame]:
-            if batch_size is None:
-                batch_size = 10000
-            # Initialize the reader.
-            reader = iter(self.read_files())
-            # Ensure we don't read more rows than requested from the engine
-            while n_rows is None or n_rows > 0:
-                if n_rows is not None:
-                    batch_size = min(batch_size, n_rows)
+            batch_size = batch_size or BATCH_SIZE
+            # A row limit caps the batch too, so a `head` of a huge corpus
+            # parses the rows it wants and stops rather than a whole batch.
+            if n_rows is not None:
+                batch_size = min(batch_size, n_rows)
 
-                rows = []
-
-                for _ in range(batch_size):
-                    try:
-                        row = next(reader)
-                    except StopIteration:
-                        n_rows = 0
-                        break
-                    rows.append(row)
-
-                df = pl.from_records(rows, schema=self.schema(), orient="row")
+            for df in self.read_frames(batch_size):
                 if n_rows is not None:
                     n_rows -= df.height
 
@@ -108,6 +111,9 @@ class CorpusReader:
                     df = df.filter(predicate)
 
                 yield df
+
+                if n_rows == 0:
+                    break
 
         return register_io_source(io_source=source_generator, schema=self.schema())
 
@@ -252,6 +258,14 @@ def scan_text_corpus(corpus_files: Iterator[PathType]) -> pl.LazyFrame:
 
 
 class WlpCorpusReader(CorpusReader):
+    """Read COCA/COHA `.wlp` files: a "##" line naming a text, then one token
+    to a line as word, lemma and tag, tab-separated.
+
+    The texts a file holds name themselves, so `file_id` comes from the "##"
+    lines rather than the path. Parsing is done in Rust, a batch of tokens at
+    a time, so `read_file` is unused.
+    """
+
     def schema(self) -> pl.Schema:
         return pl.Schema(
             {
@@ -262,19 +276,9 @@ class WlpCorpusReader(CorpusReader):
             }
         )
 
-    def read_file(self, path: PathType) -> Generator[dict[str, str]]:
-        file_id = ""
-        for line in open(path, "rt", errors="replace"):
-            if line.startswith("##"):
-                file_id = line.strip().lstrip("#")
-            else:
-                tok, lemma, pos = line.strip().split("\t")
-                yield {
-                    "token": tok,
-                    "lemma": lemma,
-                    "pos": pos,
-                    "file_id": file_id,
-                }
+    def read_frames(self, batch_size: int = BATCH_SIZE) -> Generator[pl.DataFrame]:
+        for path in self._corpus_files:
+            yield from WlpFileReader(os.fsdecode(path), batch_size)
 
 
 def read_wlp_corpus(corpus_files: Iterator[PathType]) -> pl.DataFrame:

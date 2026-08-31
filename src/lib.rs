@@ -21,6 +21,7 @@ fn _internal(py: Python, m: &Bound<PyModule>) -> PyResult<()> {
         "PanicException",
         <pyo3::panic::PanicException as pyo3::PyTypeInfo>::type_object(py),
     )?;
+    m.add_class::<io::WlpFileReader>()?;
     m.add_class::<matcher::Opcode>()?;
     m.add_class::<matcher::OpcodeMatcher>()?;
     m.add_class::<matcher::Match>()?;

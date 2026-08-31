@@ -69,15 +69,36 @@ def test_file_id_comes_from_the_text_header(load, sample_file):
     assert df["file_id"].to_list() == ["4000161"] * 5 + ["4000162"] * 5
 
 
-def test_token_lemma_pos_parsing(sample_file):
-    rows = list(WlpCorpusReader([sample_file]).read_file(sample_file))
+def test_read_frames_batches(sample_file):
+    """The Rust reader hands back one frame per file, sliced on request."""
+    reader = WlpCorpusReader([sample_file])
 
-    assert rows[0] == {
-        "token": "Section",
-        "lemma": "section",
-        "pos": "nn1",
-        "file_id": "4000161",
-    }
+    assert [df.height for df in reader.read_frames()] == [10]
+    assert [df.height for df in reader.read_frames(4)] == [4, 4, 2]
+
+
+def test_scan_reads_only_the_rows_asked_for(write_corpus):
+    """A limited query parses the batch it needs and stops, so a broken line
+    further down the file is never reached."""
+    (path,) = write_corpus(SAMPLE + "broken\tline\n")
+
+    assert scan_wlp_corpus([path]).head(3).collect().height == 3
+    # The same file read whole does hit the broken line.
+    with pytest.raises(ValueError):
+        read_wlp_corpus([path])
+
+
+def test_malformed_line_raises(write_corpus):
+    """A line that is not three tab-separated fields names itself."""
+    (path,) = write_corpus("##1\t\t\nfine\tfine\tnn1\nbroken\tline\n")
+
+    with pytest.raises(ValueError, match="corpus0.txt:3"):
+        read_wlp_corpus([path])
+
+
+def test_missing_file_raises(tmp_path: Path):
+    with pytest.raises(FileNotFoundError, match="nope.txt"):
+        read_wlp_corpus([tmp_path / "nope.txt"])
 
 
 def test_scan_pushes_down_predicate_and_projection(sample_file):
