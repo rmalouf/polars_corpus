@@ -57,9 +57,9 @@ fn open_maybe_compressed(path: &str) -> std::io::Result<Box<dyn BufRead + Send +
 
 /// An open COCA/COHA `.wlp` file, iterating over frames of `batch_size` tokens.
 ///
-/// A `##` line names the text the tokens after it belong to; every other line
-/// is one token as three tab-separated fields. Bytes that are not valid UTF-8
-/// are replaced rather than raising, because real COCA files carry a few.
+/// A `##` line naming a text id starts the tokens belonging to it; every other
+/// line is one token as three tab-separated fields. Bytes that are not valid
+/// UTF-8 are replaced rather than raising, because real COCA files carry a few.
 ///
 /// A gzip- or zstd-compressed file is decoded as it is read, recognized by its
 /// leading bytes rather than its name.
@@ -114,14 +114,15 @@ impl WlpFileReader {
                 break;
             }
             self.lineno += 1;
-            // Trimming drops the newline and, as in Python, the padding tabs a
-            // header line ends with.
             let line = String::from_utf8_lossy(&self.line);
-            let line = line.trim();
-            if let Some(id) = line.strip_prefix("##") {
-                self.text_id.clear();
-                self.text_id.push_str(id.trim_start_matches('#'));
-                continue;
+            let line = line.trim_end_matches('\n');
+            if let Some(rest) = line.strip_prefix("##") {
+                let (id, rest) = rest.split_once('\t').unwrap_or((rest, ""));
+                if rest.trim().is_empty() {
+                    self.text_id.clear();
+                    self.text_id.push_str(id.trim());
+                    continue;
+                }
             }
             let mut fields = line.split('\t');
             match (fields.next(), fields.next(), fields.next(), fields.next()) {

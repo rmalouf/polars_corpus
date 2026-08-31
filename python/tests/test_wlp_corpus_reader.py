@@ -71,6 +71,32 @@ def test_file_id_comes_from_the_text_header(load, sample_file):
     assert df["file_id"].to_list() == ["4000161"] * 5 + ["4000162"] * 5
 
 
+@pytest.mark.parametrize(
+    "load", [read_wlp_corpus, lambda p: scan_wlp_corpus(p).collect()]
+)
+def test_token_with_neither_lemma_nor_tag(load, write_corpus):
+    """A line ending in its own separators is padded, not short."""
+    (path,) = write_corpus("##1\t\t\n@\t\t\nword\tword\tnn1\n")
+    df = load([path])
+
+    assert df.rows() == [("@", "", "", "1"), ("word", "word", "nn1", "1")]
+
+
+@pytest.mark.parametrize(
+    "load", [read_wlp_corpus, lambda p: scan_wlp_corpus(p).collect()]
+)
+def test_hash_line_with_lemma_and_tag_is_a_token(load, write_corpus):
+    """A token may start with "##"; only a bare text id opens a new text."""
+    (path,) = write_corpus("##1\n##\t##\tzz\n#metoo\t#metoo\tnn1\n##2\t\t\nx\tx\tnn1\n")
+    df = load([path])
+
+    assert df.rows() == [
+        ("##", "##", "zz", "1"),
+        ("#metoo", "#metoo", "nn1", "1"),
+        ("x", "x", "nn1", "2"),
+    ]
+
+
 def test_read_frames_batches(sample_file):
     """The Rust reader hands back one frame per file, sliced on request."""
     reader = WlpCorpusReader([sample_file])
