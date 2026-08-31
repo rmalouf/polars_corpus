@@ -29,8 +29,16 @@ class CorpusReader:
     def __init__(self, corpus_files: Iterator[PathType]):
         self._corpus_files = list(corpus_files)
 
+    def schema(self) -> pl.Schema:
+        """The columns a file of this format yields, in order."""
+        raise NotImplementedError()
+
     def read_file(self, path: PathType) -> Generator[dict[str, str]]:
-        """Yield one row per token in `path`, without the `file_id` field."""
+        """Yield one row per token in `path`, in `schema` order.
+
+        A format that names its own texts sets `file_id` here; one that does
+        not leaves it out, and `read_files` fills in the path.
+        """
         raise NotImplementedError()
 
     def read_files(self) -> Generator[dict[str, str]]:
@@ -248,8 +256,8 @@ class WlpCorpusReader(CorpusReader):
         return pl.Schema(
             {
                 "token": pl.String,
-                "pos": pl.String,
                 "lemma": pl.String,
+                "pos": pl.String,
                 "file_id": pl.String,
             }
         )
