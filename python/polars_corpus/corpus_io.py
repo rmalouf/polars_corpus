@@ -9,7 +9,7 @@ from typing import Generator, Iterator, Optional, Union
 import polars as pl
 from polars.io.plugins import register_io_source
 
-__all__ = ["read_text_corpus", "scan_text_corpus"]
+__all__ = ["read_text_corpus", "scan_text_corpus", "read_wlp_corpus", "scan_wlp_corpus"]
 
 
 PathType = Union[str, bytes, PathLike[str], PathLike[bytes]]
@@ -40,7 +40,8 @@ class CorpusReader:
             # the same name in different directories stay distinct.
             file_id = os.fsdecode(file)
             for row in self.read_file(file):
-                row["file_id"] = file_id
+                if "file_id" not in row:
+                    row["file_id"] = file_id
                 yield row
 
     def read_corpus(self) -> pl.DataFrame:
@@ -62,14 +63,6 @@ class CorpusReader:
 
         Based on https://docs.pola.rs/user-guide/plugins/io_plugins/#writing-the-source
         """
-        schema = pl.Schema(
-            {
-                "token": pl.String,
-                "pos": pl.String,
-                "sentence_tag": pl.String,
-                "file_id": pl.String,
-            }
-        )
 
         def source_generator(
             with_columns: Optional[list[str]],
@@ -96,7 +89,7 @@ class CorpusReader:
                         break
                     rows.append(row)
 
-                df = pl.from_records(rows, schema=schema, orient="row")
+                df = pl.from_records(rows, schema=self.schema(), orient="row")
                 if n_rows is not None:
                     n_rows -= df.height
 
@@ -108,7 +101,7 @@ class CorpusReader:
 
                 yield df
 
-        return register_io_source(io_source=source_generator, schema=schema)
+        return register_io_source(io_source=source_generator, schema=self.schema())
 
 
 class TextCorpusReader(CorpusReader):
@@ -118,6 +111,16 @@ class TextCorpusReader(CorpusReader):
     word `and/or` with the tag `CC`. Blank lines are skipped, and a token with
     no "/" in it is an error rather than a dropped row.
     """
+
+    def schema(self) -> pl.Schema:
+        return pl.Schema(
+            {
+                "token": pl.String,
+                "pos": pl.String,
+                "sentence_tag": pl.String,
+                "file_id": pl.String,
+            }
+        )
 
     def read_file(self, path: PathType) -> Generator[dict[str, str]]:
         bos = True
@@ -143,15 +146,14 @@ def read_text_corpus(corpus_files: Iterator[PathType]) -> pl.DataFrame:
     Read tagged text files into a DataFrame, one row per token.
 
     Each line of a file is one sentence, and each whitespace-separated token on
-    it is a word and its tag joined by "/", as in `quick/JJ`. The split is at
+    it is a word and its tag joined by "/", e.g., `quick/JJ`. The split is at
     the last "/", so `and/or/CC` reads as the word `and/or` with the tag `CC`.
     Blank lines are skipped.
 
     Parameters
     ----------
     corpus_files : iterable of str or Path
-        Paths of the files to read, e.g. `Path("corpus").glob("*.txt")`. This
-        is an iterable of paths, not a single path.
+        Paths of the files to read, e.g. `Path("corpus").glob("*.txt")`.
 
     Returns
     -------
@@ -160,9 +162,7 @@ def read_text_corpus(corpus_files: Iterator[PathType]) -> pl.DataFrame:
         `file_id`. The files come in the order given, and the tokens of a file
         in the order they appear in it. `sentence_tag` is "B" on the first
         token of a sentence and "I" on the rest. `file_id` holds the path the
-        token was read from, and `search` stops matches from crossing from one
-        file to the next. A corpus with no tokens comes back as an empty frame
-        with no columns at all.
+        token was read from.
 
     Raises
     ------
@@ -173,7 +173,7 @@ def read_text_corpus(corpus_files: Iterator[PathType]) -> pl.DataFrame:
 
     Notes
     -----
-    Files are decoded with Python's default text encoding.
+    Files are assumed to be encoded in UTF-8.
 
     See Also
     --------
@@ -196,25 +196,24 @@ def scan_text_corpus(corpus_files: Iterator[PathType]) -> pl.LazyFrame:
     """
     Scan tagged text files as a LazyFrame, a batch of tokens at a time.
 
-    The file format is the one `read_text_corpus` reads. Nothing is read until
-    the frame is collected, and only a batch of rows is held at once. The
-    columns a query keeps and the filters it applies run as each batch is
-    produced, so reading a small part of a large corpus never holds the whole
-    of it.
+    Each line of a file is one sentence, and each whitespace-separated token on
+    it is a word and its tag joined by "/", e.g., `quick/JJ`. The split is at
+    the last "/", so `and/or/CC` reads as the word `and/or` with the tag `CC`.
+    Blank lines are skipped.
 
     Parameters
     ----------
     corpus_files : iterable of str or Path
-        Paths of the files to read, e.g. `Path("corpus").glob("*.txt")`. This
-        is an iterable of paths, not a single path. The paths are listed when
-        the frame is built, so a generator may be passed.
+        Paths of the files to read, e.g. `Path("corpus").glob("*.txt")`.
 
     Returns
     -------
     LazyFrame
-        Columns `token`, `pos`, `sentence_tag` and `file_id`, all strings,
-        holding what `read_text_corpus` produces. The schema is fixed, so it
-        is these four columns even when the files hold no tokens.
+        One row per token, with columns `token`, `pos`, `sentence_tag` and
+        `file_id`. The files come in the order given, and the tokens of a file
+        in the order they appear in it. `sentence_tag` is "B" on the first
+        token of a sentence and "I" on the rest. `file_id` holds the path the
+        token was read from.
 
     Raises
     ------
@@ -225,8 +224,7 @@ def scan_text_corpus(corpus_files: Iterator[PathType]) -> pl.LazyFrame:
 
     Notes
     -----
-    The files are read again every time the frame is collected. Collect once
-    and keep the DataFrame if the corpus is small enough to hold.
+    Files are assumed to be encoded in UTF-8.
 
     See Also
     --------
@@ -243,3 +241,37 @@ def scan_text_corpus(corpus_files: Iterator[PathType]) -> pl.LazyFrame:
     >>> plc.search(corpus, "the _JJ _NN")
     """
     return TextCorpusReader(corpus_files).scan_corpus()
+
+
+class WlpCorpusReader(CorpusReader):
+    def schema(self) -> pl.Schema:
+        return pl.Schema(
+            {
+                "token": pl.String,
+                "pos": pl.String,
+                "lemma": pl.String,
+                "file_id": pl.String,
+            }
+        )
+
+    def read_file(self, path: PathType) -> Generator[dict[str, str]]:
+        file_id = ""
+        for line in open(path, "rt", errors="replace"):
+            if line.startswith("##"):
+                file_id = line.strip().lstrip("#")
+            else:
+                tok, lemma, pos = line.strip().split("\t")
+                yield {
+                    "token": tok,
+                    "lemma": lemma,
+                    "pos": pos,
+                    "file_id": file_id,
+                }
+
+
+def read_wlp_corpus(corpus_files: Iterator[PathType]) -> pl.DataFrame:
+    return WlpCorpusReader(corpus_files).read_corpus()
+
+
+def scan_wlp_corpus(corpus_files: Iterator[PathType]) -> pl.LazyFrame:
+    return WlpCorpusReader(corpus_files).scan_corpus()
