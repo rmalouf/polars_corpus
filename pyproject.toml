@@ -38,8 +38,8 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-# pyarrow>=14 is required by seaborn
-examples = ["great_tables", "scipy", "matplotlib", "seaborn", "pyarrow>=14", "statsmodels", "adjusttext"]
+# lxml and pyarrow>=14 are what convert_bnc needs; pyarrow>=14 is also required by seaborn
+examples = ["great_tables", "scipy", "matplotlib", "seaborn", "lxml", "pyarrow>=14", "statsmodels", "adjusttext"]
 embeddings = ["sentence-transformers", "model2vec", "umap-learn",
     "hdbscan"]
 
@@ -84,9 +84,12 @@ dev = [
     {include-group = "docs"},
     "coverage>=7.10",
     "jupyterlab>=4.4.0",
+    # convert_bnc, and so its tests, need these.
+    "lxml",
     "maturin>=1.8.3",
     "notebook>=7.4.0",
     "pip>=25.0.1",
+    "pyarrow>=14",
     "pyrefly>=0.62",
     "pytest>=8.3.5",
 ]
@@ -99,9 +102,7 @@ notebooks = [
     "cytoolz",
     "fastexcel",
     "great-tables",
-    "lxml",
     "matplotlib",
-    "pyarrow>=14",
     "scipy",
     "scipy-stubs",
     "seaborn",

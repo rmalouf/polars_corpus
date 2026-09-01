@@ -7,3 +7,5 @@
 ::: polars_corpus.corpus_io.scan_wlp_corpus
 ---
 ::: polars_corpus.convert.from_nltk
+---
+::: polars_corpus.convert.convert_bnc
