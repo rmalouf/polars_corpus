@@ -284,8 +284,95 @@ class WlpCorpusReader(CorpusReader):
 
 
 def read_wlp_corpus(corpus_files: Iterator[PathType]) -> pl.DataFrame:
+    """
+    Read COCA/COHA `.wlp` files into a DataFrame, one row per token.
+
+    Parameters
+    ----------
+    corpus_files : iterable of str or Path
+        Paths of the files to read.
+
+    Returns
+    -------
+    DataFrame
+        One row per token, with columns `token`, `lemma`, `pos` and `file_id`.
+        The files come in the order given, and the tokens of a file in the
+        order they appear in it. `file_id` holds the text id from the "##"
+        line the token falls under.
+
+    Raises
+    ------
+    FileNotFoundError
+        If one of `corpus_files` does not exist.
+    OSError
+        If a file cannot be read, or a compressed one cannot be decoded.
+    ValueError
+        If a line is not three tab-separated fields. The message names the
+        file and the line number.
+
+    Notes
+    -----
+    Automatically decompresses gzip- or zstd-compressed files as they are read.
+
+    Invalid UTF-8 bytes are replaced with U+FFFD.
+
+    See Also
+    --------
+    scan_wlp_corpus : Read the same files a batch at a time, as a LazyFrame.
+
+    Examples
+    --------
+    >>> from pathlib import Path
+    >>> import polars_corpus as plc
+    >>> corpus = plc.read_wlp_corpus(sorted(Path("coca/wlp").glob("*.zst")))
+    >>> plc.search(corpus, "the _jj _nn1")
+    """
     return WlpCorpusReader(corpus_files).read_corpus()
 
 
 def scan_wlp_corpus(corpus_files: Iterator[PathType]) -> pl.LazyFrame:
+    """
+    Scan COCA/COHA `.wlp` files as a LazyFrame, a batch of tokens at a time.
+
+    Parameters
+    ----------
+    corpus_files : iterable of str or Path
+        Paths of the files to read.
+
+    Returns
+    -------
+    LazyFrame
+        One row per token, with columns `token`, `lemma`, `pos` and `file_id`.
+        The files come in the order given, and the tokens of a file in the
+        order they appear in it. `file_id` holds the text id from the "##"
+        line the token falls under.
+
+    Raises
+    ------
+    polars.exceptions.ComputeError
+        On collecting, if a file does not exist, cannot be read or decoded, or
+        holds a line that is not three tab-separated fields. The
+        `FileNotFoundError`, `OSError` or `ValueError` behind it is named in
+        the message, along with the file and the line number.
+
+    Notes
+    -----
+    Automatically decompresses gzip- or zstd-compressed files as they are read.
+
+    Invalid UTF-8 bytes are replaced with U+FFFD.
+
+    See Also
+    --------
+    read_wlp_corpus : Read the same files into a DataFrame.
+
+    Examples
+    --------
+    >>> from pathlib import Path
+    >>> import polars as pl
+    >>> import polars_corpus as plc
+    >>> corpus = plc.scan_wlp_corpus(sorted(Path("coca/wlp").glob("*.zst")))
+    >>> corpus.select(pl.len()).collect()  # Count tokens without holding them
+    >>> # Convert a corpus too large to hold into a single parquet file:
+    >>> corpus.sink_parquet("coca.parquet")
+    """
     return WlpCorpusReader(corpus_files).scan_corpus()
