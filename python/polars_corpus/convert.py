@@ -3,9 +3,8 @@
 from __future__ import annotations
 
 import importlib.util
-from collections import defaultdict, deque
+from collections import defaultdict
 from concurrent.futures import ProcessPoolExecutor
-from itertools import islice
 from os import PathLike
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Generator, Optional, Union, cast
@@ -25,11 +24,8 @@ def from_nltk(corpus: CorpusReader) -> pl.DataFrame:
     """
     Read an NLTK corpus into a Polars DataFrame, one row per token.
 
-    Works with any corpus NLTK can read: Brown, the Gutenberg texts, anything
-    under `nltk.corpus`, or a reader pointed at a directory of your own.
-
-    The columns depend on what the reader offers. A tagged corpus gets a `pos`
-    column, a corpus read as sentences gets a `sentence_tag` column, and a
+    The columns returned depend on what the reader offers. A tagged corpus gets
+    a `pos` column, a corpus read as sentences gets a `sentence_tag` column, and a
     categorized corpus gets a `category` column.
 
     Parameters
@@ -130,33 +126,14 @@ def _convert_token(tokens: list[Any]) -> Generator[dict[str, str]]:
 # section 1 (Design of the corpus), so a column here is searchable in the Guide
 # by its own name: http://www.natcorp.ox.ac.uk/docs/URG/index.html
 #
-# The file is laid out for the lazy search path in `matcher.py`, which asks for
-#
-#   * a `file_id` column, since that is what it chunks the corpus by;
-#   * every token of a text in one contiguous run, so texts go in whole, one at
-#     a time, in sorted order;
-#   * row groups aligned to text boundaries and small enough that slicing to a
-#     handful of texts decodes little around them.
 
-# Parsing runs in worker processes: lxml frees the GIL, but that is only a
-# fifth of the work here, and threads measure no faster than serial.
-N_WORKERS = 8
-
-# Tokens to aim for per row group, the unit a scan prunes to and so the
-# granularity a lazy `slice` can seek at. Smaller groups decode less around a
-# concordance, at the cost of more metadata and worse compression.
+# Tokens to aim for per row group
 ROW_GROUP_TOKENS = 250_000
 
 # The <person> attributes worth keeping, as column -> (attribute, the label for
-# each code). The code for "not recorded" maps to None, so a null test covers
-# both an unrecorded speaker and a written text with no speaker at all; a code
-# no table names is kept as it stands, which is how `social_class` and `role`
-# pass their values through. All five attributes are on all 6124 <person>
-# elements.
+# each code). The code for "not recorded" maps to None.
 SPEAKER_ATTRS = {
     "sex": ("sex", {"m": "Male", "f": "Female", "u": None}),
-    # The bands `author_age_group` and `respondent_age_group` use, so the three
-    # are comparable.
     "age_group": (
         "ageGroup",
         {
@@ -206,31 +183,18 @@ SPEAKER_ATTRS = {
             "XWE": "West Indian",
         },
     ),
-    # How the speaker stood to the respondent who carried the recorder, in a
-    # demographically sampled text. 79 values, all of them already words, so
-    # only the two that mean "not recorded" are named.
     "role": ("role", {"unspecified": None, "?": None}),
 }
 
-# The rest of the speaker metadata is in child elements. `age` and `educ` are
-# left out: `educ` is "X" for all but a handful of speakers, and `age` is free
-# text ("40", "30+") that `age_group` already bins.
+# The rest of the speaker metadata is in child elements.
 SPEAKER_ELEMENTS = {
     "pers_name": "persName",
     "occupation": "occupation",
     "pers_note": "persNote",
 }
 
-# Each text carries one code from each of the classification taxonomies that
-# apply to it, all run together in the `targets` attribute of its <catRef>.
 # This maps column -> (taxonomy prefix, the label for each code), with the
-# BNC's code for "not recorded" mapped to None: a null then covers both an
-# unclassified text and a taxonomy that does not apply.
-#
-# Three taxonomies are left out. WRILEV (perceived difficulty) and WRISTA
-# (estimated circulation) "were incorrectly differentiated during the
-# preparation of the corpus and cannot be relied on" -- the Guide's own words.
-# ALLTYP repeats what `mode`, `text_type` and `written_medium` say.
+# BNC's code for "not recorded" mapped to None
 CATEGORIES = {
     "publication_date": (
         "ALLTIM",
@@ -335,9 +299,15 @@ CATEGORIES = {
     ),
 }
 
-# Everything but the creation year stays String: Parquet dictionary-encodes the
-# repetitive columns on disk, and Categorical costs memory once the corpus is
-# read back.
+# The same table inverted: every code that can appear in `targets` -> the column
+# it fills and the label it stands for. A code from a taxonomy left out above is
+# absent, and so ignored.
+CATEGORY_CODES = {
+    f"{prefix}{code}": (column, label)
+    for column, (prefix, labels) in CATEGORIES.items()
+    for code, label in labels.items()
+}
+
 TOKEN_SCHEMA = pl.Schema(
     {
         "token": pl.String,
@@ -349,12 +319,6 @@ TOKEN_SCHEMA = pl.Schema(
     }
 )
 
-# One value per text, so these are set as literals. The two dates are separate
-# facts: `creation_year` is <creation date>, "the year of original
-# composition", and `publication_date` is the band the text was classified
-# under, from the date of publication for a written text and of the recording
-# for a spoken one. 383 texts are banded but composed in no recorded year, and
-# 2 the other way round.
 TEXT_SCHEMA = pl.Schema(
     {
         "file_id": pl.String,
@@ -366,8 +330,6 @@ TEXT_SCHEMA = pl.Schema(
     | {column: pl.String for column in CATEGORIES}
 )
 
-# Keyed on speaker_id, which the token side already carries, so joining it on
-# is what completes BNC_SCHEMA.
 SPEAKER_SCHEMA = pl.Schema(
     {"speaker_id": pl.String}
     | {column: pl.String for column in SPEAKER_ATTRS | SPEAKER_ELEMENTS}
@@ -398,15 +360,18 @@ def _speakers(doc: Any) -> pl.DataFrame:
 
 
 def _text_class(doc: Any) -> dict[str, Optional[str]]:
-    """The document's classification codes, decoded to labels."""
-    codes = doc.xpath("//catRef/@targets")[0].split()
-    found = {}
-    for column, (prefix, labels) in CATEGORIES.items():
-        # A handful of texts are missing a code the rest of their sample has,
-        # which reads back the same as one recorded as unknown.
-        code = next((c for c in codes if c.startswith(prefix)), None)
-        found[column] = labels[int(code.removeprefix(prefix))] if code else None
-    return found
+    """The document's classification codes, decoded to labels.
+
+    A column is null where the taxonomy does not apply to the text, where the
+    text is unclassified, and where a text is missing a code the rest of its
+    sample carries.
+    """
+    decoded: dict[str, Optional[str]] = dict.fromkeys(CATEGORIES)
+    for code in doc.xpath("//catRef/@targets")[0].split():
+        if code in CATEGORY_CODES:
+            column, label = CATEGORY_CODES[code]
+            decoded[column] = label
+    return decoded
 
 
 def _parse_text(path: Path) -> Optional[pl.DataFrame]:
@@ -486,21 +451,15 @@ def _parse_text(path: Path) -> Optional[pl.DataFrame]:
     )
 
 
-def _parse_texts(paths: list[Path]) -> Generator[pl.DataFrame]:
+def _parse_texts(paths: list[Path], n_workers: int) -> Generator[pl.DataFrame]:
     """Parse `paths` in worker processes, yielding the frames in path order.
 
-    Order is what keeps each file id in a single run. At most `2 * N_WORKERS`
-    texts are in flight, so the writer sets the pace and memory stays flat.
+    `map` yields in path order, which is what keeps each file id in a single
+    run. It only runs `max_workers` texts at a time, and the writer downstream
+    keeps up with them, so memory stays flat.
     """
-    remaining = iter(paths)
-    with ProcessPoolExecutor(min(N_WORKERS, len(paths))) as pool:
-        pending = deque(
-            pool.submit(_parse_text, path) for path in islice(remaining, 2 * N_WORKERS)
-        )
-        while pending:
-            df = pending.popleft().result()
-            for path in islice(remaining, 1):
-                pending.append(pool.submit(_parse_text, path))
+    with ProcessPoolExecutor(min(n_workers, len(paths))) as pool:
+        for df in pool.map(_parse_text, paths):
             if df is not None:  # a stray copy of another text; see _parse_text
                 yield df
 
@@ -513,7 +472,9 @@ def _write_row_group(writer: pq.ParquetWriter, batch: list[pl.DataFrame]) -> Non
     writer.write_table(table, row_group_size=table.num_rows)
 
 
-def convert_bnc(bnc_root: PathType, output_path: PathType) -> pl.LazyFrame:
+def convert_bnc(
+    bnc_root: PathType, output_path: PathType, n_workers: int = 4
+) -> pl.LazyFrame:
     """
     Convert the XML edition of the British National Corpus into a Parquet file.
 
@@ -528,6 +489,8 @@ def convert_bnc(bnc_root: PathType, output_path: PathType) -> pl.LazyFrame:
         The root of the BNC XML distribution, the directory holding `Texts`.
     output_path : str or Path
         Parquet file to write. An existing file is overwritten.
+    n_workers : int, default 4
+        How many worker processes parse texts at once.
 
     Returns
     -------
@@ -555,8 +518,9 @@ def convert_bnc(bnc_root: PathType, output_path: PathType) -> pl.LazyFrame:
     ImportError
         If lxml or pyarrow is not installed. Both are the `examples` extra.
     ValueError
-        If `bnc_root` holds no `Texts` directory with XML files under it, or a
-        file there holds neither a `<wtext>` nor an `<stext>` element.
+        If `n_workers` is less than 1, if `bnc_root` holds no `Texts` directory
+        with XML files under it, or a file there holds neither a `<wtext>` nor
+        an `<stext>` element.
 
     Notes
     -----
@@ -590,6 +554,9 @@ def convert_bnc(bnc_root: PathType, output_path: PathType) -> pl.LazyFrame:
             )
     import pyarrow.parquet as pq
 
+    if n_workers < 1:
+        raise ValueError(f"n_workers must be at least 1, got {n_workers}")
+
     texts = Path(bnc_root) / "Texts"
     paths = sorted(texts.glob("**/*.xml"))
     if not paths:
@@ -600,7 +567,7 @@ def convert_bnc(bnc_root: PathType, output_path: PathType) -> pl.LazyFrame:
     batch: list[pl.DataFrame] = []
     batch_tokens = 0
     with pq.ParquetWriter(parquet, schema, compression="zstd") as writer:
-        for df in _parse_texts(paths):
+        for df in _parse_texts(paths, n_workers):
             # Close the group before the text that would overrun it, so only
             # a text longer than the target lands in one alone.
             if batch and batch_tokens + df.height > ROW_GROUP_TOKENS:

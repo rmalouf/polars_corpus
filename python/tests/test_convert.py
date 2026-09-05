@@ -155,15 +155,8 @@ SPOKEN_XML = """<?xml version="1.0" encoding="UTF-8"?>
 """
 
 
-@pytest.fixture(scope="module")
-def bnc(tmp_path_factory):
-    """The corpus the fixture texts convert to, read back from the Parquet file.
-
-    Converting spawns worker processes, so it is done once for the module.
-    """
-    pytest.importorskip("lxml")
-    pytest.importorskip("pyarrow")
-    root = tmp_path_factory.mktemp("bnc_xml")
+def _write_bnc(root):
+    """Lay the fixture texts out under `root` the way the distribution is."""
     for path, xml in [
         ("Texts/A/A0/A00.xml", WRITTEN_XML.format(file_id="A00", idno="A00")),
         ("Texts/K/KB/KB0.xml", SPOKEN_XML),
@@ -174,6 +167,18 @@ def bnc(tmp_path_factory):
     ]:
         (root / path).parent.mkdir(parents=True, exist_ok=True)
         (root / path).write_text(xml)
+    return root
+
+
+@pytest.fixture(scope="module")
+def bnc(tmp_path_factory):
+    """The corpus the fixture texts convert to, read back from the Parquet file.
+
+    Converting spawns worker processes, so it is done once for the module.
+    """
+    pytest.importorskip("lxml")
+    pytest.importorskip("pyarrow")
+    root = _write_bnc(tmp_path_factory.mktemp("bnc_xml"))
     return convert_bnc(root, tmp_path_factory.mktemp("out") / "bnc.parquet").collect()
 
 
@@ -232,3 +237,20 @@ def test_convert_bnc_no_texts(tmp_path):
     pytest.importorskip("lxml")
     with pytest.raises(ValueError, match="No BNC texts found"):
         convert_bnc(tmp_path, tmp_path / "bnc.parquet")
+
+
+@pytest.mark.parametrize("n_workers", [0, -1])
+def test_convert_bnc_bad_n_workers(tmp_path, n_workers):
+    """A worker count below 1 is caught before the output file is opened."""
+    pytest.importorskip("lxml")
+    parquet = tmp_path / "bnc.parquet"
+    with pytest.raises(ValueError, match="n_workers must be at least 1"):
+        convert_bnc(tmp_path, parquet, n_workers=n_workers)
+    assert not parquet.exists()
+
+
+def test_convert_bnc_n_workers(bnc, tmp_path_factory):
+    """The worker count only sets the pace: the corpus comes out the same."""
+    root = _write_bnc(tmp_path_factory.mktemp("bnc_xml"))
+    out = tmp_path_factory.mktemp("out") / "bnc.parquet"
+    assert convert_bnc(root, out, n_workers=1).collect().equals(bnc)
