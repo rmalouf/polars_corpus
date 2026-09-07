@@ -34,7 +34,7 @@ dependencies = [
     "polars>=1.36,<2.0",
     "lark>=1.2",
     "nltk>=3.9",
-    "anywidget>=0.9"
+    "anywidget>=0.9",
 ]
 
 [project.optional-dependencies]

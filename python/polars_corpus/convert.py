@@ -58,14 +58,10 @@ def from_nltk(corpus: CorpusReader) -> pl.DataFrame:
     >>> import nltk
     >>> import polars_corpus as plc
     >>> brown = plc.from_nltk(nltk.corpus.brown)
-    >>> # `category` is there because Brown is categorized:
     >>> brown.group_by("category").len()
     """
     category_dict = dict()
     if hasattr(corpus, "categories"):
-        # CategorizedCorpusReader is a mixin, so a categorized corpus is only
-        # identifiable by duck-typing. It supplies categories() and widens
-        # fileids(), which on the plain reader takes no arguments.
         categorized = cast("CategorizedCorpusReader", corpus)
         for category in categorized.categories():
             for file_id in categorized.fileids(category):
@@ -385,9 +381,9 @@ def _parse_text(path: Path) -> Optional[pl.DataFrame]:
     doc = etree.parse(str(path))
     docid = doc.xpath('//idno[@type="bnc"]')[0].text
     # G3C.xml is an earlier copy of HWX.xml, header and all, so two files claim
-    # the id HWX, which would give that id two runs of tokens far apart. The
-    # stray copy is the one filed under a name other than the id it carries, so
-    # dropping it here keeps HWX.xml, the corrected December 2006 text.
+    # the id HWX. The stray copy is the one filed under a name other than the
+    # id it carries, so dropping it here keeps HWX.xml, the corrected
+    # December 2006 text.
     if docid != path.stem:
         return None
     if text := doc.xpath("//wtext"):
@@ -467,8 +463,7 @@ def _parse_texts(paths: list[Path], n_workers: int) -> Generator[pl.DataFrame]:
 def _write_row_group(writer: pq.ParquetWriter, batch: list[pl.DataFrame]) -> None:
     """Write a batch of whole texts as one row group."""
     table = pl.concat(batch).to_arrow()
-    # The explicit size puts the seam between two texts; pyarrow's default
-    # caps a row group at 1M rows.
+    # The explicit size puts the row group boundary  between two texts
     writer.write_table(table, row_group_size=table.num_rows)
 
 
@@ -547,7 +542,6 @@ def convert_bnc(
     ...     pl.col("author_sex") == "Female",
     ... )
     """
-    # The workers import lxml themselves, so it is checked for here.
     for package in ("lxml", "pyarrow"):
         if importlib.util.find_spec(package) is None:
             raise ImportError(
@@ -567,8 +561,6 @@ def convert_bnc(
     batch_tokens = 0
     with pq.ParquetWriter(parquet, schema, compression="zstd") as writer:
         for df in _parse_texts(paths, n_workers):
-            # Close the group before the text that would overrun it, so only
-            # a text longer than the target lands in one alone.
             if batch and batch_tokens + df.height > ROW_GROUP_TOKENS:
                 _write_row_group(writer, batch)
                 batch, batch_tokens = [], 0
