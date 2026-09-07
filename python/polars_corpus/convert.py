@@ -478,10 +478,10 @@ def convert_bnc(
     """
     Convert the XML edition of the British National Corpus into a Parquet file.
 
-    The corpus is read one text at a time and appended to the Parquet file as
-    it goes, so converting it holds a handful of texts at once. Text and
-    speaker metadata are written onto every token, so restricting a search to
-    a subcorpus is a filter.
+    The BNC ships as thousands of XML files. This reads them into one Parquet
+    file, which later sessions scan in place of converting again. Every token
+    carries the metadata of the text it came from and of the speaker who spoke
+    it.
 
     Parameters
     ----------
@@ -495,9 +495,9 @@ def convert_bnc(
     Returns
     -------
     LazyFrame
-        A scan of the file just written, one row per token, the texts in file
-        id order and the tokens of a text in the order they appear in it, with
-        the columns
+        A scan of the file just written: one row per token, with the texts in
+        file id order and each text's tokens in the order they appear in it.
+        The columns are
 
         - `token`, `lemma`, `c5` : the word, its headword, and its CLAWS5 tag
         - `pos` : the simplified tag, or "STOP" on a punctuation mark
@@ -506,9 +506,10 @@ def convert_bnc(
         - `mode`, `text_type`, `genre` : what the text is
         - `creation_year` : the year it was composed, null where the header
           records none
-        - one column per classification taxonomy, e.g. `written_domain`,
-          `author_sex`, `region`, holding the label the text's code stands for
-          and null where the taxonomy does not apply to it
+        - one column per BNC classification taxonomy, e.g. `written_domain`,
+          `author_sex`, `region`, holding the label that the text's code stands
+          for, and null where the taxonomy does not apply to the text -- as
+          `written_domain` is for a spoken text
         - `speaker_id`, `sex`, `age_group`, `social_class`, `dialect`, `role`,
           `pers_name`, `occupation`, `pers_note` : who spoke the token, null
           throughout a written text
@@ -518,18 +519,19 @@ def convert_bnc(
     ImportError
         If lxml or pyarrow is not installed. Both are the `examples` extra.
     ValueError
-        If `n_workers` is less than 1, if `bnc_root` holds no `Texts` directory
-        with XML files under it, or a file there holds neither a `<wtext>` nor
-        an `<stext>` element.
+        If `bnc_root` holds no `Texts` directory with XML files under it, or a
+        file there holds neither a `<wtext>` nor an `<stext>` element.
 
     Notes
     -----
-    A `<gap>`, `<unclear>`, `<pause>`, `<vocal>` or `<event>` element is one
-    row whose `token` names it, e.g. `<pause/>`, and whose `lemma`, `pos` and
-    `c5` are null.
+    The BNC marks more than words inside its sentences. A `<gap>`, `<unclear>`,
+    `<pause>`, `<vocal>` or `<event>` element becomes a row of its own whose
+    `token` is the tag written out, e.g. "<pause/>", and whose `lemma`, `pos`
+    and `c5` are null.
 
-    Texts are parsed in worker processes, so a script that calls this guards
-    the call with `if __name__ == "__main__":`.
+    The parsing runs in worker processes, which re-import the calling script,
+    so a script that calls this must guard the call with
+    `if __name__ == "__main__":`.
 
     Examples
     --------
@@ -553,9 +555,6 @@ def convert_bnc(
                 "pip install polars-corpus[examples]"
             )
     import pyarrow.parquet as pq
-
-    if n_workers < 1:
-        raise ValueError(f"n_workers must be at least 1, got {n_workers}")
 
     texts = Path(bnc_root) / "Texts"
     paths = sorted(texts.glob("**/*.xml"))

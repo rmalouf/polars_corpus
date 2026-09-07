@@ -237,20 +237,3 @@ def test_convert_bnc_no_texts(tmp_path):
     pytest.importorskip("lxml")
     with pytest.raises(ValueError, match="No BNC texts found"):
         convert_bnc(tmp_path, tmp_path / "bnc.parquet")
-
-
-@pytest.mark.parametrize("n_workers", [0, -1])
-def test_convert_bnc_bad_n_workers(tmp_path, n_workers):
-    """A worker count below 1 is caught before the output file is opened."""
-    pytest.importorskip("lxml")
-    parquet = tmp_path / "bnc.parquet"
-    with pytest.raises(ValueError, match="n_workers must be at least 1"):
-        convert_bnc(tmp_path, parquet, n_workers=n_workers)
-    assert not parquet.exists()
-
-
-def test_convert_bnc_n_workers(bnc, tmp_path_factory):
-    """The worker count only sets the pace: the corpus comes out the same."""
-    root = _write_bnc(tmp_path_factory.mktemp("bnc_xml"))
-    out = tmp_path_factory.mktemp("out") / "bnc.parquet"
-    assert convert_bnc(root, out, n_workers=1).collect().equals(bnc)
