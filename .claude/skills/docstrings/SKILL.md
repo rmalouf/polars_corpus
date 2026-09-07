@@ -69,6 +69,11 @@ An optional paragraph after the summary explains what the measure means and how
 to read its values -- the thing a student needs before the parameter list is
 useful. Skip it when the summary already says everything.
 
+It answers what the reader gets and why they would want it. Not how the
+function works inside: parallelism, streaming writes, join order and the like
+belong in comments in the body. In a docstring they only leave the reader
+wondering whether this is something they have to care about.
+
 ## Write plainly
 
 The prose is instructions, not literature. Two rewrites in one session were
@@ -125,6 +130,17 @@ that session:
 - Antithesis for rhythm: "costs a partial scan, not the memory to hold it".
 - Inversion: "What it keeps is a small frame of spans".
 - An opener that delays the subject: "What to reach for when ...".
+- A copula swallowing the verb: "restricting a search to a subcorpus is a
+  filter", "a `<gap>` element is one row". Name the actor and what it does:
+  "you restrict a search to a subcorpus with `filter`", "a `<gap>` element
+  becomes a row of its own".
+- A chain of appositives with no verb, which `Returns` invites: "A scan of the
+  file just written, one row per token, the texts in file id order, with the
+  columns ...". One appositive after the type is house shape; by the third
+  fragment the reader has lost the thread. Close the sentence and start
+  another.
+- A consequence with its object dropped: "converting it holds a handful of
+  texts at once" -- holds them where? Say "in memory".
 
 Semicolons joining the conditions inside one `Raises` entry are house shape and
 stay. Semicolon-spliced triples in a parameter body do not.
@@ -205,7 +221,10 @@ row, drawn empty."
 
 Behavior a careful reader would otherwise have to discover: null handling
 ("Rows holding a null in either `expr` and `file_id_column` are dropped"),
-stability caveats, why a default is what it is. Formulas go here, as
+stability caveats, why a default is what it is. A note that tells the reader
+to do something gives the mechanism that makes it necessary -- "the workers
+re-import the calling script, so guard the call with `if __name__ ==
+"__main__":`", not the guard on its own. Formulas go here, as
 `$$ ... $$` blocks (katex via `pymdownx.arithmatex`). Use an `r"""` docstring
 so the TeX needs no doubled backslashes.
 
