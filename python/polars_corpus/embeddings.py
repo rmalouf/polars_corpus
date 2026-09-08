@@ -130,12 +130,14 @@ def encode_terms(
 
     Examples
     --------
+    >>> import polars as pl
     >>> import polars_corpus as plc
     >>> from sentence_transformers import SentenceTransformer
+    >>> bnc = pl.scan_parquet('bnc.parquet')
     >>> model = SentenceTransformer("all-MiniLM-L6-v2")
-    >>> plc.encode_terms(["bank", "shore", "vault"], corpus, model)
-    >>> top = corpus.corpus.frequencies("token").head(500)
-    >>> plc.encode_terms(top, corpus, model, chunk_column="sentence_tag")
+    >>> plc.encode_terms(["bank", "shore", "vault"], bnc, model)
+    >>> top = bnc.corpus.frequency_list("token").head(500)
+    >>> plc.encode_terms(top, bnc, model, chunk_column="sentence_tag")
     """
     if isinstance(terms, pl.DataFrame):
         frame = terms
