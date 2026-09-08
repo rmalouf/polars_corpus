@@ -74,6 +74,26 @@ def test_collocates_match_eager(chunk_tokens):
 
 
 @pytest.mark.parametrize("chunk_tokens", CHUNK_SIZES)
+@pytest.mark.parametrize(
+    "by", [pytest.param("file_id", id="by-file"), pytest.param(None, id="whole-corpus")]
+)
+def test_distribution_matches_eager(chunk_tokens, by):
+    eager, lazy = eager_and_lazy('[token="fox"]', chunk_tokens)
+
+    assert lazy.distribution(by=by).equals(eager.distribution(by=by))
+
+
+def test_lazy_without_file_ids_distribution():
+    """No file ids to report a range over, and the corpus counted as one."""
+    lazy = search_cqp(FILES.drop("file_id").lazy(), '[token="fox"]')
+    eager = search_cqp(FILES.drop("file_id"), '[token="fox"]')
+    freqs = lazy.distribution()
+
+    assert freqs.columns == ["freq", "tokens", "rate"]
+    assert freqs.equals(eager.distribution())
+
+
+@pytest.mark.parametrize("chunk_tokens", CHUNK_SIZES)
 def test_spans_as_chunks_match_eager(chunk_tokens):
     eager, lazy = eager_and_lazy('[token="brown"] [token="fox"]', chunk_tokens)
     tagged = lazy.with_spans_as_chunks()

@@ -328,6 +328,144 @@ class TestArgumentChecks:
             results.concordance("token", chunk_column="chunkz")
 
 
+class TestDistribution:
+    """Matches counted against the size of the part of the corpus they fall in"""
+
+    @pytest.fixture
+    def by_genre(self):
+        """The two "sat" matches, in four files of three genres.
+
+        Fiction is split over two files and holds one match, so its range is
+        half its files. Academic holds no match at all, so it is the group
+        that only a count over the corpus rather than over the matches finds.
+        """
+        df = corpus(token=f"{TOKENS} a quiet day").with_columns(
+            file_id=pl.Series(["a"] * 4 + ["a2"] * 3 + ["b"] * 7 + ["c"] * 3),
+            text_type=pl.Series(["fiction"] * 7 + ["news"] * 7 + ["academic"] * 3),
+        )
+        return search_results(
+            df,
+            "sat",
+            [Match(Span(2, 3), {}), Match(Span(9, 10), {})],
+            file_id_column="file_id",
+        )
+
+    @pytest.mark.parametrize(
+        "by",
+        [
+            pytest.param("text_type", id="name"),
+            pytest.param(["text_type"], id="list"),
+            pytest.param(pl.col("text_type"), id="expr"),
+        ],
+    )
+    def test_counts_per_group(self, by_genre, by):
+        freqs = by_genre.distribution(by=by)
+
+        assert freqs.columns == [
+            "text_type",
+            "freq",
+            "tokens",
+            "rate",
+            "range",
+            "range%",
+        ]
+        # "academic" is the file no match fell in.
+        assert freqs["text_type"].to_list() == ["academic", "fiction", "news"]
+        assert freqs["freq"].to_list() == [0, 1, 1]
+        assert freqs["tokens"].to_list() == [3, 7, 7]
+        assert freqs["range"].to_list() == [0, 1, 1]
+        # Fiction's one match is in one of its two files.
+        assert freqs["range%"].to_list() == pytest.approx([0.0, 50.0, 100.0])
+        assert freqs["rate"].to_list() == pytest.approx([0.0, 1e6 / 7, 1e6 / 7])
+
+    def test_whole_corpus_without_by(self, by_genre):
+        freqs = by_genre.distribution()
+
+        assert freqs.columns == ["freq", "tokens", "rate", "range", "range%"]
+        assert freqs["freq"].to_list() == [2]
+        assert freqs["tokens"].to_list() == [17]
+        # Two of the corpus's four files hold a match.
+        assert freqs["range"].to_list() == [2]
+        assert freqs["range%"].to_list() == pytest.approx([50.0])
+        assert freqs["rate"][0] == pytest.approx(2e6 / 17)
+
+    @pytest.mark.parametrize("basis", [1, 100, 10_000, 1_000_000])
+    def test_rate_scales_with_basis(self, by_genre, basis):
+        freqs = by_genre.distribution(basis=basis)
+
+        assert freqs["rate"][0] == pytest.approx(basis * 2 / 17)
+
+    def test_several_keys(self, by_genre):
+        freqs = by_genre.distribution(by=["text_type", "file_id"])
+
+        assert freqs.columns[:2] == ["text_type", "file_id"]
+        assert list(zip(freqs["text_type"], freqs["file_id"])) == [
+            ("academic", "c"),
+            ("fiction", "a"),
+            ("fiction", "a2"),
+            ("news", "b"),
+        ]
+        assert freqs["freq"].to_list() == [0, 1, 0, 1]
+        assert freqs["tokens"].to_list() == [3, 4, 3, 7]
+
+    def test_expression_key(self, by_genre):
+        """A group the corpus computes rather than holds."""
+        freqs = by_genre.distribution(
+            by=(pl.col("text_type") == "fiction").alias("fiction")
+        )
+
+        assert freqs["fiction"].to_list() == [False, True]
+        assert freqs["freq"].to_list() == [1, 1]
+        assert freqs["tokens"].to_list() == [10, 7]
+
+    def test_range_counts_files_not_matches(self):
+        """Both matches in one file, so the range is 1 where the count is 2."""
+        df = corpus(token=TOKENS).with_columns(file_id=pl.lit("a"))
+        results = search_results(
+            df,
+            "sat",
+            [Match(Span(2, 3), {}), Match(Span(9, 10), {})],
+            file_id_column="file_id",
+        )
+        freqs = results.distribution(by="file_id")
+
+        assert freqs["freq"].to_list() == [2]
+        assert freqs["range"].to_list() == [1]
+        assert freqs["range%"].to_list() == pytest.approx([100.0])
+
+    def test_no_range_without_file_ids(self, results):
+        assert results.distribution(by="token").columns == [
+            "token",
+            "freq",
+            "tokens",
+            "rate",
+        ]
+
+    def test_null_group_sorted_last(self):
+        """Tokens a key says nothing about get a row, at the end."""
+        df = corpus(token=TOKENS).with_columns(sex=pl.Series(["f"] * 7 + [None] * 7))
+        results = search_results(
+            df, "sat", [Match(Span(2, 3), {}), Match(Span(9, 10), {})]
+        )
+        freqs = results.distribution(by="sex")
+
+        assert freqs["sex"].to_list() == ["f", None]
+        assert freqs["freq"].to_list() == [1, 1]
+
+    @pytest.mark.parametrize(
+        ("kwargs", "message"),
+        [
+            ({"basis": 0}, "basis must be a positive number"),
+            ({"basis": -10}, "basis must be a positive number"),
+            ({"by": "genre"}, "has no column 'genre'"),
+            ({"by": 3}, "by must be a column name or a polars expression"),
+        ],
+    )
+    def test_bad_arguments(self, by_genre, kwargs, message):
+        with pytest.raises(ValueError, match=message):
+            by_genre.distribution(**kwargs)
+
+
 class TestCollocates:
     """Collocate frequencies, laid out the way the association measures read them"""
 

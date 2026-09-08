@@ -10,12 +10,26 @@ import polars.selectors as cs
 from polars._typing import IntoExprColumn
 
 from ._internal import Match, Span, py_concordance, py_kwic, spans_to_chunks
-from .utils import _check_count, as_eager, check_columns, output_name
+from ._typing import IntoExpr
+from .utils import (
+    _check_count,
+    as_eager,
+    as_expr,
+    check_columns,
+    check_expr,
+    output_name,
+)
 
 if TYPE_CHECKING:
     from sentence_transformers import SentenceTransformer
 
-__all__ = ["SearchResults", "LazySearchResults", "concordance", "collocates", "kwic"]
+__all__ = [
+    "SearchResults",
+    "LazySearchResults",
+    "concordance",
+    "collocates",
+    "kwic",
+]
 
 
 def _select(
@@ -163,6 +177,10 @@ class _SearchResultsBase:
 
     def _corpus_size(self) -> int:
         """Number of tokens in the corpus."""
+        raise NotImplementedError
+
+    def _mark_hits(self, name: str) -> pl.DataFrame | pl.LazyFrame:
+        """The corpus with a boolean column `name`, true on each match's first token."""
         raise NotImplementedError
 
     def _concordance(
@@ -526,6 +544,134 @@ class _SearchResultsBase:
             .collect(engine="streaming")
         )
 
+    def distribution(
+        self,
+        by: Optional[IntoExpr | list[IntoExpr]] = None,
+        basis: float = 1_000_000,
+    ) -> pl.DataFrame:
+        """
+        Count the matches in each part of a corpus, normalized for its size.
+
+        Hits in fiction and hits in news cannot be compared while fiction and
+        news hold different amounts of text. This divides the matches found in
+        each part of the corpus by the words in that part, and reports the
+        result as a rate per `basis` words, a million by default. Every part
+        gets a row, so a category the search found nothing in stays in the
+        table with a count of zero rather than dropping out of it.
+
+        Parameters
+        ----------
+        by : IntoExpr or list of IntoExpr, optional
+            Column name(s) or expression(s) to break the matches down by, e.g.
+            "text_type" for one category, or ["mode", "sex"] to cross two.
+            A match counts toward the group its first token falls in, which is
+            where `concordance` reads its metadata. By default the whole
+            corpus is one group and the result is a single row.
+        basis : float, default 1_000_000
+            Number of words `rate` is reported per. Per million is usual for a
+            large corpus; pass 10_000 for a small one.
+
+        Returns
+        -------
+        pl.DataFrame
+            One row per group, sorted by the `by` columns with nulls last:
+
+            - the `by` column(s), each named for what its expression produces
+            - `freq` : matches in the group
+            - `tokens` : words in the group
+            - `rate` : `freq` per `basis` words of the group
+            - `range` : files in the group holding at least one match, absent
+              when the results have no file id column
+            - `range%` : `range` as a percentage of the files in the group,
+              absent under the same condition
+
+        Raises
+        ------
+        ValueError
+            If `by` is not a column name or expression, or names a column the
+            corpus does not have; or if `basis` is not positive.
+
+        See Also
+        --------
+        [frequency_list][polars_corpus.frequency.frequency_list] :
+            The same rate for every word in a corpus, rather than for matches.
+        [dispersion][polars_corpus.dispersion.dispersion] :
+            How evenly a word is spread over files, measured word by word.
+        with_spans_as_chunks : Write the matches back onto the corpus as tags.
+
+        Notes
+        -----
+        `freq` counts matches and `range` counts files, so the two together
+        say whether a rate rests on the whole category or on a few texts in
+        it. A word used twenty times in one novel and nowhere else has the
+        same `freq` as one used once in twenty novels, and a much lower
+        `range`.
+
+        Tokens holding a null in a `by` column are grouped together in a row
+        of their own, with null in that column. Written texts have no speaker
+        sex, for instance, so a search grouped by `sex` reports them there.
+
+        The method tags the corpus with the matches and counts the tags.
+        Writing that out gives the same numbers, and is where to start for a
+        count this does not report:
+
+        ```python
+        results.with_spans_as_chunks().group_by("text_type").agg(
+            freq=(pl.col("spans") == "B").sum(),
+            tokens=pl.len(),
+        )
+        ```
+
+        Examples
+        --------
+        >>> results.distribution(by="text_type")
+        >>> results.distribution()  # One row, for the corpus as a whole
+        >>> # Spoken against written, per 10,000 words, commonest first:
+        >>> results.distribution(by="mode", basis=10_000).sort(
+        ...     "rate", descending=True
+        ... )
+        >>> # Two categories crossed, and a category the corpus computes:
+        >>> results.distribution(by=["mode", "sex"])
+        >>> results.distribution(by=pl.col("creation_year") // 10 * 10)
+        """
+        if basis <= 0:
+            raise ValueError(f"basis must be a positive number, got {basis!r}")
+        if by is None:
+            items: list[IntoExpr] = []
+        elif isinstance(by, (list, tuple)):
+            items = list(by)
+        else:
+            items = [by]
+        keys = [as_expr(item, param="by") for item in items]
+        # Against the corpus, before the aggregation adds its hit column.
+        names = [check_expr(self._frame(), key, param="by") for key in keys]
+
+        hit = pl.col("_hit")
+        aggs = [hit.sum().alias("freq"), pl.len().alias("tokens")]
+        derived = [(pl.col("freq") / pl.col("tokens") * basis).alias("rate")]
+        reported = [*names, "freq", "tokens", "rate"]
+        if self._file_id_column is not None:
+            files = pl.col(self._file_id_column)
+            # The group's own files are the denominator: a genre is spread over
+            # the files it has, not over the whole corpus.
+            aggs += [
+                files.filter(hit).n_unique().alias("range"),
+                files.n_unique().alias("_files"),
+            ]
+            derived.append((100 * pl.col("range") / pl.col("_files")).alias("range%"))
+            reported += ["range", "range%"]
+
+        marked = self._mark_hits("_hit").lazy()
+        # Grouping the corpus rather than the matches is what gives a row to a
+        # group no match fell in.
+        counts = marked.select(aggs) if not keys else marked.group_by(keys).agg(aggs)
+        return (
+            counts.with_columns(derived)
+            .select(reported)
+            .sort(names, nulls_last=True)
+            .collect(engine="streaming")
+        )
+
     def view(
         self,
         expr: IntoExprColumn | list[IntoExprColumn] = "token",
@@ -886,6 +1032,13 @@ class SearchResults(_SearchResultsBase):
     def _corpus_size(self) -> int:
         return self._df.height
 
+    def _mark_hits(self, name: str) -> pl.DataFrame:
+        # A boolean column costs a byte a token, where the BIO tags of
+        # with_spans_as_chunks cost a string.
+        starts = [match.span.start for match in self._matches]
+        hits = pl.repeat(False, self._df.height, eager=True).scatter(starts, True)
+        return self._df.with_columns(hits.alias(name))
+
     def _concordance(
         self,
         expr: IntoExprColumn | list[IntoExprColumn],
@@ -1025,6 +1178,9 @@ class LazySearchResults(_SearchResultsBase):
 
     def _corpus_size(self) -> int:
         return int(self._files["_len"].sum())
+
+    def _mark_hits(self, name: str) -> pl.LazyFrame:
+        return self.with_spans_as_chunks(name).with_columns(pl.col(name) == "B")
 
     def _concordance(
         self,
