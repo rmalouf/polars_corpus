@@ -88,6 +88,21 @@ def test_crosstab_missing_columns(lazy: bool) -> None:
         crosstab(df.lazy() if lazy else df, "x", "y")
 
 
+@pytest.mark.parametrize("lazy", [False, True])
+def test_crosstab_through_the_namespace(lazy: bool) -> None:
+    # The .corpus namespace hands its arguments to crosstab unchanged, and is
+    # the only caller that can get the count wrong.
+    df = pl.DataFrame({"x": ["A", "A", "B", "B", "C"], "y": [1, 2, 1, 2, 1]})
+    frame = df.lazy() if lazy else df
+
+    result = frame.corpus.crosstab("x", "y")
+    expected = crosstab(frame, "x", "y")
+    if lazy:
+        result, expected = result.collect(), expected.collect()
+
+    assert_frame_equal(result.sort("x", "y"), expected.sort("x", "y"))
+
+
 def test_crosstab_drops_null_values() -> None:
     df = pl.DataFrame({"x": ["A", "A", "B", None, "C"], "y": [1, None, 1, 2, 1]})
 

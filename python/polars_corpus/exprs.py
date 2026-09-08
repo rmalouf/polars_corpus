@@ -232,8 +232,8 @@ class CorpusDataFrame:
     def __init__(self, df: pl.DataFrame) -> None:
         self._df = df
 
-    def crosstab(self, x: str, y: str, freqs_name: str = "freqs") -> pl.DataFrame:
-        return crosstab(self._df, x, y, freqs_name)
+    def crosstab(self, x: str, y: str) -> pl.DataFrame:
+        return crosstab(self._df, x, y)
 
     def frequency_list(self, expr: IntoExpr = "token", **kwargs: Any) -> pl.DataFrame:
         return frequency_list(self._df, expr, **kwargs)
@@ -253,8 +253,8 @@ class CorpusLazyFrame:
     def __init__(self, lf: pl.LazyFrame) -> None:
         self._lf = lf
 
-    def crosstab(self, x: str, y: str, freqs_name: str = "freqs") -> pl.LazyFrame:
-        return crosstab(self._lf, x, y, freqs_name)
+    def crosstab(self, x: str, y: str) -> pl.LazyFrame:
+        return crosstab(self._lf, x, y)
 
     def frequency_list(self, expr: IntoExpr = "token", **kwargs: Any) -> pl.LazyFrame:
         return frequency_list(self._lf, expr, **kwargs)
