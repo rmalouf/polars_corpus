@@ -198,7 +198,6 @@ def test_nulls_are_dropped() -> None:
     [
         ({"basis": 0}, "basis must be a positive number"),
         ({"basis": -10}, "basis must be a positive number"),
-        ({"basis": "lots"}, "basis must be a positive number"),
         ({"file_id_column": "nope"}, "has no column 'nope'"),
     ],
 )

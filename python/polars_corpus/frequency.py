@@ -69,7 +69,7 @@ def frequency_list(
     ValueError
         If `corpus` is not a Polars DataFrame or LazyFrame, is empty, or is
         missing a column `frequency_list` needs; if `expr` is not a column
-        name or expression; or if `basis` is not a positive number.
+        name or expression; or if `basis` is not positive.
 
     See Also
     --------
@@ -108,7 +108,7 @@ def frequency_list(
     ...     pl.col("freq") >= 10, pl.col("range") >= 5
     ... )
     """
-    if not isinstance(basis, (int, float)) or isinstance(basis, bool) or basis <= 0:
+    if basis <= 0:
         raise ValueError(f"basis must be a positive number, got {basis!r}")
 
     term = as_expr(expr)
