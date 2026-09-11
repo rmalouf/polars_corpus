@@ -5,6 +5,7 @@ from __future__ import annotations
 import importlib.util
 from collections import defaultdict
 from concurrent.futures import ProcessPoolExecutor
+from itertools import chain
 from os import PathLike
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Generator, Optional, Union, cast
@@ -378,13 +379,22 @@ def _parse_text(path: Path) -> Optional[pl.DataFrame]:
     """
     from lxml import etree
 
-    doc = etree.parse(str(path))
+    if path.suffix == ".zst":
+        # pyarrow decodes zstd, so a compressed distribution needs no further
+        # dependency than convert_bnc already has.
+        import pyarrow as pa
+
+        with pa.CompressedInputStream(pa.OSFile(str(path), "rb"), "zstd") as stream:
+            doc = etree.parse(stream)
+    else:
+        doc = etree.parse(str(path))
+
     docid = doc.xpath('//idno[@type="bnc"]')[0].text
     # G3C.xml is an earlier copy of HWX.xml, header and all, so two files claim
     # the id HWX. The stray copy is the one filed under a name other than the
     # id it carries, so dropping it here keeps HWX.xml, the corrected
     # December 2006 text.
-    if docid != path.stem:
+    if docid != path.name.removesuffix(".zst").removesuffix(".xml"):
         return None
     if text := doc.xpath("//wtext"):
         text_mode = "written"
@@ -482,6 +492,7 @@ def convert_bnc(
     ----------
     bnc_root : str or Path
         The root of the BNC XML distribution, the directory holding `Texts`.
+        Texts may be stored as `.xml` or zstd-compressed as `.xml.zst`.
     output_path : str or Path
         Parquet file to write. An existing file is overwritten.
     n_workers : int, default 4
@@ -551,7 +562,7 @@ def convert_bnc(
     import pyarrow.parquet as pq
 
     texts = Path(bnc_root) / "Texts"
-    paths = sorted(texts.glob("**/*.xml"))
+    paths = sorted(chain(texts.glob("**/*.xml"), texts.glob("**/*.xml.zst")))
     if not paths:
         raise ValueError(f"No BNC texts found under {texts}")
     parquet = Path(output_path)
@@ -559,7 +570,9 @@ def convert_bnc(
     schema = pl.DataFrame(schema=BNC_SCHEMA).to_arrow().schema
     batch: list[pl.DataFrame] = []
     batch_tokens = 0
-    with pq.ParquetWriter(parquet, schema, compression="zstd") as writer:
+    with pq.ParquetWriter(
+        parquet, schema, compression="zstd", compression_level=22
+    ) as writer:
         for df in _parse_texts(paths, n_workers):
             if batch and batch_tokens + df.height > ROW_GROUP_TOKENS:
                 _write_row_group(writer, batch)

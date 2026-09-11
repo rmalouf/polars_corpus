@@ -156,17 +156,27 @@ SPOKEN_XML = """<?xml version="1.0" encoding="UTF-8"?>
 
 
 def _write_bnc(root):
-    """Lay the fixture texts out under `root` the way the distribution is."""
+    """Lay the fixture texts out under `root` the way the distribution is.
+
+    KB0 and the stray G3C are written zstd-compressed, so one conversion covers
+    both the plain and the compressed text.
+    """
+    import pyarrow as pa
+
     for path, xml in [
         ("Texts/A/A0/A00.xml", WRITTEN_XML.format(file_id="A00", idno="A00")),
-        ("Texts/K/KB/KB0.xml", SPOKEN_XML),
+        ("Texts/K/KB/KB0.xml.zst", SPOKEN_XML),
         # An earlier copy of A00 filed under a name of its own, the shape the
         # real corpus's G3C.xml takes: keeping it would give A00 two runs of
         # tokens with KB0's between them.
-        ("Texts/G/G3/G3C.xml", WRITTEN_XML.format(file_id="G3C", idno="A00")),
+        ("Texts/G/G3/G3C.xml.zst", WRITTEN_XML.format(file_id="G3C", idno="A00")),
     ]:
         (root / path).parent.mkdir(parents=True, exist_ok=True)
-        (root / path).write_text(xml)
+        if path.endswith(".zst"):
+            with pa.CompressedOutputStream(str(root / path), "zstd") as stream:
+                stream.write(xml.encode())
+        else:
+            (root / path).write_text(xml)
     return root
 
 
