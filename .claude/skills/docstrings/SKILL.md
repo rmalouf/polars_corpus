@@ -50,9 +50,6 @@ are the original exemplars. `search.py`, `matcher.py`, `view.py`, `chunk.py`,
 `convert.py` and `cqp_parser.py` were brought to this style in a later pass and
 read as exemplars too.
 
-Still undocumented, if you are looking for work: most of the `.corpus`
-namespace methods in `exprs.py`.
-
 ## Summary line
 
 One sentence, one line, ending in a period. Say what the function *measures* or
@@ -125,6 +122,13 @@ that session:
 
 - Collective nouns for a group of columns: "trio", "set", "family".
 - A noun elided out of a phrase: "the first the concordance holds".
+- A relative pronoun dropped where the maintainer puts it back: "the
+  contingency table the association measures read their counts from" became
+  "the contingency table **that** the association measures read their counts
+  from". Keep the "that".
+- A category noun missing after a term of art: a summary ending in
+  "Kilgarriff's simple maths" reads as a quotation, not as something the
+  function measures. "Kilgarriff's simple maths **metric**".
 - Em-dash asides inside a parameter or return description. Split them out.
 - "which is what X needs to Y" appositions tacked onto the end of a rule.
 - Antithesis for rhythm: "costs a partial scan, not the memory to hold it".
@@ -143,12 +147,19 @@ that session:
   texts at once" -- holds them where? Say "in memory".
 
 Semicolons joining the conditions inside one `Raises` entry are house shape and
-stay. Semicolon-spliced triples in a parameter body do not.
+stay. Semicolon-spliced triples in a parameter body do not. Contrast that
+carries content survives in body prose -- "a measure of significance, not of
+effect size" and "how large the difference is, not how strong the evidence"
+both kept after review -- it is rhythm-only antithesis in a parameter or
+return entry that goes.
 
 ## Section order
 
-`Parameters`, `Returns`, `Raises`, `Warns`, `Notes`, `References`, `See Also`,
-`Examples`. Include a section only when it has something to say.
+`Parameters`, `Returns`, `Raises`, `Warns`, `See Also`, `Notes`, `References`,
+`Examples`. Include a section only when it has something to say. This is the
+numpydoc order -- `See Also` comes before `Notes`
+([numpydoc format](https://numpydoc.readthedocs.io/en/latest/format.html)),
+and an earlier pass had it wrong.
 
 ### Parameters
 
@@ -279,7 +290,28 @@ reference for the query language. Examples you add or edit *there* run under
 
 Markdown works in docstrings. Link to a docs page by filename:
 `[Association metric](assoc.md)`. Pages live in `docs/`; check the target
-exists before linking.
+exists before linking. Sphinx roles do not render under mkdocstrings --
+`:func:` came out as literal text in an early draft. Plain backticks instead.
+
+## Running a module-wide pass
+
+Cleaning a module of near-identical functions, as the association measures
+were cleaned:
+
+1. One `replaceAll` per uniform block -- the shared `Parameters` text, the
+   `Returns` shape, the `Raises` entry -- then the per-function bits
+   (summary, opening paragraph, `Notes`) individually.
+2. Keep the `oldString` of a `replaceAll` to the region that is identical in
+   *every* function. One variant entry later in the block (`n` marked
+   not-used in `logdice`) makes the whole match miss that function and
+   leaves old prose sitting next to new. After the pass, `rg` for a phrase
+   from the old wording to catch the silent misses.
+3. An edit whose `oldString` starts at the docstring opening can mangle a
+   raw string: `r"""` became `r    """`, a syntax error, four times in one
+   pass. Either include the `r` in the `oldString`, or syntax-check the file
+   when done: `python -c "import ast; ast.parse(open(f).read())"`.
+4. Reference lists get normalized: issue numbers included, page ranges
+   hyphenated -- en-dashes ride in from copied citations.
 
 ## Check the claims
 
@@ -307,6 +339,10 @@ Worth checking rather than assuming:
 - **Whether a dependency is core or an extra**, before writing an `ImportError`
   entry. `anywidget` is a core dependency; matplotlib and seaborn are the
   `examples` extra.
+- **The scope a plugin expression computes over.** `register_plugin_function`
+  with `returns_scalar=True` yields one value per scope -- a single struct in
+  a plain `select`, one per group under `group_by`; an elementwise one yields
+  one per row. Call it both ways at the REPL before describing it.
 - **What the Rust does**, in `src/`, for anything the matcher or the
   concordance builder decides -- where context stops, which token metadata is
   read from.
@@ -345,3 +381,6 @@ After writing, confirm:
 9. `mkdocs build --strict` adds no warnings, and the sections render as sections
    rather than prose. Nested bullet lists under a `Returns` entry do work, and
    beat a semicolon list inside an em-dash aside.
+10. The file still parses after docstring edits: `python -c "import ast;
+    ast.parse(open(f).read())"`.
+11. A `replaceAll` pass left no old wording behind: `rg` for a phrase from it.

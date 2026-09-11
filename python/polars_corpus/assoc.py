@@ -94,41 +94,52 @@ def _rel_freqs(
 
 def crosstab(corpus: T_Frame, x: IntoExprColumn, y: IntoExprColumn) -> T_Frame:
     """
-    Create a cross-tabulation (contingency table) from two categorical variables.
+    Build the contingency table that the association measures read their counts from.
 
-    Computes a contingency table showing the joint frequency distribution
-    of two categorical variables, along with marginal totals and grand total.
-    Null values in either variable are automatically excluded from the analysis.
+    Cross-tabulates `x` against `y`: one row per pair of values that occur
+    together in `corpus`, holding the four counts of its 2×2 table. Rows
+    where either value is null are dropped first.
 
     Parameters
     ----------
-    corpus : T_Frame
-        Input data as a Polars DataFrame or LazyFrame containing the variables.
+    corpus : DataFrame | LazyFrame
+        The frame to cross-tabulate.
     x : IntoExprColumn
-        Column name, expression or Series giving the first categorical
-        variable (row variable).
+        Column name, expression or Series giving the first variable. A Series
+        must have the same height as `corpus` and stands in for the column's
+        values.
     y : IntoExprColumn
-        Column name, expression or Series giving the second categorical
-        variable (column variable).
+        Column name, expression or Series giving the second variable.
 
     Returns
     -------
-    T_Frame
-        The contingency table with the following columns:
+    DataFrame | LazyFrame
+        One row per pair of values observed, in no particular order, with
+        the columns:
 
-        - x : Levels/categories of the first variable
-        - y : Levels/categories of the second variable
-        - freqs : Struct with fields {f12, f1, f2, n} where:
-            - f12: joint frequency (count of x,y pairs)
-            - f1: row marginal (total count for this x value)
-            - f2: column marginal (total count for this y value)
-            - n: grand total
+        - the two variable columns, named after `x` and `y`
+        - `freqs` : struct with the four counts as fields
+
+            - `f12` : how often the pair occurs
+            - `f1` : how often the `x` value occurs, with any `y` value
+            - `f2` : how often the `y` value occurs, with any `x` value
+            - `n` : the grand total
+
+        Eager if `corpus` is a DataFrame, lazy if it is a LazyFrame.
 
     Raises
     ------
     ValueError
-        If `corpus` is not a Polars DataFrame or LazyFrame, or is empty; or if
-        `x` or `y` does not name a column.
+        If `corpus` is not a Polars DataFrame or LazyFrame, is empty, or
+        `x` or `y` does not resolve to a single column of it.
+    ShapeError
+        If a Series passed for `x` or `y` is not the height of `corpus`.
+
+    Notes
+    -----
+    The measures in this module read their counts from a `freqs` struct
+    like the one here. `keywords` and `collocations` cross-tabulate and
+    score in one step.
     """
     lf = as_corpus(corpus)
 
@@ -191,32 +202,37 @@ def _apply_measure(
 
 def pmi(f12: IntoExpr, f1: IntoExpr, f2: IntoExpr, n: IntoExpr) -> pl.Expr:
     """
-    Compute Pointwise Mutual Information (PMI) for contingency table data.
+    Measure association with pointwise mutual information (PMI).
 
-    Calculates PMI values measuring the association strength between two
-    categorical variables based on their observed vs. expected co-occurrence
-    frequencies. PMI quantifies how much more (or less) frequently two events
-    co-occur compared to what would be expected under statistical independence.
+    PMI is the log of the observed joint frequency over the frequency
+    expected under independence: positive when the pair occurs together
+    more often than chance, negative when less. Rare pairs score high,
+    and frequent pairs score low.
 
     Parameters
     ----------
     f12 : IntoExpr
-        Joint frequencies of variable pairs. Can be a column name (str) or
-        Polars expression.
+        Column name or expression for the joint frequency: how often the two
+        variables co-occur. Pass the other three counts the same way.
     f1 : IntoExpr
-        Marginal frequencies of first variable. Can be a column name (str) or
-        Polars expression.
+        Row marginal: how often the first variable occurs, with any value of
+        the second.
     f2 : IntoExpr
-        Marginal frequencies of second variable. Can be a column name (str) or
-        Polars expression.
+        Column marginal: how often the second variable occurs, with any
+        value of the first.
     n : IntoExpr
-        Grand total (total number of observations). Can be a column name (str) or
-        Polars expression.
+        Grand total: the count of all observations.
 
     Returns
     -------
     pl.Expr
-        A Polars expression that computes the PMI values for each variable pair.
+        Expression returning the PMI of each pair.
+
+    Raises
+    ------
+    ValueError
+        If any count is not a column name or a Polars expression; a Series
+        is not accepted here.
 
     Notes
     -----
@@ -238,31 +254,36 @@ def pmi(f12: IntoExpr, f1: IntoExpr, f2: IntoExpr, n: IntoExpr) -> pl.Expr:
 
 def mi3(f12: IntoExpr, f1: IntoExpr, f2: IntoExpr, n: IntoExpr) -> pl.Expr:
     """
-    Compute the MI3 association measure for contingency table data.
+    Measure association with MI3.
 
     Cubes the joint frequency before comparing it to what independence
-    predicts, which pulls the ranking away from the rare pairs that dominate
-    `pmi` and towards pairs that are both frequent and strongly associated.
+    predicts, pulling the ranking away from the rare pairs that dominate
+    `pmi` towards pairs that are both frequent and strongly associated.
 
     Parameters
     ----------
     f12 : IntoExpr
-        Joint frequencies of variable pairs. Can be a column name (str) or
-        Polars expression.
+        Column name or expression for the joint frequency: how often the two
+        variables co-occur. Pass the other three counts the same way.
     f1 : IntoExpr
-        Marginal frequencies of first variable. Can be a column name (str) or
-        Polars expression.
+        Row marginal: how often the first variable occurs, with any value of
+        the second.
     f2 : IntoExpr
-        Marginal frequencies of second variable. Can be a column name (str) or
-        Polars expression.
+        Column marginal: how often the second variable occurs, with any
+        value of the first.
     n : IntoExpr
-        Grand total (total number of observations). Can be a column name (str) or
-        Polars expression.
+        Grand total: the count of all observations.
 
     Returns
     -------
     pl.Expr
-        A Polars expression that computes the MI3 values for each variable pair.
+        Expression returning the MI3 of each pair.
+
+    Raises
+    ------
+    ValueError
+        If any count is not a column name or a Polars expression; a Series
+        is not accepted here.
 
     Notes
     -----
@@ -289,32 +310,32 @@ def mi3(f12: IntoExpr, f1: IntoExpr, f2: IntoExpr, n: IntoExpr) -> pl.Expr:
 
 def logdice(f12: IntoExpr, f1: IntoExpr, f2: IntoExpr, n: IntoExpr) -> pl.Expr:
     """
-    Compute the log-Dice association measure for contingency table data.
+    Measure association with log-Dice.
 
     A logarithmic form of the Dice coefficient, which weighs the joint
-    frequency against the two marginals rather than against the corpus size. This
-    is the default collocation score in Sketch Engine and #LancsBox.
+    frequency against the two marginals rather than against the corpus size,
+    so scores stay comparable across corpora of different sizes. It is the
+    default collocation score in Sketch Engine.
 
     Parameters
     ----------
     f12 : IntoExpr
-        Joint frequencies of variable pairs. Can be a column name (str) or
-        Polars expression.
+        Column name or expression for the joint frequency: how often the two
+        variables co-occur. Pass the other three counts the same way.
     f1 : IntoExpr
-        Marginal frequencies of first variable. Can be a column name (str) or
-        Polars expression.
+        Row marginal: how often the first variable occurs, with any value of
+        the second.
     f2 : IntoExpr
-        Marginal frequencies of second variable. Can be a column name (str) or
-        Polars expression.
+        Column marginal: how often the second variable occurs, with any
+        value of the first.
     n : IntoExpr
-        Grand total (total number of observations). Accepted for a uniform
+        Grand total: the count of all observations. Accepted for a uniform
         signature with the other measures, but not used.
 
     Returns
     -------
     pl.Expr
-        A Polars expression that computes the log-Dice values for each
-        variable pair.
+        Expression returning the log-Dice of each pair.
 
     Notes
     -----
@@ -327,7 +348,6 @@ def logdice(f12: IntoExpr, f1: IntoExpr, f2: IntoExpr, n: IntoExpr) -> pl.Expr:
     The base-2 logarithm and the constant 14 go together: they place the
     maximum at 14, where every occurrence of one word is an occurrence of the
     pair, and each further point down the scale halves the Dice coefficient.
-    Values below 0 are conventionally treated as no association.
 
     References
     ----------
@@ -341,34 +361,37 @@ def logdice(f12: IntoExpr, f1: IntoExpr, f2: IntoExpr, n: IntoExpr) -> pl.Expr:
 
 def tscore(f12: IntoExpr, f1: IntoExpr, f2: IntoExpr, n: IntoExpr) -> pl.Expr:
     """
-    Compute the t-score association measure for contingency table data.
+    Measure association with the t-score.
 
     Scales the gap between the observed joint frequency and the one expected
     under independence by the square root of the observed frequency. Dividing
     by the observed rather than the expected count holds rare pairs down, so
-    the ranking favors frequent, dependable pairings -- the complement to what
-    `pmi` reports.
+    the ranking favors frequent, dependable pairings.
 
     Parameters
     ----------
     f12 : IntoExpr
-        Joint frequencies of variable pairs. Can be a column name (str) or
-        Polars expression.
+        Column name or expression for the joint frequency: how often the two
+        variables co-occur. Pass the other three counts the same way.
     f1 : IntoExpr
-        Marginal frequencies of first variable. Can be a column name (str) or
-        Polars expression.
+        Row marginal: how often the first variable occurs, with any value of
+        the second.
     f2 : IntoExpr
-        Marginal frequencies of second variable. Can be a column name (str) or
-        Polars expression.
+        Column marginal: how often the second variable occurs, with any
+        value of the first.
     n : IntoExpr
-        Grand total (total number of observations). Can be a column name (str) or
-        Polars expression.
+        Grand total: the count of all observations.
 
     Returns
     -------
     pl.Expr
-        A Polars expression that computes the t-score values for each variable
-        pair.
+        Expression returning the t-score of each pair.
+
+    Raises
+    ------
+    ValueError
+        If any count is not a column name or a Polars expression; a Series
+        is not accepted here.
 
     Notes
     -----
@@ -395,33 +418,38 @@ def tscore(f12: IntoExpr, f1: IntoExpr, f2: IntoExpr, n: IntoExpr) -> pl.Expr:
 
 def zscore(f12: IntoExpr, f1: IntoExpr, f2: IntoExpr, n: IntoExpr) -> pl.Expr:
     """
-    Compute the z-score association measure for contingency table data.
+    Measure association with the z-score.
 
     Scales the gap between the observed joint frequency and the one expected
-    under independence by the square root of the expected frequency. Dividing
-    by the expected count makes it more forgiving of rare pairs than `tscore`,
-    and less so than `pmi`.
+    under independence by the square root of the expected frequency. For a
+    pair that occurs more often than independence predicts the expected
+    count is the smaller one, so the same gap scores higher here than under
+    `tscore`.
 
     Parameters
     ----------
     f12 : IntoExpr
-        Joint frequencies of variable pairs. Can be a column name (str) or
-        Polars expression.
+        Column name or expression for the joint frequency: how often the two
+        variables co-occur. Pass the other three counts the same way.
     f1 : IntoExpr
-        Marginal frequencies of first variable. Can be a column name (str) or
-        Polars expression.
+        Row marginal: how often the first variable occurs, with any value of
+        the second.
     f2 : IntoExpr
-        Marginal frequencies of second variable. Can be a column name (str) or
-        Polars expression.
+        Column marginal: how often the second variable occurs, with any
+        value of the first.
     n : IntoExpr
-        Grand total (total number of observations). Can be a column name (str) or
-        Polars expression.
+        Grand total: the count of all observations.
 
     Returns
     -------
     pl.Expr
-        A Polars expression that computes the z-score values for each variable
-        pair.
+        Expression returning the z-score of each pair.
+
+    Raises
+    ------
+    ValueError
+        If any count is not a column name or a Polars expression; a Series
+        is not accepted here.
 
     Notes
     -----
@@ -455,36 +483,40 @@ def chisq(
     yates: bool = False,
 ) -> pl.Expr:
     """
-    Compute Pearson's chi-squared (χ²) statistic for contingency table data.
+    Measure association with Pearson's chi-squared (χ²).
 
-    Calculates the chi-squared statistic measuring the association strength
-    between two categorical variables by comparing observed frequencies to
-    those expected under statistical independence, using the closed-form
-    expression for a 2×2 table.
+    Sums the squared deviations of the four cells of the 2×2 table from what
+    independence predicts, each scaled by its expected count. The statistic
+    grows with the corpus: the same proportions give a larger value in a
+    bigger one, so it is a measure of significance, not of effect size.
 
     Parameters
     ----------
     f12 : IntoExpr
-        Joint frequencies of variable pairs. Can be a column name (str) or
-        Polars expression.
+        Column name or expression for the joint frequency: how often the two
+        variables co-occur. Pass the other three counts the same way.
     f1 : IntoExpr
-        Marginal frequencies of first variable. Can be a column name (str) or
-        Polars expression.
+        Row marginal: how often the first variable occurs, with any value of
+        the second.
     f2 : IntoExpr
-        Marginal frequencies of second variable. Can be a column name (str) or
-        Polars expression.
+        Column marginal: how often the second variable occurs, with any
+        value of the first.
     n : IntoExpr
-        Grand total (total number of observations). Can be a column name (str) or
-        Polars expression.
+        Grand total: the count of all observations.
     yates : bool, default False
-        Whether to apply Yates' continuity correction. When True, matches the
-        default behaviour of :func:`scipy.stats.chi2_contingency` for 2×2 tables.
+        Whether to apply Yates' continuity correction. When True, this matches
+        the default behavior of `scipy.stats.chi2_contingency` for 2×2 tables.
 
     Returns
     -------
     pl.Expr
-        A Polars expression that computes the chi-squared values for each
-        variable pair.
+        Expression returning the chi-squared statistic of each pair.
+
+    Raises
+    ------
+    ValueError
+        If any count is not a column name or a Polars expression; a Series
+        is not accepted here.
 
     Notes
     -----
@@ -497,6 +529,16 @@ def chisq(
 
     where the continuity-correction term is $c = n/2$ when `yates` is True
     and $c = 0$ otherwise.
+
+    References
+    ----------
+    - Pearson, K. 1900. On the criterion that a given system of deviations
+      from the probable in the case of a correlated system of variables is
+      such that it can be reasonably supposed to have arisen from random
+      sampling. *Philosophical Magazine* 50(302): 157-175.
+    - Yates, F. 1934. Contingency tables involving small numbers and the χ²
+      test. *Supplement to the Journal of the Royal Statistical Society*
+      1(2): 217-235.
     """
 
     f12, f1, f2, n = _as_freqs(f12, f1, f2, n)
@@ -514,33 +556,36 @@ def chisq(
 
 def loglik(f12: IntoExpr, f1: IntoExpr, f2: IntoExpr, n: IntoExpr) -> pl.Expr:
     """
-    Compute log-likelihood ratio (G²) statistic for contingency table data.
+    Measure association with the log-likelihood ratio (G²).
 
-    Calculates the log-likelihood ratio statistic (also known as G² or
-    G-squared) which measures the association strength between two categorical
-    variables by comparing observed frequencies to those expected under
-    statistical independence.
+    Compares the four cells of the 2×2 table with what independence predicts,
+    on a log scale. It is the standard keyness statistic: unlike `chisq` it
+    stays reliable for rare pairs, where the expected counts are small.
 
     Parameters
     ----------
     f12 : IntoExpr
-        Joint frequencies of variable pairs. Can be a column name (str) or
-        Polars expression.
+        Column name or expression for the joint frequency: how often the two
+        variables co-occur. Pass the other three counts the same way.
     f1 : IntoExpr
-        Marginal frequencies of first variable. Can be a column name (str) or
-        Polars expression.
+        Row marginal: how often the first variable occurs, with any value of
+        the second.
     f2 : IntoExpr
-        Marginal frequencies of second variable. Can be a column name (str) or
-        Polars expression.
+        Column marginal: how often the second variable occurs, with any
+        value of the first.
     n : IntoExpr
-        Grand total (total number of observations). Can be a column name (str) or
-        Polars expression.
+        Grand total: the count of all observations.
 
     Returns
     -------
     pl.Expr
-        A Polars expression that computes the log-likelihood ratio values
-        for each variable pair.
+        Expression returning the log-likelihood ratio of each pair.
+
+    Raises
+    ------
+    ValueError
+        If any count is not a column name or a Polars expression; a Series
+        is not accepted here.
 
     Notes
     -----
@@ -565,7 +610,7 @@ def loglik(f12: IntoExpr, f1: IntoExpr, f2: IntoExpr, n: IntoExpr) -> pl.Expr:
     References
     ----------
     - Dunning, T. 1993. Accurate methods for the statistics of surprise and
-    coincidence. *Computational Linguistics* 19:61–74.
+      coincidence. *Computational Linguistics* 19(1): 61-74.
     """
     return register_plugin_function(
         plugin_path=LIB,
@@ -577,7 +622,7 @@ def loglik(f12: IntoExpr, f1: IntoExpr, f2: IntoExpr, n: IntoExpr) -> pl.Expr:
 
 def bic(f12: IntoExpr, f1: IntoExpr, f2: IntoExpr, n: IntoExpr) -> pl.Expr:
     r"""
-    Compute the Bayes factor BIC for contingency table data.
+    Measure association with the Bayes factor BIC.
 
     Discounts the log-likelihood ratio by a penalty that grows with the corpus
     size, so the threshold a word has to clear rises as the corpora get bigger.
@@ -588,23 +633,27 @@ def bic(f12: IntoExpr, f1: IntoExpr, f2: IntoExpr, n: IntoExpr) -> pl.Expr:
     Parameters
     ----------
     f12 : IntoExpr
-        Joint frequencies of variable pairs. Can be a column name (str) or
-        Polars expression.
+        Column name or expression for the joint frequency: how often the two
+        variables co-occur. Pass the other three counts the same way.
     f1 : IntoExpr
-        Marginal frequencies of first variable. Can be a column name (str) or
-        Polars expression.
+        Row marginal: how often the first variable occurs, with any value of
+        the second.
     f2 : IntoExpr
-        Marginal frequencies of second variable. Can be a column name (str) or
-        Polars expression.
+        Column marginal: how often the second variable occurs, with any
+        value of the first.
     n : IntoExpr
-        Grand total (total number of observations). Can be a column name (str) or
-        Polars expression.
+        Grand total: the count of all observations.
 
     Returns
     -------
     pl.Expr
-        A Polars expression that computes the BIC values for each variable
-        pair.
+        Expression returning the BIC of each pair.
+
+    Raises
+    ------
+    ValueError
+        If any count is not a column name or a Polars expression; a Series
+        is not accepted here.
 
     Notes
     -----
@@ -636,32 +685,37 @@ def bic(f12: IntoExpr, f1: IntoExpr, f2: IntoExpr, n: IntoExpr) -> pl.Expr:
 
 def minsens(f12: IntoExpr, f1: IntoExpr, f2: IntoExpr, n: IntoExpr) -> pl.Expr:
     """
-    Compute minimum sensitivity values for contingency table data.
+    Measure association with minimum sensitivity.
 
-    Calculates the minimum sensitivity (minimum of precision and recall)
-    as an association measure between two categorical variables. This metric
-    represents the smaller of the two conditional probabilities: P(y|x) and P(x|y).
+    The smaller of the two conditional probabilities: how often the second
+    variable occurs given the first, and how often the first occurs given
+    the second.
 
     Parameters
     ----------
     f12 : IntoExpr
-        Joint frequencies of variable pairs. Can be a column name (str) or
-        Polars expression.
+        Column name or expression for the joint frequency: how often the two
+        variables co-occur. Pass the other three counts the same way.
     f1 : IntoExpr
-        Marginal frequencies of first variable. Can be a column name (str) or
-        Polars expression.
+        Row marginal: how often the first variable occurs, with any value of
+        the second.
     f2 : IntoExpr
-        Marginal frequencies of second variable. Can be a column name (str) or
-        Polars expression.
+        Column marginal: how often the second variable occurs, with any
+        value of the first.
     n : IntoExpr
-        Grand total (total number of observations). Can be a column name (str) or
-        Polars expression.
+        Grand total: the count of all observations. Accepted for a uniform
+        signature with the other measures, but not used.
 
     Returns
     -------
     pl.Expr
-        A Polars expression that computes the minimum sensitivity values
-        for each variable pair.
+        Expression returning the minimum sensitivity of each pair.
+
+    Raises
+    ------
+    ValueError
+        If any count is not a column name or a Polars expression; a Series
+        is not accepted here.
 
     Notes
     -----
@@ -699,35 +753,41 @@ def smp(
     k: float,
 ) -> pl.Expr:
     """
-    Compute Kilgarriff's "simple maths" parameter for contingency table data.
+    Measure keyword effect size with Kilgarriff's simple maths metric.
 
-    Calculates the ratio of a word's frequency in the target corpus to its
-    frequency in the reference corpus, with a smoothing constant `k` added to
-    both frequencies to avoid division by zero and to reduce the effect of rare
-    words.
+    The ratio of a word's frequency in the target corpus to its frequency in
+    the reference corpus. The constant `k` is added to both frequencies, so
+    a word missing from one corpus is counted as `k` there rather than as
+    zero.
 
     Parameters
     ----------
     f12 : IntoExpr
-        Joint frequencies of variable pairs. Can be a column name (str) or
-        Polars expression.
+        Column name or expression for the joint frequency: how often the two
+        variables co-occur. Pass the other three counts the same way.
     f1 : IntoExpr
-        Marginal frequencies of first variable. Can be a column name (str) or
-        Polars expression.
+        Row marginal: how often the first variable occurs, with any value of
+        the second.
     f2 : IntoExpr
-        Marginal frequencies of second variable. Can be a column name (str) or
-        Polars expression.
+        Column marginal: how often the second variable occurs, with any
+        value of the first. Accepted for a uniform signature with the other
+        measures, but not used.
     n : IntoExpr
-        Grand total (total number of observations). Can be a column name (str) or
-        Polars expression.
+        Grand total: the count of all observations. Accepted for a uniform
+        signature with the other measures, but not used.
     k : float
         Smoothing constant added to both the target and reference frequencies.
 
     Returns
     -------
     pl.Expr
-        A Polars expression that computes the simple maths values for each
-        variable pair.
+        Expression returning the simple-maths ratio of each pair.
+
+    Raises
+    ------
+    ValueError
+        If any count is not a column name or a Polars expression; a Series
+        is not accepted here.
 
     Notes
     -----
@@ -757,7 +817,7 @@ def logratio(
     discount: float = 0.5,
 ) -> pl.Expr:
     r"""
-    Compute Hardie's log ratio for keyword contingency table data.
+    Measure keyword effect size with Hardie's log ratio.
 
     Compares how common a word is in the target corpus with how common it is in
     the reference, on a base-2 log scale: 1 means twice as common in the target,
@@ -768,17 +828,16 @@ def logratio(
     Parameters
     ----------
     f12 : IntoExpr
-        Joint frequencies of variable pairs. Can be a column name (str) or
-        Polars expression.
+        Column name or expression for the joint frequency: how often the two
+        variables co-occur. Pass the other three counts the same way.
     f1 : IntoExpr
-        Marginal frequencies of first variable. Can be a column name (str) or
-        Polars expression.
+        Row marginal: how often the first variable occurs, with any value of
+        the second.
     f2 : IntoExpr
-        Marginal frequencies of second variable. Can be a column name (str) or
-        Polars expression.
+        Column marginal: how often the second variable occurs, with any
+        value of the first.
     n : IntoExpr
-        Grand total (total number of observations). Can be a column name (str) or
-        Polars expression.
+        Grand total: the count of all observations.
     discount : float, default 0.5
         Count to stand in for a frequency of zero, so that a word missing from
         one corpus gets a large log ratio rather than an infinite one. Set it to
@@ -787,7 +846,13 @@ def logratio(
     Returns
     -------
     pl.Expr
-        A Polars expression that computes the log ratio for each variable pair.
+        Expression returning the log ratio of each pair.
+
+    Raises
+    ------
+    ValueError
+        If any count is not a column name or a Polars expression; a Series
+        is not accepted here.
 
     Notes
     -----
@@ -828,7 +893,7 @@ def pctdiff(
     discount: float = 0.5,
 ) -> pl.Expr:
     r"""
-    Compute %DIFF for keyword contingency table data.
+    Measure keyword effect size as %DIFF.
 
     Gives the difference between a word's relative frequency in the target
     corpus and in the reference as a percentage of the reference figure: 100
@@ -839,17 +904,16 @@ def pctdiff(
     Parameters
     ----------
     f12 : IntoExpr
-        Joint frequencies of variable pairs. Can be a column name (str) or
-        Polars expression.
+        Column name or expression for the joint frequency: how often the two
+        variables co-occur. Pass the other three counts the same way.
     f1 : IntoExpr
-        Marginal frequencies of first variable. Can be a column name (str) or
-        Polars expression.
+        Row marginal: how often the first variable occurs, with any value of
+        the second.
     f2 : IntoExpr
-        Marginal frequencies of second variable. Can be a column name (str) or
-        Polars expression.
+        Column marginal: how often the second variable occurs, with any
+        value of the first.
     n : IntoExpr
-        Grand total (total number of observations). Can be a column name (str) or
-        Polars expression.
+        Grand total: the count of all observations.
     discount : float, default 0.5
         Count to stand in for a frequency of zero, so that a word missing from
         one corpus gets a large percentage rather than an infinite one. Set it
@@ -858,7 +922,13 @@ def pctdiff(
     Returns
     -------
     pl.Expr
-        A Polars expression that computes %DIFF for each variable pair.
+        Expression returning the %DIFF of each pair.
+
+    Raises
+    ------
+    ValueError
+        If any count is not a column name or a Polars expression; a Series
+        is not accepted here.
 
     Notes
     -----
@@ -895,7 +965,7 @@ def oddsratio(
     discount: float = 0.5,
 ) -> pl.Expr:
     r"""
-    Compute the odds ratio for contingency table data.
+    Measure association with the odds ratio.
 
     Divides the odds that a token of the target corpus is this word by the same
     odds in the reference corpus. 1 means the word is no more likely in one than
@@ -905,17 +975,16 @@ def oddsratio(
     Parameters
     ----------
     f12 : IntoExpr
-        Joint frequencies of variable pairs. Can be a column name (str) or
-        Polars expression.
+        Column name or expression for the joint frequency: how often the two
+        variables co-occur. Pass the other three counts the same way.
     f1 : IntoExpr
-        Marginal frequencies of first variable. Can be a column name (str) or
-        Polars expression.
+        Row marginal: how often the first variable occurs, with any value of
+        the second.
     f2 : IntoExpr
-        Marginal frequencies of second variable. Can be a column name (str) or
-        Polars expression.
+        Column marginal: how often the second variable occurs, with any
+        value of the first.
     n : IntoExpr
-        Grand total (total number of observations). Can be a column name (str) or
-        Polars expression.
+        Grand total: the count of all observations.
     discount : float, default 0.5
         Count to stand in for a cell of zero, so that a word missing from one
         corpus gets a large odds ratio rather than an infinite one. Set it to 0
@@ -924,7 +993,13 @@ def oddsratio(
     Returns
     -------
     pl.Expr
-        A Polars expression that computes the odds ratio for each variable pair.
+        Expression returning the odds ratio of each pair.
+
+    Raises
+    ------
+    ValueError
+        If any count is not a column name or a Polars expression; a Series
+        is not accepted here.
 
     Notes
     -----
@@ -965,21 +1040,21 @@ def oddsratio(
 
 def welchs_t(x1: IntoExprColumn, x2: IntoExprColumn, alt: str = "twosided") -> pl.Expr:
     """
-    Perform Welch's t-test for equality of two independent samples with unequal variances.
+    Compare the means of two independent samples with Welch's t-test.
 
-    Welch's t-test is a variation of Student's t-test that does not assume equal
-    population variances. It compares the means of two independent samples to
-    determine if they are statistically different from each other.
+    A form of Student's t-test that does not assume the two samples have the
+    same variance. It is computed once over the two columns as a whole, or
+    once per group when used in a `group_by` aggregation.
 
     Parameters
     ----------
     x1 : IntoExprColumn
-        First sample data. Can be a column name (str) or Polars expression.
-        Nulls are left out of the sample rather than counted in its size.
+        Column name or expression giving the first sample. Nulls are left
+        out of the sample rather than counted in its size.
     x2 : IntoExprColumn
-        Second sample data. Can be a column name (str) or Polars expression.
-        Nulls are left out of the sample rather than counted in its size.
-    alt : {'twosided', 'greater', 'less'}, default 'twosided'
+        Column name or expression giving the second sample; nulls are left
+        out of it too.
+    alt : {'greater', 'less', 'twosided'}, default 'twosided'
         Alternative hypothesis to test:
 
         - 'twosided' : the means are unequal (two-tailed test)
@@ -989,7 +1064,7 @@ def welchs_t(x1: IntoExprColumn, x2: IntoExprColumn, alt: str = "twosided") -> p
     Returns
     -------
     pl.Expr
-        A Polars expression that returns a struct with the following fields:
+        Expression returning a struct with the test as its fields:
 
         - 't' : float
             The t-statistic of the test
@@ -1000,13 +1075,18 @@ def welchs_t(x1: IntoExprColumn, x2: IntoExprColumn, alt: str = "twosided") -> p
         - 'g' : float
             Hedges' g, a measure of effect size
 
-        Returns null values for all fields if the test cannot be performed
-        (e.g., insufficient data or zero variance in both samples).
+        All four fields come out null when the test cannot be performed:
+        a sample with fewer than two values, or zero variance in both.
 
     Raises
     ------
     ValueError
         If `alt` is not one of 'twosided', 'greater', or 'less'.
+
+    See Also
+    --------
+    welchs_t_from_stats : The same test from summary statistics, one test
+        per row.
 
     Notes
     -----
@@ -1036,6 +1116,12 @@ def welchs_t(x1: IntoExprColumn, x2: IntoExprColumn, alt: str = "twosided") -> p
     \\qquad
     g = J\\,d, \\quad J = 1 - \\frac{3}{4\\,df - 1}
     $$
+
+    References
+    ----------
+    - Lijffijt, J., T. Nevalainen, T. Säily, P. Papapetrou, K. Puolamäki,
+      and H. Mannila. 2016. Significance testing of word frequencies in corpora.
+      *Digital Scholarship in the Humanities* 31(2): 374-397.
     """
     alt = check_choice(alt, ALTERNATIVES, param="alt")
     return register_plugin_function(
@@ -1058,32 +1144,29 @@ def welchs_t_from_stats(
     alt: str = "twosided",
 ) -> pl.Expr:
     """
-    Perform Welch's t-test using pre-computed summary statistics.
+    Run Welch's t-test from summary statistics.
 
-    This function performs Welch's t-test for equality of two independent samples
-    using pre-computed means, sums of squares, and sample sizes rather than raw data.
+    The same test as `welchs_t`, computed from sums, sums of squares and
+    sample sizes rather than raw samples. Each row of the six statistics
+    gives one test.
 
     Parameters
     ----------
     s1 : IntoExprColumn
-        Sum (or mean × n) of the first sample. Can be a column name (str) or
-        Polars expression.
+        Column name or expression for the sum of the first sample (its mean
+        times its size works too). The other five statistics are column
+        names or expressions in the same way.
     ss1 : IntoExprColumn
-        Sum of squares of the first sample. Can be a column name (str) or
-        Polars expression.
+        Sum of squares of the first sample.
     n1 : IntoExprColumn
-        Sample size of the first sample. Can be a column name (str) or
-        Polars expression.
+        Sample size of the first sample.
     s2 : IntoExprColumn
-        Sum (or mean × n) of the second sample. Can be a column name (str) or
-        Polars expression.
+        Sum of the second sample.
     ss2 : IntoExprColumn
-        Sum of squares of the second sample. Can be a column name (str) or
-        Polars expression.
+        Sum of squares of the second sample.
     n2 : IntoExprColumn
-        Sample size of the second sample. Can be a column name (str) or
-        Polars expression.
-    alt : {'twosided', 'greater', 'less'}, default 'twosided'
+        Sample size of the second sample.
+    alt : {'greater', 'less', 'twosided'}, default 'twosided'
         Alternative hypothesis to test:
 
         - 'twosided' : the means are unequal (two-tailed test)
@@ -1093,7 +1176,8 @@ def welchs_t_from_stats(
     Returns
     -------
     pl.Expr
-        A Polars expression that returns a struct with the following fields:
+        Expression returning, for each row, a struct with the test as its
+        fields:
 
         - 't' : float
             The t-statistic of the test
@@ -1102,10 +1186,10 @@ def welchs_t_from_stats(
         - 'df' : float
             The degrees of freedom used in the test
         - 'g' : float
-            Hedges' g, the difference in means in standard deviations
+            Hedges' g, a measure of effect size
 
-        Returns null values for all fields if the test cannot be performed
-        (e.g., insufficient data or zero variance in both samples).
+        All four fields come out null when the test cannot be performed:
+        a sample with fewer than two values, or zero variance in both.
 
     Raises
     ------
