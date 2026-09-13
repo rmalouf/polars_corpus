@@ -69,32 +69,34 @@ def collocations(
         [Association metric](assoc.md) to rank the collocates by, or a list of
         them to compute together:
 
-        - 'freq' : raw frequency in the windows, no association measure
-        - 'pmi' : Pointwise Mutual Information, which favors rare words
-        - 'mi3' : MI3, which pulls the ranking back towards frequent ones
-        - 'logdice' : log-Dice, comparable across corpora of different sizes
-        - 'll' : Log-likelihood ratio (G²)
         - 'chisq' : Pearson's chi-squared (χ²)
+        - 'freq' : raw frequency in the windows, no association measure
+        - 'll' : Log-likelihood ratio (G²)
+        - 'logdice' : log-Dice, comparable across corpora of different sizes
+        - 'mi3' : MI3, which pulls the ranking back towards frequent ones
+        - 'minsens' : Minimum sensitivity
+        - 'pmi' : Pointwise Mutual Information, which favors rare words
         - 'tscore' : t-score, which favors frequent words
         - 'zscore' : z-score
-        - 'minsens' : Minimum sensitivity
 
-        `method` can also be a `Callable` which takes the four counts `f12`, `f1`, `f2`
-         and `n` described under `Returns`. It receives them as Polars expressions
-         and returns one expression.
+        `method` can also be a `Callable` which takes the four counts `f12`,
+        `f1`, `f2` and `n` described under `Returns`. It receives them as
+        Polars expressions and returns one expression.
     window : int or (int, int), default 5
-        Words to take on each side of a match. To define an asymmetric window,
-        pass a pair: `(0, 5)` collects only what follows a match and `(5, 0)` only what precedes it.
-        At least one side must be > 0. Ignored when `chunk_column` is given.
+        Words to take on each side of a match. A pair takes that many to the
+        left and to the right, so `(0, 5)` collects only what follows a match
+        and `(5, 0)` only what precedes it. At least one side must reach a
+        token. Ignored when `chunk_column` is given.
     chunk_column : str, optional
-        Column of BIO tags, as `concordance` takes. If provided, the window then
-        runs to  the edges of the chunk holding the match rather than a fixed number of
-        words.
+        Column of BIO tags, as `concordance` takes. If set, context windows
+        won't span chunk boundaries. Pass a sentence tag column to keep
+        collocates within the sentence.
     min_freq : int, default 5
-        Minimum number of times a word must occur in context to be reported.
+        Minimum number of times a word must occur in the windows to be
+        reported.
     min_range : int, default 0
-        Minimum number of distinct files a word must occur in in
-        context to be reported.
+        Minimum number of distinct files a word must occur in as a collocate
+        to be reported.
 
     Returns
     -------
@@ -103,23 +105,32 @@ def collocations(
         strongest first:
 
         - `collocate` : the word, as `expr` reads it
-        - `freqs` : a struct of the four counts the measures are computed
-          from, laid out as `crosstab` lays them out -- `f12` times the word
-          fell in a window, `f1` window positions filled, `f2` the word's
-          corpus frequency, `n` the corpus size
-        - `range` : files the word collocated in, when the results know their
-          file id column
-        - one column per measure, in the order asked for
+        - `freqs` : struct with the four counts the measures are computed
+          from, laid out as `crosstab` lays them out:
+
+          - `f12` : times the word fell in a window
+          - `f1` : number of window positions filled
+          - `f2` : the word's frequency in the whole corpus
+          - `n` : number of tokens in the corpus, counting only those
+            `expr` reads a value from
+
+        - `range` : number of distinct files the word collocated in, present
+          when the results carry file ids
+        - one column per measure, in the order asked for: `freq`, `PMI`,
+          `MI3`, `LogDice`, `LogLik`, `ChiSq`, `TScore`, `ZScore` or
+          `MinSens`
 
     Raises
     ------
     ValueError
-        If `results` is None; if `expr` does not identify a single column of the
-        corpus; if `method` is not one of the measures listed above, a function,
-        or a list of them; if a measure of your own returns something that is
-        not an expression, has no name to give its column, or names a column the
-        result already holds; if `window` includes no context; or if `min_range`
-        is asked for over results with no file id column.
+        If `method` is not one of the measures listed above, a function, or
+        a list of them; if `window` reaches no token on either side; if
+        `min_freq` or `min_range` is negative; if `results` is None or is
+        not what `search` or `search_cqp` returned; if `expr` does not
+        resolve to a single column of the corpus; if a measure of your own
+        returns something that is not an expression, has no name to give
+        its column, or names a column the result already holds; or if
+        `min_range` is asked for over results with no file id column.
 
     See Also
     --------
@@ -136,8 +147,8 @@ def collocations(
     overlapping windows count their shared words twice. A word's `f12` can
     therefore come out higher than its corpus frequency `f2`.
 
-    The matched words themselves are never collocates of the match they
-    belong to, but a second occurrence of the node word nearby is.
+    The matched words themselves are don't count as collocates of the match
+    they belong to, but a second occurrence of the node word nearby does.
 
     Examples
     --------

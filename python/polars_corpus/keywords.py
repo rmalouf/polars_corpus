@@ -78,17 +78,17 @@ def keywords(
     Parameters
     ----------
     target : DataFrame | LazyFrame
-        Target corpus (DataFrame or LazyFrame) whose keywords are being extracted.
+        The corpus to find keywords in.
     reference : DataFrame | LazyFrame
-        Reference corpus (DataFrame or LazyFrame) that `target` is compared against.
+        The corpus to compare `target` against.
     expr : IntoExpr
         Column name or expression identifying the word/type to compute keyness
-        for (e.g., token or lemma). Note that `expr` is evaluated against the
-        combined target+reference corpora.
+        for (e.g. token or lemma). It is evaluated against the two corpora
+        together.
     method : str | callable
         [Association metric](assoc.md) used to rank keywords:
 
-         - 'bic' : Bayes factor BIC, log-likelihood penalized by corpus size
+        - 'bic' : Bayes factor BIC, log-likelihood penalized by corpus size
          - 'chisq' : Pearson's chi-squared (χ²)
          - 'll' : Log-likelihood ratio (G²)
          - 'logratio' : Hardie's log ratio, the effect size (column `LogRatio`)
@@ -102,25 +102,24 @@ def keywords(
          - 'ttest' : Welch's t-test on per-file relative frequencies
          - 'zscore' : z-score
 
-         'll', 'chisq' and 'bic' measure the evidence that a word's two
+        'll', 'chisq' and 'bic' measure the evidence that a word's two
          frequencies differ, which grows with the size of the corpora.
          'logratio', 'oddsratio' and 'pctdiff' measure how large that
          difference is, which does not. The literature expects one of each,
          because a large corpus makes a tiny difference significant.
 
-         `method` can also be a `Callable` which takes the four counts `f12`, `f1`, `f2`
-         and `n` described under `Returns`. It receives them as Polars expressions
-         and returns one expression.
+        `method` can also be a `Callable` which takes the four counts `f12`,
+        `f1`, `f2` and `n` described under `Returns`. It receives them as
+        Polars expressions and returns one expression.
     min_target_freq : int, default 0
-        Minimum frequency in the target corpus required for a word to be
-        included in the results.
+        Minimum frequency in the target corpus a word needs to be reported.
     min_target_range : int, default 0
-        Minimum range in the target corpus -- the number of distinct files a
-        word must occur in -- required for it to be included in the results.
-    k: float, default None
-        Constant added to both frequencies in Kilgarriff's "simple maths
-        parameter"; larger values favor more frequent words. Required when
-        `method` is 'smp' and unused otherwise.
+        Minimum number of distinct files of the target corpus a word must
+        occur in to be reported.
+    k : float, optional
+        Constant added to both frequencies in Kilgarriff's simple maths
+        parameter. Larger values favor more frequent words. Required when
+        `method` is 'smp'; ignored, with a warning, otherwise.
     file_id_column : str, default "file_id"
         Column holding file ids, used for range counts and for the
         per-file relative frequencies underlying 'ttest'.
@@ -128,17 +127,25 @@ def keywords(
     Returns
     -------
     DataFrame | LazyFrame
-        Keywords ranked by association strength, most target-specific first.
         Eager if `target` is a DataFrame, lazy if it is a LazyFrame.
 
-        Every method but 'ttest' returns the frequency table with one column
-        named for the measure. 'ttest' returns the words more frequent in the
-        target, ranked by p-value ascending, with the target-corpus counts the
-        thresholds are applied to (`target_freq`, `target_range`) and the columns
-        `t`, `p`, `df`, and `g`. The test statistic `t` and the p-value `p`
-        indicate the strength of evidence for an association, while Hedges' `g`
-        is the effect size. Note that `df` here is the test's degrees of
-        freedom; a word's range is reported as `target_range`.
+        Every method but 'ttest' returns one row per word of the target
+        corpus, sorted by the measure, strongest first, with the columns:
+
+        - the word, as `expr` reads it
+        - `freqs` : struct with the four counts the measure reads: `f12` the
+          word's frequency in the target corpus, `f1` its frequency in both
+          corpora together, `f2` the size of the target corpus and `n` the
+          size of both together
+        - `target_range` : files of the target corpus the word occurs in
+        - one column named for the measure
+
+        'ttest' returns the words more frequent in the target, ranked by
+        p-value ascending, with the target-corpus counts the thresholds are
+        applied to (`target_freq`, `target_range`) and the columns `t`, `p`,
+        `df` and `g`. The test statistic `t` and the p-value `p` indicate the
+        strength of evidence for an association, `df` is the test's degrees
+        of freedom, and Hedges' `g` is the effect size.
 
     Raises
     ------
@@ -152,27 +159,27 @@ def keywords(
 
     Notes
     -----
-    Rows with null values in either `expr` or `file_id_column` are dropped.
+    Rows holding a null in either `expr` or `file_id_column` are dropped.
 
     'bic' and 'chisq' are unsigned, so a word much rarer in the target corpus
     than in the reference ranks alongside one much commoner. Every other
     measure is signed, and puts the words the target overuses at the top.
 
     'logratio', 'oddsratio' and 'pctdiff' have no value for a word absent from
-    the reference corpus, and stand a count of 0.5 in for that zero. The
-    ranking among such words then rests on that constant as much as on the
-    data, which `min_target_freq` is the way to keep in hand.
+    the reference corpus, and stand a count of 0.5 in for that zero. Such a
+    word is then ranked by the constant as much as by its own frequency, so
+    the top of the list is worth reading with `min_target_freq` set.
 
     References
     ----------
     - Hofland, K. and Johansson, S. 1982. *Word frequencies in British and
-      American English.* Norwegian Computing Centre for the Humanities. Bergen.
-    - Leech, G. and R. Fallon. 1992. Computer corpora – What do they tell us about
-      culture? *ICAME Journal* 16: 29–50.
+      American English.* Bergen: Norwegian Computing Centre for the Humanities.
+    - Leech, G. and R. Fallon. 1992. Computer corpora - What do they tell us about
+      culture? *ICAME Journal* 16: 29-50.
     - Lijffijt, J., T. Nevalainen, T. Säily, P. Papapetrou, K. Puolamäki, and
       H. Mannila. 2016. Significance testing of word frequencies in corpora. *Digital
       Scholarship in the Humanities* 31(2): 374-397.
-    - Scott, M. 1997. PC analysis of key words—and key key words. *System* 25(2): 233-245.
+    - Scott, M. 1997. PC analysis of key words - and key key words. *System* 25(2): 233-245.
 
     Examples
     --------
