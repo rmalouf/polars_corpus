@@ -1,10 +1,10 @@
-# The pre-release check: build the wheels, then run the whole grid against
-# them.
+# Build the wheels, run the whole grid against them, and on a v* tag publish
+# to PyPI and create a GitHub Release.
 #
-# Publishing is deliberately not here. Download the artifacts and upload them
-# by hand until there is a reason to automate it.
+# Wheels are abi3 (see the abi3-py311 feature in Cargo.toml), so each platform
+# needs exactly one build that covers Python 3.11+.
 
-name: Release check
+name: Release
 
 on:
   push:
@@ -23,28 +23,67 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  version-check:
+    name: Check tag matches version
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    steps:
+      - uses: actions/checkout@v7
+      - name: Compare tag to Cargo.toml version
+        run: |
+          set -euo pipefail
+          cargo_version=$(cargo metadata --no-deps --format-version 1 \
+            | python3 -c 'import json,sys; print(next(p["version"] for p in json.load(sys.stdin)["packages"] if p["name"] == "polars-corpus"))')
+          tag_version=${GITHUB_REF_NAME#v}
+          echo "Cargo.toml: $cargo_version / tag: $tag_version"
+          if [ "$cargo_version" != "$tag_version" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME does not match Cargo.toml version $cargo_version"
+            exit 1
+          fi
+
   wheels:
-    name: Wheels for ${{ matrix.os }}
+    name: Wheel (${{ matrix.os }} ${{ matrix.target }})
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest]
+        include:
+          - {os: ubuntu-latest, target: x86_64}
+          - {os: ubuntu-latest, target: aarch64}
+          - {os: macos-latest, target: x86_64}
+          - {os: macos-latest, target: aarch64}
+          - {os: windows-latest, target: x64}
     steps:
       - uses: actions/checkout@v7
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.11'
       # manylinux: auto builds in a container with an old glibc, so the wheel
-      # is not tagged for whatever the runner happens to ship.
+      # is not tagged for whatever the runner happens to ship. Ignored off Linux.
       - uses: PyO3/maturin-action@v1
         with:
-          command: build
+          target: ${{ matrix.target }}
           args: --release --out dist
           manylinux: auto
           sccache: 'true'
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
-          name: wheels-${{ matrix.os }}
+          name: wheels-${{ runner.os }}-${{ matrix.target }}
           path: dist/*.whl
+
+  sdist:
+    name: Source distribution
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: PyO3/maturin-action@v1
+        with:
+          command: sdist
+          args: --out dist
+      - uses: actions/upload-artifact@v7
+        with:
+          name: wheels-sdist
+          path: dist
 
   test:
     name: Python ${{ matrix.python-version }} / polars ${{ matrix.polars || 'newest' }} / ${{ matrix.os }}
@@ -54,22 +93,22 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - {os: ubuntu-latest, python-version: '3.11'}
-          - {os: ubuntu-latest, python-version: '3.12'}
-          - {os: ubuntu-latest, python-version: '3.13'}
-          - {os: ubuntu-latest, python-version: '3.14'}
-          - {os: ubuntu-latest, python-version: '3.11', polars: '1.36.*'}
-          - {os: ubuntu-latest, python-version: '3.12', polars: '1.36.*'}
-          - {os: ubuntu-latest, python-version: '3.13', polars: '1.36.*'}
-          - {os: ubuntu-latest, python-version: '3.14', polars: '1.36.*'}
-          - {os: macos-latest, python-version: '3.14'}
+          - {os: ubuntu-latest, wheel: Linux-x86_64, python-version: '3.11'}
+          - {os: ubuntu-latest, wheel: Linux-x86_64, python-version: '3.12'}
+          - {os: ubuntu-latest, wheel: Linux-x86_64, python-version: '3.13'}
+          - {os: ubuntu-latest, wheel: Linux-x86_64, python-version: '3.14'}
+          - {os: ubuntu-latest, wheel: Linux-x86_64, python-version: '3.11', polars: '1.36.*'}
+          - {os: ubuntu-latest, wheel: Linux-x86_64, python-version: '3.12', polars: '1.36.*'}
+          - {os: ubuntu-latest, wheel: Linux-x86_64, python-version: '3.13', polars: '1.36.*'}
+          - {os: ubuntu-latest, wheel: Linux-x86_64, python-version: '3.14', polars: '1.36.*'}
+          - {os: macos-latest, wheel: macOS-aarch64, python-version: '3.14'}
     env:
       UV_PYTHON: ${{ matrix.python-version }}
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
-          name: wheels-${{ matrix.os }}
+          name: wheels-${{ matrix.wheel }}
           path: dist
       - uses: astral-sh/setup-uv@v9.0.0
         with:
@@ -97,3 +136,49 @@ jobs:
       # sys.path, so what runs is the wheel, as in `make grid`.
       - name: Run Python tests
         run: uv run --no-sync ${{ matrix.polars && format('--with polars=={0}', matrix.polars) || '' }} pytest
+
+  release:
+    name: Release
+    needs: [version-check, wheels, sdist, test]
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/project/polars-corpus/
+    permissions:
+      # Trusted Publishing to PyPI, and signing the build provenance
+      id-token: write
+      # Creating the GitHub Release
+      contents: write
+      # Artifact attestation
+      attestations: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: wheels-*
+          merge-multiple: true
+          path: dist
+
+      - name: Generate artifact attestation
+        uses: actions/attest-build-provenance@v4
+        with:
+          subject-path: 'dist/*'
+
+      # Uses PyPI Trusted Publishing (OIDC) - no API token needed.
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: dist
+          skip-existing: true
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v3
+        with:
+          files: dist/*
+          generate_release_notes: true
+          body: |
+            **Install:**
+
+            `pip install polars-corpus`
+
+            **PyPI:** https://pypi.org/project/polars-corpus/

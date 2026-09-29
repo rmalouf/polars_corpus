@@ -2,6 +2,8 @@
 name = "polars-corpus"
 version = "0.2.0-pre"
 edition = "2024"
+# Kept out of the sdist, which only needs what the build reads.
+exclude = [".claude", ".github", ".tangled", "docs", "examples", "mkdocs.yml", "uv.lock"]
 
 [lib]
 name = "polars_corpus"
