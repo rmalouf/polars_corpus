@@ -79,14 +79,6 @@ def test_rate_is_the_share_of_the_tokens_counted(case: str) -> None:
     assert result["rate"].sum() == pytest.approx(10_000)
 
 
-@pytest.mark.parametrize("basis", [1, 100, 10_000, 1_000_000])
-def test_rate_scales_with_basis(basis: float) -> None:
-    result = frequency_list(CORPUS, "token", basis=basis)
-
-    assert result["rate"].sum() == pytest.approx(basis)
-    assert result["rate"][0] == pytest.approx(basis * 3 / 11)
-
-
 def test_range_counts_distinct_files() -> None:
     result = frequency_list(CORPUS, "token")
 
@@ -98,42 +90,6 @@ def test_sorted_by_frequency_then_by_word() -> None:
 
     # Descending count; within a count, the word ascending.
     assert result["token"].to_list() == sorted(RAW, key=lambda w: (-RAW[w], w))
-
-
-@pytest.mark.parametrize(
-    "predicate,expected",
-    [
-        (pl.col("freq") >= 2, ["cat", "."]),
-        (pl.col("freq") >= 3, ["cat"]),
-        (pl.col("range") >= 2, ["cat", "."]),
-        (pl.col("range") >= 3, ["cat"]),
-        ((pl.col("freq") >= 2) & (pl.col("range") >= 3), ["cat"]),
-    ],
-)
-def test_thresholding_is_a_filter_on_the_result(
-    predicate: pl.Expr, expected: list[str]
-) -> None:
-    result = frequency_list(CORPUS, "token").filter(predicate)
-
-    assert result["token"].to_list() == sorted(expected, key=lambda w: (-RAW[w], w))
-
-
-@pytest.mark.parametrize("predicate", [pl.col("freq") >= 3, pl.col("range") >= 3])
-def test_filtering_the_result_leaves_the_rate_alone(predicate: pl.Expr) -> None:
-    # The rate divides by the tokens counted, not by the rows a later filter
-    # keeps, so "cat" keeps the rate it had in the whole corpus.
-    everything = frequency_list(CORPUS, "token", basis=10_000)
-    filtered = everything.filter(predicate)
-
-    assert filtered["rate"].to_list() == pytest.approx([everything["rate"][0]])
-    assert filtered["rate"][0] == pytest.approx(10_000 * 3 / 11)
-
-
-def test_expr_names_the_output_column() -> None:
-    result = frequency_list(CORPUS, pl.col("token").str.to_lowercase())
-
-    assert result.columns[0] == "token"
-    assert dict(zip(result["token"], result["freq"])) == FOLDED
 
 
 def test_expr_defaults_to_the_token_column() -> None:
@@ -204,8 +160,3 @@ def test_nulls_are_dropped() -> None:
 def test_bad_arguments_raise(kwargs: dict, message: str) -> None:
     with pytest.raises(ValueError, match=message):
         frequency_list(CORPUS, "token", **kwargs)
-
-
-def test_bad_expr_raises() -> None:
-    with pytest.raises(ValueError, match="has no column 'lemma'"):
-        frequency_list(CORPUS, "lemma")

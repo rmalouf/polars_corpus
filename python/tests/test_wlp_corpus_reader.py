@@ -59,15 +59,7 @@ def test_read_wlp_corpus(load, sample_file):
     assert df.row(0) == ("Section", "section", "nn1", "4000161")
     # An empty lemma is a value, not a short row.
     assert df.row(-1) == ("@", "", "ii", "4000162")
-
-
-@pytest.mark.parametrize(
-    "load", [read_wlp_corpus, lambda p: scan_wlp_corpus(p).collect()]
-)
-def test_file_id_comes_from_the_text_header(load, sample_file):
-    """A "##" line names the text, so one file holds many file ids."""
-    df = load([sample_file])
-
+    # A "##" line names the text, so one file holds many file ids.
     assert df["file_id"].to_list() == ["4000161"] * 5 + ["4000162"] * 5
 
 

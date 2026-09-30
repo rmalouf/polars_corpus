@@ -43,14 +43,12 @@ class TestWindow:
         assert conc["token"].to_list() == [["sat"], ["sat"]]
         assert conc["token_right_context"].to_list() == [["on", "the"], ["on", "the"]]
 
-    def test_no_context_by_default(self, results):
-        conc = results.concordance("token")
+    @pytest.mark.parametrize("kwargs", [{}, {"window": 0}], ids=["default", "zero"])
+    def test_no_context_by_default(self, results, kwargs):
+        conc = results.concordance("token", **kwargs)
 
         assert conc.columns == ["token"]
         assert conc["token"].to_list() == [["sat"], ["sat"]]
-
-    def test_window_zero_is_the_default(self, results):
-        assert results.concordance("token", window=0).columns == ["token"]
 
     def test_window_truncated_at_the_corpus_edges(self):
         df = corpus(token="the cat sat")
@@ -316,16 +314,12 @@ class TestArgumentChecks:
             results.concordance("toekn", window=2)
 
     def test_missing_chunk_column(self, results):
-        with pytest.raises(ValueError, match="no column 'chunkz'"):
+        with pytest.raises(ValueError, match="no column 'chunkz'.*Use chunk_column="):
             results.concordance("token", chunk_column="chunkz")
 
     def test_missing_metadata_column(self, results):
         with pytest.raises(ValueError, match="no column 'flie_id'"):
             results.concordance("token", window=2, metadata="flie_id")
-
-    def test_missing_column_names_the_parameter(self, results):
-        with pytest.raises(ValueError, match="Use chunk_column="):
-            results.concordance("token", chunk_column="chunkz")
 
 
 class TestDistribution:

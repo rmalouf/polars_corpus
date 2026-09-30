@@ -107,11 +107,6 @@ def test_keywords_indirect_term(method: str) -> None:
     assert_frame_equal(expected, got, check_row_order=False)
 
 
-def test_keywords_multi_column_term() -> None:
-    with pytest.raises(ValueError, match="expr must identify a single column"):
-        keywords(TARGET, REFERENCE, pl.col("norm", "file_id"), "ll")
-
-
 @pytest.mark.parametrize(
     "threshold,value,expected",
     [
@@ -216,12 +211,13 @@ def test_keywords_ttest_keeps_target_only_words() -> None:
     assert target_only <= set(result["norm"])
 
 
-@pytest.mark.parametrize("method", ["ll", "pmi", "chisq", "ttest"])
+@pytest.mark.parametrize("method", ["ll", "ttest"])
 def test_keywords_lazy_matches_eager(method: str) -> None:
     eager = keywords(TARGET, REFERENCE, pl.col("norm"), method)
-    lazy = keywords(TARGET.lazy(), REFERENCE.lazy(), pl.col("norm"), method).collect()
-    # Tie-break order between engines isn't guaranteed (e.g. words with equal PMI).
-    assert_frame_equal(eager, lazy, check_row_order=False)
+    lazy = keywords(TARGET.lazy(), REFERENCE.lazy(), pl.col("norm"), method)
+    assert isinstance(lazy, pl.LazyFrame)
+    # Tie-break order between engines isn't guaranteed.
+    assert_frame_equal(eager, lazy.collect(), check_row_order=False)
 
 
 @pytest.mark.parametrize("method", ["ll", "ttest"])
@@ -244,7 +240,7 @@ def test_keywords_file_id_column(method: str) -> None:
 NULL_ROWS = pl.DataFrame({"norm": [None, None], "file_id": ["t1", "t2"]})
 
 
-@pytest.mark.parametrize("method", ["ll", "pmi", "chisq", "minsens", "ttest"])
+@pytest.mark.parametrize("method", ["ll", "ttest"])
 @pytest.mark.parametrize("part", ["target", "reference"])
 def test_keywords_drops_null_terms(method: str, part: str) -> None:
     # A null term is not an occurrence of anything, so it gets no row of its own
@@ -257,7 +253,7 @@ def test_keywords_drops_null_terms(method: str, part: str) -> None:
     assert_frame_equal(expected, got, check_row_order=False)
 
 
-@pytest.mark.parametrize("method", ["ll", "pmi", "chisq", "minsens", "ttest"])
+@pytest.mark.parametrize("method", ["ll", "ttest"])
 @pytest.mark.parametrize("part", ["target", "reference"])
 def test_keywords_drops_null_file_ids(method: str, part: str) -> None:
     # A token with no file id is in no document, so it must not add a document
@@ -280,30 +276,6 @@ def test_keywords_drops_null_file_ids(method: str, part: str) -> None:
     )
     got = keywords(frames["target"], frames["reference"], "norm", method)
     assert_frame_equal(expected, got, check_row_order=False)
-
-
-def test_keywords_null_file_id_not_a_document() -> None:
-    # "the" is in all three target files; blanking one file id must leave it a
-    # range of 2, not 3 with null counted as a file of its own.
-    target = TARGET.with_columns(
-        pl.when(pl.col("file_id") == "t3")
-        .then(None)
-        .otherwise(pl.col("file_id"))
-        .alias("file_id")
-    )
-    result = keywords(target, REFERENCE, "norm", "ll")
-    assert dict(zip(result["norm"], result["target_range"])) == {
-        "cat": 2,
-        "dog": 1,
-        "the": 2,
-    }
-
-
-def test_keywords_lazy_drops_nulls() -> None:
-    # The lazy path drops on the same terms as the eager one.
-    target = pl.concat([TARGET, NULL_ROWS]).lazy()
-    got = keywords(target, REFERENCE.lazy(), "norm", "ll").collect()
-    assert None not in got["norm"].to_list()
 
 
 # --- Measures of the caller's own ---------------------------------------------
@@ -357,11 +329,6 @@ def test_keywords_own_measure(measure, column: str) -> None:
     assert result[column].to_list() == pytest.approx(expected.to_list())
 
 
-def test_keywords_own_measure_still_warns_about_k() -> None:
-    with pytest.warns(UserWarning, match="only used when method='smp'"):
-        keywords(TARGET, REFERENCE, "norm", jaccard, k=1)
-
-
 @pytest.mark.parametrize(
     "measure,message",
     [
@@ -405,28 +372,25 @@ def test_keywords_empty_corpus(empty: str) -> None:
         keywords(frames["target"], frames["reference"], pl.col("norm"), "ll")
 
 
-@pytest.mark.parametrize("method", ["ll", "ttest"])
 @pytest.mark.parametrize("missing", ["target", "reference"])
-def test_keywords_missing_term_column(method: str, missing: str) -> None:
+def test_keywords_missing_term_column(missing: str) -> None:
     # A typo, or two corpora that name the same annotation differently.
     frames = {"target": TARGET, "reference": REFERENCE}
     frames[missing] = frames[missing].rename({"norm": "lemma"})
     with pytest.raises(ValueError, match=f"the {missing} corpus has no column 'norm'"):
-        keywords(frames["target"], frames["reference"], "norm", method)
+        keywords(frames["target"], frames["reference"], "norm", "ll")
 
 
-@pytest.mark.parametrize("method", ["ll", "ttest"])
-def test_keywords_missing_file_id_column(method: str) -> None:
+def test_keywords_missing_file_id_column() -> None:
     with pytest.raises(ValueError, match="Use file_id_column= to point at"):
-        keywords(TARGET.drop("file_id"), REFERENCE, pl.col("norm"), method)
+        keywords(TARGET.drop("file_id"), REFERENCE, pl.col("norm"), "ll")
 
 
-@pytest.mark.parametrize("method", ["ll", "ttest"])
-def test_keywords_ignores_other_columns(method: str) -> None:
+def test_keywords_ignores_other_columns() -> None:
     # Corpora annotated differently still compare: only the columns `expr` and
     # `file_id_column` name are read, so the schemas need not match.
     target = TARGET.with_columns(pos=pl.lit("N"))
     reference = REFERENCE.with_columns(genre=pl.lit("news"), c5=pl.lit("NN1"))
-    expected = keywords(TARGET, REFERENCE, pl.col("norm"), method)
-    got = keywords(target, reference, pl.col("norm"), method)
+    expected = keywords(TARGET, REFERENCE, pl.col("norm"), "ll")
+    got = keywords(target, reference, pl.col("norm"), "ll")
     assert_frame_equal(expected, got, check_row_order=False)

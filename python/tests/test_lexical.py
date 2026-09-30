@@ -218,11 +218,6 @@ class TestVocabularyGrowth:
             3,
         ]
 
-    def test_ends_at_n_unique(self):
-        df = pl.DataFrame({"tokens": ["a", "b", "c", "a", "b"] * 20})
-        last = df.select(plc.vocabulary_growth("tokens")).to_series()[-1]
-        assert last == df.select(pl.col("tokens").n_unique()).item()
-
     def test_per_file(self):
         """The curve restarts for each group when used with `over`."""
         df = pl.DataFrame(

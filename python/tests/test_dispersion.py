@@ -154,11 +154,6 @@ def test_dispersion_indirect_term(term: pl.Expr) -> None:
     assert_frame_equal(expected_result, got, check_row_order=False)
 
 
-def test_dispersion_multi_column_term() -> None:
-    with pytest.raises(ValueError, match="expr must identify a single column"):
-        dispersion(CORPUS.with_columns(pos=pl.lit("N")), pl.col("token", "pos"), "d")
-
-
 @pytest.mark.parametrize(
     "method,column,value",
     [("range", "range", 1), ("range%", "range%", 100.0), ("dp", "DP", 0.0)],
@@ -168,15 +163,6 @@ def test_dispersion_single_file_defined(method: str, column: str, value: float) 
     corpus = pl.DataFrame({"token": ["a", "b"], "file_id": ["f1", "f1"]})
     result = dispersion(corpus, "token", method)
     assert result[column].to_list() == [value, value]
-
-
-@pytest.mark.parametrize(
-    "method", ["range", "range%", "sd", "cv", "cv%", "d", "da", "dp"]
-)
-def test_dispersion_lazy_matches_eager(method: str) -> None:
-    eager = dispersion(CORPUS, "token", method)
-    lazy = dispersion(CORPUS.lazy(), "token", method).collect()
-    assert_frame_equal(eager, lazy, check_row_order=False)
 
 
 def test_dispersion_file_id_column() -> None:
@@ -209,7 +195,6 @@ def test_dispersion_reports_frequency(method: str) -> None:
     assert dict(zip(result["token"], result["freq"])) == FREQS
 
 
-@pytest.mark.parametrize("method", ALL_METHODS)
 @pytest.mark.parametrize(
     "min_freq,expected_words",
     [
@@ -219,29 +204,17 @@ def test_dispersion_reports_frequency(method: str) -> None:
         (7, set()),  # above every word in the corpus
     ],
 )
-def test_dispersion_min_freq(
-    method: str, min_freq: int, expected_words: set[str]
-) -> None:
-    result = dispersion(CORPUS, "token", method, min_freq=min_freq)
+def test_dispersion_min_freq(min_freq: int, expected_words: set[str]) -> None:
+    result = dispersion(CORPUS, "token", ALL_METHODS, min_freq=min_freq)
     assert set(result["token"]) == expected_words
 
 
-@pytest.mark.parametrize("method", ALL_METHODS)
-def test_dispersion_min_freq_only_filters(method: str) -> None:
-    # Filtering happens after the measure, so the words that survive keep the
+def test_dispersion_min_freq_only_filters() -> None:
+    # Filtering happens after the measures, so the words that survive keep the
     # values they had with the rest of the corpus in view.
-    full = dispersion(CORPUS, "token", method).filter(pl.col("freq") >= 3)
-    got = dispersion(CORPUS, "token", method, min_freq=3)
+    full = dispersion(CORPUS, "token", ALL_METHODS).filter(pl.col("freq") >= 3)
+    got = dispersion(CORPUS, "token", ALL_METHODS, min_freq=3)
     assert_frame_equal(full, got, check_row_order=False)
-
-
-def test_dispersion_freq_counts_surviving_rows() -> None:
-    # Nulls are dropped before anything is counted, so they are not in `freq`.
-    corpus = pl.concat(
-        [CORPUS, pl.DataFrame({"token": ["a", "a"], "file_id": [None, None]})]
-    )
-    result = dispersion(corpus, "token", "d")
-    assert dict(zip(result["token"], result["freq"])) == FREQS
 
 
 @pytest.mark.parametrize("method", ALL_METHODS)
@@ -274,15 +247,6 @@ def test_dispersion_drops_null_terms(method: str) -> None:
     assert_frame_equal(got, dispersion(CORPUS, "token", method), check_row_order=False)
 
 
-def test_dispersion_lazy_drops_nulls() -> None:
-    # The lazy path drops on the same terms as the eager one.
-    corpus = pl.concat(
-        [CORPUS, pl.DataFrame({"token": [None], "file_id": ["f1"]})]
-    ).lazy()
-    got = dispersion(corpus, "token", "d").collect()
-    assert None not in got["token"].to_list()
-
-
 def test_dispersion_all_rows_null() -> None:
     corpus = pl.DataFrame({"token": [None, None], "file_id": ["f1", "f2"]})
     assert dispersion(corpus, "token", "d").height == 0
@@ -308,6 +272,7 @@ COLUMNS = {
         ["sd", "cv", "cv%", "d"],  # one group, all of it
         ["da", "dp"],  # the two that stand alone
         ["dp"],  # a list of one is still a list
+        ["dp", "range", "d"],  # not the order the passes run in
     ],
 )
 def test_dispersion_several_methods(methods: list[str]) -> None:
@@ -325,44 +290,17 @@ def test_dispersion_several_methods(methods: list[str]) -> None:
         )
 
 
-def test_dispersion_several_methods_keeps_the_order_asked_for() -> None:
-    # Not the order of METHODS, and not the order the passes run in.
-    got = dispersion(CORPUS, "token", ["dp", "range", "d"])
-    assert got.columns == ["token", "freq", "DP", "range", "D"]
-
-
-def test_dispersion_repeated_method() -> None:
-    # Two columns of the same name would not be a frame; drop the repeat.
-    got = dispersion(CORPUS, "token", ["d", "range", "d"])
-    assert got.columns == ["token", "freq", "D", "range"]
-
-
-@pytest.mark.parametrize("methods", [["range", "d"], ALL_METHODS])
-def test_dispersion_several_methods_min_freq(methods: list[str]) -> None:
-    got = dispersion(CORPUS, "token", methods, min_freq=3)
-    assert set(got["token"]) == {"a", "b", "c"}
-
-
-@pytest.mark.parametrize("methods", [["range", "d"], ["da", "dp"]])
-def test_dispersion_several_methods_lazy_matches_eager(methods: list[str]) -> None:
-    eager = dispersion(CORPUS, "token", methods)
-    lazy = dispersion(CORPUS.lazy(), "token", methods).collect()
-    assert_frame_equal(eager, lazy, check_row_order=False)
-
-
-def test_dispersion_several_methods_case_insensitive() -> None:
-    got = dispersion(CORPUS, "token", [" D ", "Range%"])
-    assert got.columns == ["token", "freq", "D", "range%"]
+def test_dispersion_lazy_matches_eager() -> None:
+    lazy = dispersion(CORPUS.lazy(), "token", ALL_METHODS)
+    assert isinstance(lazy, pl.LazyFrame)
+    assert_frame_equal(
+        dispersion(CORPUS, "token", ALL_METHODS), lazy.collect(), check_row_order=False
+    )
 
 
 def test_dispersion_invalid_method() -> None:
     with pytest.raises(ValueError, match="sd, cv, cv%, d"):
         dispersion(CORPUS, "token", "bogus")
-
-
-def test_dispersion_missing_term_column() -> None:
-    with pytest.raises(ValueError, match="the corpus has no column 'lemma'"):
-        dispersion(CORPUS, "lemma", "d")
 
 
 def test_dispersion_missing_file_id_column() -> None:

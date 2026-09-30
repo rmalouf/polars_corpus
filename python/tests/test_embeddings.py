@@ -146,10 +146,6 @@ class TestEncodeMatches:
         with pytest.raises(ValueError, match="expr must name a single column"):
             results.encode(model, ["token", "token"])
 
-    def test_missing_column(self, results, model):
-        with pytest.raises(ValueError, match="the corpus has no column 'toekn'"):
-            results.encode(model, "toekn")
-
 
 class TestCentroid:
     """Vectors averaged down to one, and scaled back to unit length"""

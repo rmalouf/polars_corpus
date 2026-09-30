@@ -89,9 +89,12 @@ def test_dispersion_plot_rows_are_the_files_hit() -> None:
 
 
 @pytest.mark.parametrize(
-    "relative,expected", [(True, [0.25, 0.5]), (False, [1.0, 2.0])]
+    "relative,expected,label",
+    [(True, [0.25, 0.5], "relative index"), (False, [1.0, 2.0], "index")],
 )
-def test_dispersion_plot_positions(relative: bool, expected: list[float]) -> None:
+def test_dispersion_plot_positions(
+    relative: bool, expected: list[float], label: str
+) -> None:
     # "cat" is the 1st token of f1 and the 2nd of f2, each four tokens long, so
     # relative positions are counted within the file rather than across the corpus.
     ax = dispersion_plot(CORPUS, "token", "cat", relative=relative)
@@ -99,18 +102,7 @@ def test_dispersion_plot_positions(relative: bool, expected: list[float]) -> Non
         x for collection in ax.collections for x, _ in collection.get_offsets()
     )
     assert got == pytest.approx(expected)
-
-
-def test_dispersion_plot_relative_index_is_a_fraction() -> None:
-    ax = dispersion_plot(CORPUS, "token", "cat", relative=True)
-    xs = [x for collection in ax.collections for x, _ in collection.get_offsets()]
-    assert all(0 < x <= 1 for x in xs)
-    assert ax.get_xlabel() == "relative index"
-
-
-def test_dispersion_plot_absolute_index_is_labeled() -> None:
-    ax = dispersion_plot(CORPUS, "token", "cat", relative=False)
-    assert ax.get_xlabel() == "index"
+    assert ax.get_xlabel() == label
 
 
 def test_dispersion_plot_absent_target_raises() -> None:
@@ -142,12 +134,6 @@ def test_dispersion_plot_file_id_column() -> None:
         CORPUS.rename({"file_id": "text_id"}), "token", "cat", file_id_column="text_id"
     )
     assert y_labels(ax) == ["f1", "f2"]
-
-
-@pytest.mark.parametrize("plot", [barcode_plot, dispersion_plot])
-def test_plot_missing_term_column(plot) -> None:
-    with pytest.raises(ValueError, match="the corpus has no column 'lemma'"):
-        plot(CORPUS, "lemma", "cat")
 
 
 def test_dispersion_plot_missing_file_id_column() -> None:

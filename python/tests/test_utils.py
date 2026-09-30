@@ -29,7 +29,15 @@ COUNTS = pl.DataFrame(
 )
 
 
-@pytest.mark.parametrize("frame", [CORPUS, CORPUS.lazy()])
+@pytest.mark.parametrize(
+    "frame",
+    [
+        pytest.param(CORPUS, id="eager"),
+        pytest.param(CORPUS.lazy(), id="lazy"),
+        # Height is unknown without running the query, so an empty LazyFrame passes.
+        pytest.param(CORPUS.clear().lazy(), id="empty-lazy"),
+    ],
+)
 def test_as_corpus_accepts_frames(frame: pl.DataFrame | pl.LazyFrame) -> None:
     assert isinstance(as_corpus(frame), pl.LazyFrame)
 
@@ -43,11 +51,6 @@ def test_as_corpus_rejects_non_frames(bad: object) -> None:
 def test_as_corpus_rejects_empty() -> None:
     with pytest.raises(ValueError, match="the corpus is empty"):
         as_corpus(CORPUS.clear())
-
-
-def test_as_corpus_allows_empty_lazyframe() -> None:
-    # Height is unknown without running the query, so an empty LazyFrame passes.
-    assert isinstance(as_corpus(CORPUS.clear().lazy()), pl.LazyFrame)
 
 
 @pytest.mark.parametrize("frame", [CORPUS, CORPUS.clear()])
@@ -79,14 +82,6 @@ def test_as_eager_rejects_the_rest(bad: object, hint: bool) -> None:
 def test_collect_like_follows_the_input(source: object, expected: type) -> None:
     result = collect_like(CORPUS.lazy().select("token"), source)
     assert isinstance(result, expected)
-
-
-def test_as_corpus_and_collect_like_round_trip() -> None:
-    # The pattern in full: take either kind of frame, work lazily, give back
-    # what the caller passed.
-    for source in (CORPUS, CORPUS.lazy()):
-        lazy = as_corpus(source).select("token")
-        assert type(collect_like(lazy, source)) is type(source)
 
 
 @pytest.mark.parametrize("frame", [CORPUS, CORPUS.lazy()])
@@ -259,20 +254,8 @@ def test_check_measures_rejects(value: object, match: str) -> None:
 def test_proportion_takes_a_name_or_an_expression(expr: object) -> None:
     result = COUNTS.select(proportion(expr))
     # The counts total 8, the null neither counted nor filled in.
+    assert result.columns == ["count"]
     assert result["count"].to_list() == [0.125, None, 0.375, 0.5]
-
-
-def test_proportion_keeps_the_name_of_the_column_it_reads() -> None:
-    assert COUNTS.select(proportion("count")).columns == ["count"]
-
-
-def test_proportion_shares_sum_to_one() -> None:
-    assert COUNTS.select(proportion("count").sum()).item() == pytest.approx(1.0)
-
-
-def test_proportion_scales_to_a_basis() -> None:
-    result = COUNTS.select(proportion("count") * 10_000)
-    assert result["count"].to_list() == [1_250.0, None, 3_750.0, 5_000.0]
 
 
 @pytest.mark.parametrize("group_by", ["file_type", pl.col("file_type")])

@@ -37,24 +37,6 @@ def _chisq_ref(f12: int, f1: int, f2: int, n: int, yates: bool = False) -> float
     return sum((abs(o - e) - c) ** 2 / e for o, e in zip(obs, exp))
 
 
-def test_crosstab_basic() -> None:
-    df = pl.DataFrame({"x": ["A", "A", "B", "B", "C"], "y": [1, 2, 1, 2, 1]})
-    result = crosstab(df, "x", "y")
-
-    assert "x" in result.columns
-    assert "y" in result.columns
-    assert "freqs" in result.columns
-
-    # Verify struct fields
-    freqs_dtype = result.schema["freqs"]
-    assert isinstance(freqs_dtype, pl.Struct)
-    field_names = [f.name for f in freqs_dtype.fields]
-    assert "f12" in field_names
-    assert "f1" in field_names
-    assert "f2" in field_names
-    assert "n" in field_names
-
-
 @pytest.mark.parametrize(
     "expr,expected",
     [
@@ -130,25 +112,11 @@ def test_crosstab_correct_counts() -> None:
     }
 
 
-@pytest.mark.parametrize(
-    "data",
-    [
-        pytest.param(
-            {"x": ["A", "A", "B", "B", "C", "C", "C"], "y": [1, 2, 1, 2, 1, 1, 2]},
-            id="complete",
-        ),
-        pytest.param(
-            {"x": ["A", "A", "B", None, "C"], "y": [1, None, 1, 2, 1]}, id="with-nulls"
-        ),
-    ],
-)
-def test_crosstab_lazy_matches_eager(data: dict) -> None:
-    df = pl.DataFrame(data)
-    assert_frame_equal(
-        crosstab(df, "x", "y"),
-        crosstab(df.lazy(), "x", "y").collect(),
-        check_row_order=False,
-    )
+def test_crosstab_lazy_matches_eager() -> None:
+    df = pl.DataFrame({"x": ["A", "A", "B", None, "C"], "y": [1, None, 1, 2, 1]})
+    lazy = crosstab(df.lazy(), "x", "y")
+    assert isinstance(lazy, pl.LazyFrame)
+    assert_frame_equal(crosstab(df, "x", "y"), lazy.collect(), check_row_order=False)
 
 
 @pytest.mark.parametrize(

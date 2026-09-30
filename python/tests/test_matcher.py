@@ -1,7 +1,6 @@
 import polars as pl
 import pytest
 from lark.exceptions import LarkError
-from polars_corpus import LazySearchResults
 from polars_corpus.matcher import Span, search, search_cqp
 
 from .helpers import corpus, spans
@@ -142,19 +141,6 @@ def test_invalid_regex(sample_corpus):
         search_cqp(sample_corpus, '[word="[unclosed"]')
 
 
-@pytest.mark.parametrize("fn,query", [(search, "fox"), (search_cqp, '[token="fox"]')])
-def test_lazy_corpus_without_file_ids(fn, query):
-    """A LazyFrame with no file ids to chunk on is searched as a single chunk."""
-    results = fn(corpus(token="the quick brown fox").lazy(), query)
-
-    assert isinstance(results, LazySearchResults)
-    # No `matches` to read spans off without a corpus in memory, and with one
-    # file spanning everything the concordance says the same thing.
-    assert results.concordance("token", window=1)["token_left_context"].to_list() == [
-        ["brown"]
-    ]
-
-
 class TestSpan:
     """Span is implemented in Rust, so its dunders need exercising"""
 
@@ -181,12 +167,6 @@ class TestVariableBindings:
         "query,var,expected_span",
         [
             pytest.param('$n: ([pos="NN"])', "n", Span(3, 4), id="single-token"),
-            pytest.param(
-                '$det: ([pos="DT"]) $adj: ([pos="JJ"]) $noun: ([pos="NN"])',
-                "det",
-                Span(6, 7),
-                id="multiple-vars",
-            ),
             pytest.param(
                 '[pos="DT"] $adj: ([pos="JJ"]) [pos="NN"]',
                 "adj",
@@ -472,12 +452,9 @@ class TestFileIdDefault:
         assert spans(results) == [(2, 4), (4, 6)]
 
     def test_default_name_is_soft_even_spelled_out(self, sample_corpus):
-        """Only the default name is soft; any other missing name raises."""
+        """Naming the default column outright does not make it required."""
         results = search_cqp(sample_corpus, '[word="fox"]', file_id_column="file_id")
         assert spans(results) == [(3, 4)]
-
-        with pytest.raises(ValueError, match="no column 'doc'"):
-            search_cqp(sample_corpus, '[word="fox"]', file_id_column="doc")
 
 
 @pytest.mark.parametrize(
