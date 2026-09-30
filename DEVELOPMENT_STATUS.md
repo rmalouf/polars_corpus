@@ -1,8 +1,8 @@
 # Development Status - polars-corpus
 
-**Last updated:** 2026-08-28
-**Version:** 0.2.0-pre
-**Status:** Pre-release; core is stable, not yet published to PyPI
+**Last updated:** 2026-09-30
+**Version:** 0.2.0
+**Status:** Released; 0.2.0 on PyPI since 2026-09-29
 
 ---
 
@@ -23,11 +23,11 @@ pages.
 
 | | |
 |---|---|
-| Python source | ~7,300 lines, 20 modules |
-| Rust source | ~1,100 lines, 6 files |
-| Tests | ~5,600 lines, 1,095 tests in 17 files |
+| Python source | ~8,700 lines, 20 modules |
+| Rust source | ~1,200 lines, 6 files |
+| Tests | ~5,900 lines, 1,048 tests in 18 files |
 | Docs | 13 pages plus 6 example notebooks (mkdocs-material / mkdocstrings) |
-| Examples | 8 notebooks, 3 scripts |
+| Examples | 9 notebooks, 4 scripts |
 
 ---
 
@@ -48,7 +48,9 @@ pages.
    `"R2"`, or the signed integer CQP writes it as -- so the classic sort is
    `conc.sort(kwic("L1"), kwic("L2"))` and the same expression groups and
    filters; `as_str=True` joins the list columns into the strings `write_csv`
-   and `great_tables` accept.
+   and `great_tables` accept. `distribution(by=...)` gives hits per category
+   of a metadata column, normalized per `basis` words, with a row for every
+   category including those with no hits.
 3. **Frequency lists** — `frequency_list()` gives one row per type: its count,
    its rate per `basis` words, and the number of files it occurs in.
    Normalizing and thresholding stay the caller's (see Deliberately out).
@@ -72,9 +74,14 @@ pages.
 6. **Lexical diversity** — TTR, MSTTR, Yule's K, MTLD.
 7. **Lexical dispersion** — `dispersion()` with range, range%, sd, cv, cv%,
    Juilland's D, Burch's DA, Gries's DP; several measures per call.
-8. **I/O** — `read_text_corpus()` / `scan_text_corpus()`, `from_nltk()`.
+8. **I/O** — `read_text_corpus()` / `scan_text_corpus()`,
+   `read_wlp_corpus()` / `scan_wlp_corpus()` (WLP files such as COCA's, parsed
+   in Rust a batch at a time), `from_nltk()`, and `convert_bnc()` for the BNC
+   XML edition. Gzip- and zstd-compressed files are read transparently;
+   `examples/convert_coca.py` joins COCA's source metadata onto its WLP files.
 9. **Chunking** — BIO tags to chunk IDs via `chunk_id()` / `with_chunk_index()`.
-10. **Polars integration** — `.corpus` namespace on Expr, DataFrame, LazyFrame.
+10. **Polars integration** — `.corpus` namespace on Expr, DataFrame, LazyFrame,
+    with each method documented.
 11. **Visualization** — `barcode_plot()`, `dispersion_plot()`, `keyword_plot()`,
     on matplotlib from the `examples` extra. The notebooks still import seaborn;
     the library no longer does.
@@ -127,10 +134,8 @@ Decisions already made, recorded here so they are not re-proposed as gaps.
   costs the caller `.explode().unnest()` at every call site, runs twice as slow
   at 20M rows, and has no frame to check column names against. `by=` can still
   come back later without changing the frame form.
-- **A hits-by-metadata breakdown and an HTML export for concordances.** The raw
-  counts are a Polars `group_by`; normalizing them against category size is
-  `with_spans_as_chunks()` plus one `group_by` over the tagged corpus; and after
-  `as_str=True` the HTML export is `conc.style` from `great_tables`.
+- **An HTML export for concordances.** After `as_str=True` it is `conc.style`
+  from `great_tables`.
 - **`logdice` for keyness.** Here `f2` is the size of the target corpus rather
   than a second word's frequency, so `2 f12 / (f1 + f2)` is dominated by `f2`
   and reduces to a monotone function of relative frequency.
@@ -140,20 +145,17 @@ Decisions already made, recorded here so they are not re-proposed as gaps.
 ## Known Issues
 
 1. **No Rust unit tests.** The engine is exercised only through Python.
-2. **`pyrefly check` reports two errors**, both from the `.corpus` namespace
-   methods in `exprs.py` passing a `freqs_name` argument `crosstab` no longer
-   takes. Third-party stubs produce errors of their own, which is why CI does
-   not run pyrefly as a gate.
-3. **The `.corpus` namespace is invisible to type checkers.**
+2. **The `.corpus` namespace is invisible to type checkers.**
    `register_expr_namespace` installs the descriptor with a runtime `setattr`,
    which no stub can describe, so `pl.col("x").corpus.pmi()` does not
    type-check in user code either. This affects every polars plugin. The
    standalone functions (`plc.pmi(...)`) are the statically-checkable path, and
    library code calls them directly for that reason.
-4. **`__init__.py` leaks names.** Modules without `__all__` are star-imported,
-   so `polars_corpus.pl`, `.Any` and most submodule names are bound at top
-   level; the `keywords` function also shadows the `keywords` module.
-5. **A zero-width binding is reported inconsistently.** `bindings_stack` in
+3. **`__init__.py` leaks names.** Modules without `__all__` are star-imported,
+   (`exprs.py` among them), so `polars_corpus.pl`, `.Any` and most submodule
+   names are bound at top level; the `keywords` function also shadows the
+   `keywords` module.
+4. **A zero-width binding is reported inconsistently.** `bindings_stack` in
    `MatchBuffers` is not part of the backtracking state -- `_match_opcodes`
    pushes and pops `(cursor, pc)` tasks that all share one binding stack -- so a
    `*` or `?` binding that matched no token reports an empty span or no binding
@@ -161,10 +163,9 @@ Decisions already made, recorded here so they are not re-proposed as gaps.
    (test_matcher.py's `star-zero-match-empty-span`); `concordance()` shows the
    two as a null and an empty list. The fix is probably to record the stack's
    depth with each task and truncate back to it when the task resumes.
-6. **`{lemma/CLASS}_TAG` drops the class.** A Simple query giving both a
+5. **`{lemma/CLASS}_TAG` drops the class.** A Simple query giving both a
    simplified POS class and an explicit tag keeps the `_TAG` and discards the
    class without complaint (`LEMMA` in `simple_parser.py`).
-7. **No published wheels or PyPI release.**
 
 ---
 
@@ -172,12 +173,11 @@ Decisions already made, recorded here so they are not re-proposed as gaps.
 
 **Before 1.0**
 1. Proximity operators.
-2. Publish to PyPI.
 
 **Quality**
-3. Make the binding stack part of the backtracking state (Known Issues 5).
-4. Rust unit tests for the matcher.
-5. Benchmarks (`examples/bench.py` is a starting point).
+2. Make the binding stack part of the backtracking state (Known Issues 4).
+3. Rust unit tests for the matcher.
+4. Benchmarks (`examples/bench.py` is a starting point).
 
 **Future plans**
 
@@ -185,26 +185,26 @@ Coverage against what a linguist expects of a corpus toolkit. Nothing shipped
 is waiting on any of these. A feature that isn't documented is a feature users
 don't have, so the writing entries rank with the code ones.
 
-6. **A page for `ConcordanceWidget`.** Written and tested, but documented only
+5. **A page for `ConcordanceWidget`.** Written and tested, but documented only
    here and absent from the docs site.
-7. **An effect-size section in the keywords notebook.** It argues that
+6. **An effect-size section in the keywords notebook.** It argues that
    log-likelihood alone misleads and then offers nothing instead; ranking the
    same words by `ll` and by `logratio` side by side is what closes it.
-8. **N-grams and clusters.** `ngrams()` sits in `docs/utils.md` with no prose
+7. **N-grams and clusters.** `ngrams()` sits in `docs/utils.md` with no prose
    or example; clusters around a node and lexical-bundle extraction, the
    phraseology staple, do not exist.
-9. **Text-level descriptive measures.** Per-text sentence length, mean word
+8. **Text-level descriptive measures.** Per-text sentence length, mean word
    length and readability (Flesch, ARI) -- the basic descriptive battery, none
    of which is implemented.
-10. **`from_spacy()`.** Raw text to `token`, `lemma`, `pos`, `tag` and
-    `sentence_tag`, batched over `nlp.pipe()` -- the entry that most widens who
-    can use the library, and the only documented way to get a `lemma` column.
-    `from_stanza()` is the sibling, but spaCy has the users.
-11. **Docs for `chunk_id()` and `with_chunk_index()`.** They supply the
+9. **`from_spacy()`.** Raw text to `token`, `lemma`, `pos`, `tag` and
+   `sentence_tag`, batched over `nlp.pipe()` -- the entry that most widens who
+   can use the library, and the only documented way to get a `lemma` column.
+   `from_stanza()` is the sibling, but spaCy has the users.
+10. **Docs for `chunk_id()` and `with_chunk_index()`.** They supply the
     sentence boundaries sentence-scoped work needs, and are on no page.
-12. **A narrative getting-started guide.** The User Guide nav entries are still
+11. **A narrative getting-started guide.** The User Guide nav entries are still
     commented out in `mkdocs.yml`.
-13. **Prose on `assoc.md`, `lexical.md` and `utils.md`.** Bare mkdocstrings
+12. **Prose on `assoc.md`, `lexical.md` and `utils.md`.** Bare mkdocstrings
     stubs -- nothing on what a measure means or when to reach for it.
 
 ---
@@ -221,11 +221,15 @@ don't have, so the writing entries rank with the code ones.
 ## Notes
 
 - Build and test commands, and why the venv sits outside the source tree, are
-  in CLAUDE.md.
+  in AGENTS.md.
 - CI (`.github/workflows/`) runs on every push to main and every PR: `test.yml`
   lints (cargo fmt, clippy, ruff) and runs pytest on 3.11 through 3.14, Linux
-  plus one macOS job to guard the arm64 build; `docs.yml` builds the site.
-  pyrefly is not a gate (Known Issues 2).
+  plus one macOS job to guard the arm64 build; `docs.yml` builds the site and
+  `docs-deploy.yml` publishes it by hand. `release.yml` runs on a `v*` tag:
+  it checks the tag against `Cargo.toml`, builds wheels and an sdist, tests the
+  wheels across Python and polars versions, publishes to PyPI by Trusted
+  Publishing, and creates a GitHub Release. pyrefly reports no errors but is
+  not a CI gate.
 - The repo is mirrored to tangled.org, whose CI (`.tangled/workflows/`) runs the
   same checks on a hosted spindle, one file per pipeline: `test.yml` for cargo
   fmt, clippy and pytest, `lint.yml` for ruff. One Python version, Linux only,
