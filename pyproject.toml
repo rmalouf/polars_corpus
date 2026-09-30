@@ -26,7 +26,7 @@ classifiers = [
 authors = [
     {name = "Rob Malouf", email="rmalouf@sdsu.edu"}
 ]
-description = "Text processing plugins for polars"
+description = "Polars extensions for corpus linguistics"
 readme = "README.md"
 license = "MIT"
 # minimum polars version is also hard-coded in Makefile and .github/workflows/release.yml
@@ -46,6 +46,8 @@ embeddings = ["sentence-transformers", "model2vec", "umap-learn",
 [project.urls]
 Repository = "https://github.com/rmalouf/polars_corpus"
 Issues = "https://github.com/rmalouf/polars_corpus/issues"
+Homepage = "https://github.com/rmalouf/polars_corpus"
+Documentation = "https://rmalouf.github.io/polars_corpus/"
 
 [tool.ruff]
 extend-exclude = ["examples/*.ipynb"]
