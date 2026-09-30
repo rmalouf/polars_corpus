@@ -89,6 +89,8 @@ jobs:
     name: Python ${{ matrix.python-version }} / polars ${{ matrix.polars || 'newest' }} / ${{ matrix.os }}
     needs: wheels
     runs-on: ${{ matrix.os }}
+    # The suite takes about a minute; a hang should not run for six hours.
+    timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:

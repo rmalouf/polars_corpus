@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib.util
+import multiprocessing
 from collections import defaultdict
 from concurrent.futures import ProcessPoolExecutor
 from itertools import chain
@@ -462,9 +463,11 @@ def _parse_texts(paths: list[Path], n_workers: int) -> Generator[pl.DataFrame]:
 
     `map` yields in path order, which is what keeps each file id in a single
     run. It only runs `max_workers` texts at a time, and the writer downstream
-    keeps up with them, so memory stays flat.
+    keeps up with them, so memory stays flat. Workers are spawned, not forked:
+    a fork inherits polars' thread pool mid-use and can deadlock.
     """
-    with ProcessPoolExecutor(min(n_workers, len(paths))) as pool:
+    ctx = multiprocessing.get_context("spawn")
+    with ProcessPoolExecutor(min(n_workers, len(paths)), mp_context=ctx) as pool:
         for df in pool.map(_parse_text, paths):
             if df is not None:  # a stray copy of another text; see _parse_text
                 yield df
