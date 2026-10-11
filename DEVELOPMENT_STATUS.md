@@ -1,6 +1,6 @@
 # Development Status - polars-corpus
 
-**Last updated:** 2026-09-30
+**Last updated:** 2026-10-10
 **Version:** 0.2.0
 **Status:** Released; 0.2.0 on PyPI since 2026-09-29
 
@@ -211,9 +211,11 @@ don't have, so the writing entries rank with the code ones.
 
 ## Dependencies
 
-- **Runtime:** polars, lark, nltk, anywidget; versions in `pyproject.toml`
+- **Runtime:** polars (1.36 through 2.0), lark, nltk, anywidget; versions in
+  `pyproject.toml`
 - **Build:** maturin, pyo3, pyo3-polars; the Rust side (polars, statrs,
-  itertools) is pinned in `Cargo.toml`
+  itertools) is pinned in `Cargo.toml`. pyo3 is held at exactly 0.29.2:
+  0.29.3 segfaults on import through `PolarsAllocator`
 - **Python:** >=3.11; wheels are cp311-abi3
 
 ---

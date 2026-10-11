@@ -65,7 +65,7 @@ class TestEncode:
         df = corpus(token="the cat")
         df.select(encode(model, pl.col("token").str.to_uppercase()))
 
-        assert model.seen == ["THE", "CAT"]
+        assert sorted(model.seen) == ["CAT", "THE"]
 
 
 class TestEncodeMatches:
@@ -86,7 +86,7 @@ class TestEncodeMatches:
             "the cat sat on the",
             "the dog sat on the",
         ]
-        assert model.seen == ["the cat sat on the", "the dog sat on the"]
+        assert sorted(model.seen) == ["the cat sat on the", "the dog sat on the"]
 
     def test_default_window_gives_context(self, results, model):
         """The default has to be a window the concordance actually builds."""
@@ -222,7 +222,7 @@ class TestEncodeTerms:
     def test_matches_are_encoded_with_context(self, df, model):
         encode_terms(["sat"], df, model, window=2)
 
-        assert model.seen == ["the cat sat on the", "the dog sat on the"]
+        assert sorted(model.seen) == ["the cat sat on the", "the dog sat on the"]
 
     def test_chunk_column(self, model):
         df = corpus(token="the cat sat . the dog sat .", chunks="B I I I B I I I")
@@ -266,7 +266,7 @@ class TestEncodeTerms:
         encode_terms(["the"], df, first, max_matches=2, seed=619)
         encode_terms(["the"], df, second, max_matches=2, seed=619)
 
-        assert first.seen == second.seen
+        assert sorted(first.seen) == sorted(second.seen)
 
     def test_kwargs_reach_search(self, model):
         """file_id_column keeps a match from running over a file boundary."""

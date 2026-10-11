@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Polars 2.0 is now supported; the `<2.0` upper bound is gone.
+
+### Fixed
+
+- pyo3 is pinned to 0.29.2. Under 0.29.3 the extension segfaulted on import.
+
 ## [0.2.0] - 2026-09-29
 
 Initial public release.

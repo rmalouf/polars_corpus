@@ -26,7 +26,7 @@ The plotting functions need matplotlib, which is in the `examples` extra:
 pip install "polars-corpus[examples]"
 ```
 
-Requires Python 3.11 or later and Polars 1.36 or later (below 2.0).
+Requires Python 3.11 or later and Polars 1.36 or later, including 2.0.
 
 ## Usage
 

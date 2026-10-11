@@ -1,8 +1,7 @@
 [package]
 name = "polars-corpus"
-version = "0.2.0"
+version = "0.2.1"
 edition = "2024"
-# Kept out of the sdist, which only needs what the build reads.
 exclude = [".claude", ".github", ".tangled", "docs", "examples", "mkdocs.yml", "uv.lock"]
 
 [lib]
@@ -10,15 +9,14 @@ name = "polars_corpus"
 crate-type= ["cdylib"]
 
 [dependencies]
-pyo3 = { version = "0.29", default-features = false, features = ["extension-module", "abi3-py311"] }
+# 0.29.3 recurses through PolarsAllocator on first attach and segfaults on import.
+pyo3 = { version = "=0.29.2", default-features = false, features = ["extension-module", "abi3-py311"] }
 polars = { version = "0.55", default-features = false, features = ["dtype-struct", "dtype-array", "dtype-categorical", "performant", "cse"] }
 # polars' own `rle` feature only forwards to polars-lazy, which this crate
 # doesn't build, so enable it on polars-ops directly. Re-exported through
 # polars::prelude.
 polars-ops = { version = "0.55", default-features = false, features = ["rle"] }
 pyo3-polars = { version = "0.28", default-features = false, features = ["derive"] }
-# Transparent decompression in io.rs. Both are already in the tree under
-# polars, so neither adds a build.
 flate2 = "1.1"
 zstd = "0.13"
 statrs = { version = "0.19", default-features = false }
@@ -31,10 +29,7 @@ lto = "fat"
 codegen-units = 1
 strip = "symbols"
 
-# Fast-turnaround profile for `make develop`. Still optimized, so real corpora
-# stay usable, but parallel codegen and no LTO keep rebuilds to a couple of
-# seconds, and symbols are kept so panics give a readable backtrace.
-# Not for distribution wheels -- see `make build`.
+# Fast-turnaround profile for `make develop`. Not for distribution wheels -- see `make build`.
 [profile.dev-fast]
 inherits = "release"
 lto = "off"
@@ -43,9 +38,8 @@ incremental = true
 debug = "line-tables-only"
 strip = "none"
 
-# Release build with debug info kept and cross-crate inlining disabled, so
-# profiler output attributes samples to the right function. Build with
-# `--profile profiling`.
+# Release build with debug info kept and cross-crate inlining disabled.
+# Build with`--profile profiling`.
 [profile.profiling]
 inherits = "release"
 debug = "full"

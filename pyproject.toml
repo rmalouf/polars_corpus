@@ -1,5 +1,5 @@
 [build-system]
-requires = ["maturin>=1.0,<2.0", "polars>=1.36,<2.0"]
+requires = ["maturin>=1.0,<2.0", "polars>=1.36"]
 build-backend = "maturin"
 
 [project]
@@ -31,7 +31,7 @@ readme = "README.md"
 license = "MIT"
 # minimum polars version is also hard-coded in Makefile and .github/workflows/release.yml
 dependencies = [
-    "polars>=1.36,<2.0",
+    "polars>=1.36",
     "lark>=1.2",
     "nltk>=3.9",
     "anywidget>=0.9",
