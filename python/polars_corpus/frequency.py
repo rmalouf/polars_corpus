@@ -1,18 +1,17 @@
 from __future__ import annotations
 
-from typing import Optional
-
 import polars as pl
 
 from ._typing import IntoExpr, T_Frame
 from .utils import (
-    DEFAULT_FILE_ID,
+    AUTO,
+    FileIdColumn,
     as_corpus,
     as_expr,
-    check_columns,
     check_expr,
     collect_like,
     proportion,
+    resolve_file_id,
 )
 
 __all__ = [
@@ -24,7 +23,7 @@ def frequency_list(
     corpus: T_Frame,
     expr: IntoExpr = "token",
     basis: float = 1_000_000,
-    file_id_column: Optional[str] = DEFAULT_FILE_ID,
+    file_id_column: FileIdColumn = AUTO,
 ) -> T_Frame:
     """
     Count how often each word occurs in a corpus.
@@ -48,8 +47,8 @@ def frequency_list(
         large corpus; pass 10_000 for a small one.
     file_id_column : str, optional
         Column holding file ids, counted to give each word its `range`. Pass
-        None for no `range` column. Defaults to "file_id", which is dropped
-        rather than demanded when the corpus has no such column.
+        None for no `range` column. By default, "file_id" is used when the
+        corpus has such a column, and no `range` is reported otherwise.
 
     Returns
     -------
@@ -115,13 +114,9 @@ def frequency_list(
     lf = as_corpus(corpus)
     term_name = check_expr(lf, term)
 
-    # An unasked-for "file_id" is a default rather than a demand: a corpus
-    # without one still has a frequency list, just no range to report.
-    if file_id_column == DEFAULT_FILE_ID:
-        if file_id_column not in lf.collect_schema().names():
-            file_id_column = None
-    elif file_id_column is not None:
-        check_columns(lf, [file_id_column], param="file_id_column")
+    # A corpus without a file id column still has a frequency list, just no
+    # range to report.
+    file_id_column = resolve_file_id(lf, file_id_column)
 
     # Reading the file id column twice would duplicate it; grouping by the word
     # then counts distinct values of the word itself, which is 1 in every group.

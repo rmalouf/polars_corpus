@@ -2,7 +2,8 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Sequence
 from difflib import get_close_matches
-from typing import cast, Optional
+from enum import Enum
+from typing import cast, Literal, Optional, Union
 
 import polars as pl
 from polars._typing import IntoExprColumn
@@ -14,6 +15,19 @@ __all__ = ["ngrams", "proportion", "is_letters"]
 
 # The column a corpus is expected to hold its file ids in.
 DEFAULT_FILE_ID = "file_id"
+
+
+class _Auto(Enum):
+    AUTO = "AUTO"
+
+    def __repr__(self) -> str:
+        return self.value
+
+
+# Default for a `file_id_column` that falls back to DEFAULT_FILE_ID when the
+# corpus has it, and to no file ids when it does not.
+AUTO = _Auto.AUTO
+FileIdColumn = Union[str, None, Literal[_Auto.AUTO]]
 
 
 def output_name(expr: IntoExprColumn) -> str:
@@ -104,6 +118,22 @@ def check_columns(
             f"the {name} has no column {missing[0]!r}; "
             f"its columns are: {', '.join(have)}.{hint}"
         )
+
+
+def resolve_file_id(
+    frame: pl.DataFrame | pl.LazyFrame, file_id_column: FileIdColumn
+) -> Optional[str]:
+    """Settle `file_id_column` against `frame`, resolving AUTO.
+
+    A column named explicitly must be in `frame`.
+    """
+    if file_id_column is AUTO:
+        if DEFAULT_FILE_ID in frame.collect_schema().names():
+            return DEFAULT_FILE_ID
+        return None
+    if file_id_column is not None:
+        check_columns(frame, [file_id_column], param="file_id_column")
+    return file_id_column
 
 
 def check_expr(

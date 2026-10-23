@@ -451,10 +451,10 @@ class TestFileIdDefault:
 
         assert spans(results) == [(2, 4), (4, 6)]
 
-    def test_default_name_is_soft_even_spelled_out(self, sample_corpus):
-        """Naming the default column outright does not make it required."""
-        results = search_cqp(sample_corpus, '[word="fox"]', file_id_column="file_id")
-        assert spans(results) == [(3, 4)]
+    def test_default_name_is_required_when_spelled_out(self, sample_corpus):
+        """Naming the default column outright makes it required."""
+        with pytest.raises(ValueError, match="has no column 'file_id'"):
+            search_cqp(sample_corpus, '[word="fox"]', file_id_column="file_id")
 
 
 @pytest.mark.parametrize(

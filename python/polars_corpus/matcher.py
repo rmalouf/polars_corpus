@@ -10,7 +10,7 @@ from ._internal import Match, Opcode, OpcodeMatcher, Span
 from .cqp_parser import cqp
 from .search import LazySearchResults, SearchResults
 from .simple_parser import simple_to_cqp
-from .utils import DEFAULT_FILE_ID, as_eager, check_columns
+from .utils import AUTO, FileIdColumn, as_eager, resolve_file_id
 
 __all__ = ["search", "search_cqp", "Match", "Span"]
 
@@ -176,14 +176,11 @@ def _relative_matches(
 
 
 def _search_eager(
-    df: pl.DataFrame, cqp_query: str, query: str, file_id_column: Optional[str]
+    df: pl.DataFrame, cqp_query: str, query: str, file_id_column: FileIdColumn
 ) -> Optional[SearchResults]:
     """Search an eager corpus, which fits in memory whole."""
     df = as_eager(df)
-    if file_id_column == DEFAULT_FILE_ID and file_id_column not in df.columns:
-        file_id_column = None
-    if file_id_column is not None:
-        check_columns(df, [file_id_column], param="file_id_column")
+    file_id_column = resolve_file_id(df, file_id_column)
     if df.is_empty():
         return None
 
@@ -243,16 +240,12 @@ def _search(
     df: pl.DataFrame | pl.LazyFrame,
     cqp_query: str,
     query: str,
-    file_id_column: Optional[str],
+    file_id_column: FileIdColumn,
     chunk_tokens: int,
 ) -> Optional[SearchResults | LazySearchResults]:
     """Search `df` for the compiled `cqp_query`, reporting it as `query`."""
     if isinstance(df, pl.LazyFrame):
-        if file_id_column is not None and file_id_column not in df.collect_schema():
-            # Only the default name is defeasible
-            if file_id_column != DEFAULT_FILE_ID:
-                check_columns(df, [file_id_column], param="file_id_column")
-            file_id_column = None
+        file_id_column = resolve_file_id(df, file_id_column)
         return _search_lazy(df, cqp_query, query, file_id_column, chunk_tokens)
     return _search_eager(df, cqp_query, query, file_id_column)
 
@@ -260,7 +253,7 @@ def _search(
 def search_cqp(
     df: pl.DataFrame | pl.LazyFrame,
     query: str,
-    file_id_column: Optional[str] = DEFAULT_FILE_ID,
+    file_id_column: FileIdColumn = AUTO,
     chunk_tokens: int = DEFAULT_CHUNK_TOKENS,
 ) -> Optional[SearchResults | LazySearchResults]:
     """
@@ -276,7 +269,8 @@ def search_cqp(
     file_id_column : str, optional
         Column holding file ids, which mark where one text ends and the next
         begins. No match crosses a change in its value. Pass `None` to search
-        the corpus as one continuous run of tokens. A LazyFrame is searched a
+        the corpus as one continuous run of tokens. By default, "file_id" is
+        used when the corpus has such a column. A LazyFrame is searched a
         chunk of files at a time; without file ids to cut it on it is searched as
         a single chunk.
     chunk_tokens : int, default 10_000_000
@@ -327,7 +321,7 @@ def search(
     token_column: str = "token",
     pos_column: str = "pos",
     lemma_column: str = "lemma",
-    file_id_column: Optional[str] = DEFAULT_FILE_ID,
+    file_id_column: FileIdColumn = AUTO,
     chunk_tokens: int = DEFAULT_CHUNK_TOKENS,
 ) -> Optional[SearchResults | LazySearchResults]:
     """
@@ -349,7 +343,8 @@ def search(
     file_id_column : str, optional
         Column holding file ids, which mark where one text ends and the next
         begins. No match crosses a change in its value. Pass `None` to search
-        the corpus as one continuous run of tokens. A LazyFrame is searched a
+        the corpus as one continuous run of tokens. By default, "file_id" is
+        used when the corpus has such a column. A LazyFrame is searched a
         chunk of files at a time; without file ids to cut on it is searched as
         a single chunk.
     chunk_tokens : int, default 10_000_000

@@ -5,6 +5,7 @@ import polars_corpus as plc
 import pytest
 from polars_corpus import LazySearchResults, scan_text_corpus
 from polars_corpus.matcher import search, search_cqp
+from polars_corpus.utils import AUTO
 
 from .helpers import corpus
 
@@ -272,7 +273,7 @@ def test_null_file_id_forms_its_own_file():
     "df,file_id_column",
     [
         pytest.param(FILES, None, id="ids-ignored"),
-        pytest.param(FILES.drop("file_id"), "file_id", id="no-ids-to-find"),
+        pytest.param(FILES.drop("file_id"), AUTO, id="no-ids-to-find"),
     ],
 )
 def test_lazy_without_file_ids_is_searched_as_one_chunk(df, file_id_column):
@@ -290,7 +291,7 @@ def test_lazy_without_file_ids_is_searched_as_one_chunk(df, file_id_column):
     "df,file_id_column",
     [
         pytest.param(FILES, None, id="ids-ignored"),
-        pytest.param(FILES.drop("file_id"), "file_id", id="no-ids-to-find"),
+        pytest.param(FILES.drop("file_id"), AUTO, id="no-ids-to-find"),
     ],
 )
 def test_lazy_without_file_ids_tags_spans(df, file_id_column):
