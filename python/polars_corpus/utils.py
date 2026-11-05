@@ -306,10 +306,7 @@ def ngrams(n: int, in_expr: IntoExpr, as_str: bool = True) -> pl.Expr:
     exprs = [expr.shift(-i) for i in range(n)]
 
     if as_str:
-        # concat_str is null for the whole n-gram if any token in it is null.
         return pl.concat_str(exprs, separator=" ")
-    # concat_list is not: a null token would leave a shorter n-gram behind
-    # looking like a real one, so null those rows out to match.
     return (
         pl.when(pl.any_horizontal(sub.is_null() for sub in exprs))
         .then(None)

@@ -28,12 +28,8 @@ def frequency_list(
     """
     Count how often each word occurs in a corpus.
 
-    A corpus holds one row per token, an occurrence of a word. A frequency
-    list holds one row per type, a distinct form, with the number of tokens of
-    it. Raw counts can only be compared within one corpus, so the count is
-    also reported as a rate per `basis` words, and the number of files the
-    word occurs in says whether the count comes from across the corpus or from
-    a few texts.
+    The corpus is a DataFrame with one row per token. A frequency
+    list holds one row per type.
 
     Parameters
     ----------
@@ -73,23 +69,16 @@ def frequency_list(
     See Also
     --------
     [dispersion][polars_corpus.dispersion.dispersion] :
-        How evenly a word is spread over the files, past counting them.
+        How evenly a word is spread over the files.
     [keywords][polars_corpus.keywords.keywords] :
-        Which words are more frequent here than in another corpus.
+        Which words are more frequent in one corpus than in another.
 
     Notes
     -----
     Rows holding a null in either `expr` or `file_id_column` are dropped.
 
-    Normalizing is `expr`'s job. Folding case is
-    `pl.col("token").str.to_lowercase()`, and a token `expr` evaluates to null
-    is dropped, so restricting what counts as a word is a `filter` on the
-    corpus or a `when`/`then` in `expr`. The Examples show both.
-
-    `rate` divides by the tokens that were counted, so whatever normalizing
-    dropped is gone from the total too. Filtering the result afterwards does
-    not rescale it: dropping the rare words leaves the common ones with the
-    rates they had in the whole corpus.
+    `rate` divides by the tokens that were counted, not the number of rows
+    in the original corpus.
 
     Examples
     --------
@@ -113,15 +102,10 @@ def frequency_list(
     term = as_expr(expr)
     lf = as_corpus(corpus)
     term_name = check_expr(lf, term)
-
-    # A corpus without a file id column still has a frequency list, just no
-    # range to report.
     file_id_column = resolve_file_id(lf, file_id_column)
 
-    # Reading the file id column twice would duplicate it; grouping by the word
-    # then counts distinct values of the word itself, which is 1 in every group.
     columns = [term]
-    if file_id_column is not None and file_id_column != term_name:
+    if file_id_column is not None:
         columns.append(pl.col(file_id_column))
     lf = lf.select(columns).drop_nulls()
 
@@ -138,8 +122,6 @@ def frequency_list(
     reported = [term_name, "freq", "rate"]
     if file_id_column is not None:
         reported.append("range")
-    # Ties broken by the word, so the same corpus always gives the same rows in
-    # the same order.
     result = result.select(reported).sort(["freq", term_name], descending=[True, False])
 
     return collect_like(result, corpus)

@@ -176,15 +176,9 @@ def collocations(
     _check_count(min_freq, "min_freq", " Use min_freq=0 to keep them all.")
     _check_count(min_range, "min_range")
 
-    if results is None:
-        raise ValueError(
-            "collocations() needs the results of a search, but got None. A "
-            "search that matched nothing returns None, and a node word with "
-            "no matches has no windows to collect collocates from."
-        )
     if not isinstance(results, (SearchResults, LazySearchResults)):
         raise ValueError(
-            "results must be the matches search() or search_cqp() returned, "
+            "results must be the SearchResults returned by search() or search_cqp(), "
             f"got {type(results).__name__}"
         )
 
@@ -196,8 +190,7 @@ def collocations(
     if min_range and file_id_column is None:
         raise ValueError(
             "min_range counts the files a collocation occurs in, but these "
-            "results have no file ids to count. Search with a "
-            "file_id_column to get them."
+            "results have no file ids to count."
         )
 
     result = results._collocate_counts(

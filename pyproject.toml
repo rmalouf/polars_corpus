@@ -38,7 +38,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-# lxml and pyarrow>=14 are what convert_bnc needs; pyarrow>=14 is also required by seaborn
+# lxml and pyarrow>=14 required by convert_bnc; pyarrow>=14 is also required by seaborn
 examples = ["great_tables", "scipy", "matplotlib", "seaborn", "lxml", "pyarrow>=14", "statsmodels", "adjusttext"]
 embeddings = ["sentence-transformers", "model2vec", "umap-learn",
     "hdbscan"]
