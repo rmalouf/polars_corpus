@@ -18,7 +18,7 @@ polars = { version = "0.55", default-features = false, features = ["dtype-struct
 polars-ops = { version = "0.55", default-features = false, features = ["rle"] }
 pyo3-polars = { version = "0.28", default-features = false, features = ["derive"] }
 flate2 = "1.1"
-zstd = "0.13"
+zstd = "0.14"
 statrs = { version = "0.19", default-features = false }
 itertools = "0.15.0"
 polars-arrow = { version = "0.55", default-features = true }
