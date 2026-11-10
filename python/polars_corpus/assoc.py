@@ -140,6 +140,21 @@ def crosstab(corpus: T_Frame, x: IntoExprColumn, y: IntoExprColumn) -> T_Frame:
     The measures in this module read their counts from a `freqs` struct
     like the one here. `keywords` and `collocations` cross-tabulate and
     score in one step.
+
+    Examples
+    --------
+    >>> import polars as pl
+    >>> import polars_corpus as plc
+    >>> plc.crosstab(corpus, "lemma", "file_id")
+    >>> # Score adjacent word pairs by log-likelihood. The second variable is
+    >>> # the next token in the same file, aliased so its name differs from `x`:
+    >>> next_token = pl.col("token").shift(-1).over("file_id").alias("next")
+    >>> (
+    ...     plc.crosstab(corpus, "token", next_token)
+    ...     .unnest("freqs")
+    ...     .with_columns(plc.loglik("f12", "f1", "f2", "n").alias("ll"))
+    ...     .sort("ll", descending=True)
+    ... )
     """
     lf = as_corpus(corpus)
 
