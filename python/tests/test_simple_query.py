@@ -318,6 +318,10 @@ def test_lemma_patterns(sample_corpus, query, expected):
             [(8, 9, "dog"), (20, 22, "red car"), (23, 25, "blue truck")],
         ),
         ("(car | (truck | dog))", [(8, 9, "dog"), (21, 22, "car"), (24, 25, "truck")]),
+        # top-level alternatives need no parentheses
+        ("car | truck", [(21, 22, "car"), (24, 25, "truck")]),
+        ("red car|blue truck", [(20, 22, "red car"), (23, 25, "blue truck")]),
+        ("(red | blue) truck | dog", [(8, 9, "dog"), (23, 25, "blue truck")]),
         (
             "the (_{ADJ} | _{SUBST})",
             [

@@ -29,8 +29,9 @@ Simple queries are translated internally into CQP expressions. In most cases you
 | `{light/V}`              | lemma *light* with a verb tag                                   |
 | `{walk}_VBD`             | lemma *walk* with POS tag `VBD`                                 |
 | `{box}_{SUBST}`          | lemma *box* with a noun tag                                     |
-| <code>(cat&#124;dog)</code> | either *cat* or *dog*                                           |
-| <code>(red fox&#124;blue whale)</code> | either of the two sequences                                     |
+| <code>cat&#124;dog</code> | either *cat* or *dog*                                           |
+| <code>red fox&#124;blue whale</code> | either *red fox* or *blue whale*                                     |
+| <code>the (red&#124;blue) car</code> | either *the red car* or *the blue car*                                     |
 | `(very)? good`           | optional *very*, followed by *good*                             |
 | `(ha){2,4}`              | between two and four occurrences of *ha*                        |
 | `$x: fox`                | match *fox* and bind it to variable `x`                         |
@@ -363,10 +364,10 @@ Parentheses group one or more query elements:
 
 Groups are especially useful for alternatives and repetition.
 
-Use `|` inside a group to specify alternatives:
+Use `|` to specify alternatives:
 
 ```text
-(cat|dog)
+cat|dog
 ```
 
 matches either *cat* or *dog*.
@@ -374,7 +375,7 @@ matches either *cat* or *dog*.
 Each branch may contain a complete sequence:
 
 ```text
-(red fox|blue whale)
+red fox|blue whale
 ```
 
 matches either:
@@ -390,6 +391,8 @@ blue whale
 ```
 
 Alternatives can themselves contain any valid query items, including nested groups.
+
+Since `|` separates whole sequences, `the red|blue car` means *the red* or *blue car*. On the other hand, `the (red|blue) car` means *the red car* or *the blue car*.
 
 ### Repetition and optional groups
 

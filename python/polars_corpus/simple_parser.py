@@ -64,7 +64,7 @@ _TAG = rf"(?:\{{[A-Za-z]+\}}|{_PC}+)"  # a `_TAG` suffix: `{{CLASS}}` or a tag p
 
 
 _GRAMMAR = rf"""
-start: seq
+start: seq (_PIPE seq)*
 seq: item+
 ?item: binding | group | atom
 binding: BINDING_HEAD (group | atom)
@@ -238,7 +238,7 @@ class _SimpleCompiler(Transformer):
         return f"${var_name}: ({items[1]})"
 
     def start(self, items: list[str]) -> str:
-        return items[0]
+        return f"({'|'.join(items)})" if len(items) > 1 else items[0]
 
 
 _parser = Lark(_GRAMMAR, start="start", parser="lalr", lexer="basic")
