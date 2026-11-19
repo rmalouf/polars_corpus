@@ -6,7 +6,7 @@ Run the complete verification workflow before committing changes:
 
 1. Format Python code with ruff
 2. Lint Python code with ruff
-3. Type check Python with mypy
+3. Type check Python with pyrefly (`pyrefly check python/polars_corpus/`)
 4. Format Rust code with cargo fmt
 5. Lint Rust code with cargo clippy
 6. Rebuild the Rust extension with make develop

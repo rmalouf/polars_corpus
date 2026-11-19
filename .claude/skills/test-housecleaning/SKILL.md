@@ -67,14 +67,14 @@ through the second entry point is not. `TestFunctionalInterface` in
 `test_concordance.py` has the shape right and is three tests where one
 parameterized test would do.
 
-**Eager and lazy.** Principle 2 in CLAUDE.md means most functions take either.
+**Eager and lazy.** Principle 2 in AGENTS.md means most functions take either.
 Test the type-in/type-out rule once per function; do not run the function's
 whole behavior twice. `test_lazy_search.py` is the exception and stays as it is
 -- there the two paths are genuinely different code, and agreeing is the point.
 
 ## 2. Collapse
 
-Prefer `@pytest.mark.parametrize` -- CLAUDE.md asks for it, and the suite
+Prefer `@pytest.mark.parametrize` -- AGENTS.md asks for it, and the suite
 already leans that way. Near-identical bodies differing in one literal, a
 method name, or an expected value collapse cleanly. Use `pytest.param(...,
 id=...)` when the auto-generated id would be unreadable; the suite does this
@@ -93,7 +93,7 @@ usually right; merging two classes usually is not.
 
 ## 3. Things that can never happen
 
-CLAUDE.md: public APIs validate, internal functions trust invariants. A test
+AGENTS.md: public APIs validate, internal functions trust invariants. A test
 that feeds an internal helper something the public entry point has already
 rejected is testing a branch that cannot run in the shipped package. Delete it,
 or move the case up to the public function where the input really can arrive.
