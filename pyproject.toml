@@ -80,7 +80,7 @@ docs = [
     "mkdocstrings[python]",
     "mkdocs-jupyter",
     # mkdocstrings formats the signatures it renders with ruff, if it is there.
-    "ruff>=0.15,<0.16",
+    "ruff>=0.15",
 ]
 dev = [
     {include-group = "docs"},
