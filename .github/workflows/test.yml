@@ -47,22 +47,26 @@ jobs:
         run: uv run --no-sync ruff format --check python
 
   python:
-    name: Python 3.15 on Linux
+    name: Python ${{ matrix.python }} on Linux
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ['3.15', 'pypy3.12']
     env:
-      UV_PYTHON: '3.15'
+      UV_PYTHON: ${{ matrix.python }}
       MATURIN_PEP517_ARGS: --profile dev-fast
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
-          key: test
+          key: test-${{ matrix.python }}
       - uses: astral-sh/setup-uv@v10.4.0
         with:
           enable-cache: true
-          cache-suffix: test
-          python-version: '3.15'
+          cache-suffix: test-${{ matrix.python }}
+          python-version: ${{ matrix.python }}
       - name: Build extension and install dependencies
         run: uv sync --group dev --extra examples
       - name: Cache nltk data
