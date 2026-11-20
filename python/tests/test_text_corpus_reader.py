@@ -4,7 +4,6 @@ import polars as pl
 import polars_corpus as plc
 import pytest
 from polars_corpus import read_text_corpus, scan_text_corpus
-from polars_corpus.corpus_io import TextCorpusReader
 
 SAMPLE = """The/DT quick/JJ brown/NN fox/NN
 jumps/VBZ over/IN the/DT lazy/JJ dog/NN
@@ -41,17 +40,17 @@ def test_read_text_corpus(load, sample_file):
     df = load([sample_file])
 
     assert df.columns == ["token", "pos", "sentence_tag", "file_id"]
-    # Three blank-line-delimited sentences.
+    # Three lines, one sentence apiece; the blank line is skipped.
     assert df.filter(pl.col("sentence_tag") == "B").height == 3
     # Every token carries the path it was read from.
     assert set(df["file_id"]) == {str(sample_file)}
 
 
 def test_token_tag_parsing(sample_file):
-    rows = list(TextCorpusReader([sample_file]).read_file(sample_file))
+    df = read_text_corpus([sample_file])
 
-    assert rows[0] == {"token": "The", "pos": "DT", "sentence_tag": "B"}
-    assert rows[1]["sentence_tag"] == "I"
+    assert df.row(0) == ("The", "DT", "B", str(sample_file))
+    assert df.row(1)[2] == "I"
 
 
 def test_scan_pushes_down_predicate_and_projection(sample_file):
@@ -70,8 +69,8 @@ def test_malformed_line_raises(write_corpus):
     """A token with no /tag is an error, not a silently dropped row."""
     (path,) = write_corpus("Good/JJ morning/NN everyone\nMalformedLine noSlashHere\n")
 
-    with pytest.raises(ValueError):
-        list(TextCorpusReader([path]).read_file(path))
+    with pytest.raises(ValueError, match='Malformed token "everyone"'):
+        read_text_corpus([path])
 
 
 def test_multiple_files_combined(write_corpus):

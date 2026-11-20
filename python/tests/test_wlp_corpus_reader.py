@@ -104,7 +104,7 @@ def test_scan_reads_only_the_rows_asked_for(write_corpus):
 
     assert scan_wlp_corpus([path]).head(3).collect().height == 3
     # The same file read whole does hit the broken line.
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="expected three tab-separated fields"):
         read_wlp_corpus([path])
 
 

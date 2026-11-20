@@ -160,28 +160,11 @@ def test_match_frame_spans_are_file_relative():
 
 
 class TestSlicing:
+    """The lazy `_take`; what head, tail and sample keep is shared with eager"""
+
     @pytest.fixture
     def lazy(self):
         return eager_and_lazy('[token="fox"]', 6)[1]
-
-    def test_head_tail(self, lazy):
-        assert len(lazy.head(2)) == 2
-        assert len(lazy.tail(2)) == 2
-        assert lazy.head(99) is lazy
-        with pytest.raises(ValueError, match="non-negative"):
-            lazy.head(-1)
-
-    def test_sample(self, lazy):
-        assert len(lazy.sample(3, seed=42)) == 3
-        with pytest.raises(ValueError, match="cannot sample"):
-            lazy.sample(99)
-
-    def test_shuffle_keeps_every_match(self, lazy):
-        shuffled = lazy.shuffle(seed=42)
-
-        assert sorted(shuffled._matches["start"].to_list()) == sorted(
-            lazy._matches["start"].to_list()
-        )
 
     def test_sliced_concordance_keeps_the_slice_order(self, lazy):
         shuffled = lazy.shuffle(seed=42)
@@ -206,16 +189,6 @@ class TestSlicing:
                 )
             )
         )
-
-    def test_seed_leaves_the_global_state_alone(self, lazy):
-        import random
-
-        random.seed(0)
-        before = random.random()
-        random.seed(0)
-        lazy.sample(3, seed=42)
-
-        assert random.random() == before
 
 
 def test_simple_query_language():

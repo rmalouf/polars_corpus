@@ -126,12 +126,12 @@ def test_degenerate_corpora(corpus_columns, expected):
     ],
 )
 def test_malformed_syntax(sample_corpus, query):
-    with pytest.raises((ValueError, LarkError)):
+    with pytest.raises(LarkError):
         search_cqp(sample_corpus, query)
 
 
 def test_unknown_feature(sample_corpus):
-    with pytest.raises((ValueError, KeyError, pl.exceptions.ColumnNotFoundError)):
+    with pytest.raises(pl.exceptions.ColumnNotFoundError, match="invalid_feature"):
         search_cqp(sample_corpus, '[invalid_feature="value"]')
 
 
@@ -306,7 +306,7 @@ class TestVariableBindings:
     )
     def test_variable_reuse_error(self, sample_corpus, query):
         """Variable names cannot be reused within one query"""
-        with pytest.raises((ValueError, RuntimeError)):
+        with pytest.raises(ValueError, match="Duplicate variable binding: \\$x"):
             search_cqp(sample_corpus, query)
 
 

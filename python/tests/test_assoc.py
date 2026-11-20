@@ -150,7 +150,7 @@ def test_t_test_undefined(data: dict) -> None:
 
 def test_t_test_invalid_alternative() -> None:
     df = pl.DataFrame({"x": [1], "y": [2]})
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="Unknown alt 'xyz'"):
         df.select(welchs_t("x", "y", alt="xyz"))
 
 
