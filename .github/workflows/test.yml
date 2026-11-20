@@ -68,7 +68,15 @@ jobs:
           cache-suffix: test-${{ matrix.python }}
           python-version: ${{ matrix.python }}
       - name: Build extension and install dependencies
+        if: ${{ !startsWith(matrix.python, 'pypy') }}
         run: uv sync --group dev --extra examples
+      # lxml, pyarrow and the plotting stack don't build on PyPy; the tests
+      # that need them skip.
+      - name: Build extension and install runtime dependencies
+        if: ${{ startsWith(matrix.python, 'pypy') }}
+        run: |
+          uv sync --no-dev
+          uv pip install pytest
       - name: Cache nltk data
         uses: actions/cache@v6
         with:
