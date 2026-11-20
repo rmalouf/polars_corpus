@@ -35,7 +35,7 @@ jobs:
         run: cargo fmt --all --check
       - name: cargo clippy
         run: cargo clippy --all-targets
-      - uses: astral-sh/setup-uv@v9.0.0
+      - uses: astral-sh/setup-uv@v10
         with:
           enable-cache: true
           cache-suffix: lint
@@ -47,10 +47,10 @@ jobs:
         run: uv run --no-sync ruff format --check python
 
   python:
-    name: Python 3.14 on Linux
+    name: Python 3.15 on Linux
     runs-on: ubuntu-latest
     env:
-      UV_PYTHON: '3.14'
+      UV_PYTHON: '3.15'
       MATURIN_PEP517_ARGS: --profile dev-fast
     steps:
       - uses: actions/checkout@v7
@@ -58,15 +58,15 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           key: test
-      - uses: astral-sh/setup-uv@v9.0.0
+      - uses: astral-sh/setup-uv@v10
         with:
           enable-cache: true
           cache-suffix: test
-          python-version: '3.14'
+          python-version: '3.15'
       - name: Build extension and install dependencies
         run: uv sync --group dev --extra examples
       - name: Cache nltk data
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ~/nltk_data
           key: nltk-${{ runner.os }}-${{ hashFiles('.github/workflows/test.yml') }}
