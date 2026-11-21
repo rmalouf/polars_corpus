@@ -55,7 +55,6 @@ jobs:
         python: ['3.15', '3.15t']
     env:
       UV_PYTHON: ${{ matrix.python }}
-      MATURIN_PEP517_ARGS: --profile dev-fast
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
@@ -68,7 +67,9 @@ jobs:
           cache-suffix: test-${{ matrix.python }}
           python-version: ${{ matrix.python }}
       - name: Build extension and install dependencies
-        run: uv sync --group dev --extra examples
+        run: >
+          uv sync --group dev --extra examples
+          --config-settings-package 'polars-corpus:build-args=--profile dev-fast'
       # An extension module that doesn't declare itself free-threading safe
       # quietly turns the GIL back on at import.
       - name: Check the GIL stays off
