@@ -112,7 +112,7 @@ jobs:
         with:
           name: wheels-${{ matrix.wheel }}
           path: dist
-      - uses: astral-sh/setup-uv@v9.0.0
+      - uses: astral-sh/setup-uv@v10.4.0
         with:
           enable-cache: true
           cache-suffix: release-${{ matrix.python-version }}
@@ -126,7 +126,7 @@ jobs:
         run: uv pip install --no-deps dist/*.whl
 
       - name: Cache nltk data
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ~/nltk_data
           key: nltk-${{ runner.os }}-${{ hashFiles('.github/workflows/release.yml') }}
